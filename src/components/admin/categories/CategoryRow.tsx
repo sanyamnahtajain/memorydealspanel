@@ -9,6 +9,7 @@ import {
   ImageIcon,
   Loader2Icon,
   PencilIcon,
+  Trash2Icon,
   XIcon,
 } from "lucide-react";
 
@@ -16,7 +17,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip } from "@/components/ui/tooltip";
-import { StatusChip } from "@/components/common";
+import { StatusChip, ConfirmSheet } from "@/components/common";
 
 interface RowCategory {
   id: string;
@@ -36,6 +37,8 @@ interface CategoryRowProps {
   onRename: (id: string, name: string) => Promise<boolean>;
   onEdit: () => void;
   onAddChild?: () => void;
+  /** Delete this category (guarded server-side against non-empty categories). */
+  onDelete: () => void | Promise<void>;
   /** Right-of-name summary (product / sub-category counts). */
   summary: React.ReactNode;
 }
@@ -56,6 +59,7 @@ export function CategoryRow({
   onRename,
   onEdit,
   onAddChild,
+  onDelete,
   summary,
 }: CategoryRowProps) {
   const [editing, setEditing] = React.useState(false);
@@ -239,14 +243,33 @@ export function CategoryRow({
             <FolderPlusIcon aria-hidden />
           </Button>
         ) : null}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Edit category"
-          onClick={onEdit}
-        >
-          <PencilIcon aria-hidden />
-        </Button>
+        <Tooltip content="Edit category">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Edit category"
+            onClick={onEdit}
+          >
+            <PencilIcon aria-hidden />
+          </Button>
+        </Tooltip>
+        <ConfirmSheet
+          title={`Delete "${category.name}"?`}
+          description="This permanently removes the category. It's only allowed when no products or sub-categories still use it."
+          confirmLabel="Delete"
+          destructive
+          onConfirm={onDelete}
+          trigger={
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Delete category"
+              className="text-muted-foreground hover:text-destructive"
+            >
+              <Trash2Icon aria-hidden />
+            </Button>
+          }
+        />
       </div>
     </div>
   );

@@ -235,6 +235,37 @@ export async function setCategoryStatus(
   return toRecord(row);
 }
 
+/**
+ * Delete a category. Refuses (throws) when the category still holds products
+ * or has sub-categories — those must be moved or removed first, so a delete can
+ * never orphan a product or a child. Returns the number deleted (always 1).
+ */
+export async function deleteCategory(id: string): Promise<void> {
+  const [productCount, childCount] = await Promise.all([
+    prisma.product.count({ where: { categoryId: id, deletedAt: null } }),
+    prisma.category.count({ where: { parentId: id } }),
+  ]);
+  if (productCount > 0) {
+    throw new CategoryInUseError(
+      `Cannot delete: ${productCount} product${productCount === 1 ? "" : "s"} still use this category. Move or delete them first.`,
+    );
+  }
+  if (childCount > 0) {
+    throw new CategoryInUseError(
+      `Cannot delete: this category has ${childCount} sub-categor${childCount === 1 ? "y" : "ies"}. Remove them first.`,
+    );
+  }
+  await prisma.category.delete({ where: { id } });
+}
+
+/** Thrown when a category cannot be deleted because it is still referenced. */
+export class CategoryInUseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CategoryInUseError";
+  }
+}
+
 /** Next free sortOrder within a sibling group (max + 1, or 0 when empty). */
 async function nextSortOrder(parentId: string | null): Promise<number> {
   const last = await prisma.category.findFirst({

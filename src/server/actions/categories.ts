@@ -14,6 +14,8 @@ import { createUploadTarget, type UploadTarget } from "@/server/storage/r2";
 import {
   createCategory,
   createSubCategory,
+  deleteCategory,
+  CategoryInUseError,
   reorderCategories,
   setCategoryStatus,
   updateCategory,
@@ -234,6 +236,48 @@ export async function setCategoryStatusAction(
       error instanceof Error
         ? error.message
         : "Failed to change category status.",
+    );
+  }
+}
+
+/* --------------------------------------------------------------------- */
+/* Delete                                                                */
+/* --------------------------------------------------------------------- */
+
+const deleteActionSchema = z.object({ id: objectIdSchema });
+
+export async function deleteCategoryAction(
+  input: unknown,
+): Promise<ActionResult> {
+  const auth = await requireAdmin();
+  if (!auth.ok) return auth;
+
+  const parsed = deleteActionSchema.safeParse(input);
+  if (!parsed.success) {
+    return fail(firstIssue(parsed.error));
+  }
+
+  try {
+    await deleteCategory(parsed.data.id);
+
+    await writeAudit({
+      actorType: "admin",
+      actorId: auth.adminId,
+      action: "category.delete",
+      entity: "Category",
+      entityId: parsed.data.id,
+    });
+
+    revalidatePath(CATEGORIES_PATH);
+    return { ok: true };
+  } catch (error) {
+    // CategoryInUseError carries a user-facing reason (products/children exist).
+    return fail(
+      error instanceof CategoryInUseError
+        ? error.message
+        : error instanceof Error
+          ? error.message
+          : "Failed to delete category.",
     );
   }
 }

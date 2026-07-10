@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/common";
 import { springs } from "@/components/motion/tokens";
 import {
   createCategoryAction,
+  deleteCategoryAction,
   reorderCategoriesAction,
   setCategoryStatusAction,
   updateCategoryAction,
@@ -207,6 +208,31 @@ export function CategoryManager({ initialCategories }: CategoryManagerProps) {
   );
 
   /* ---------------------------------------------------------------- */
+  /* Delete                                                           */
+  /* ---------------------------------------------------------------- */
+
+  const deleteCategory = React.useCallback(
+    async (id: string): Promise<void> => {
+      const result = await deleteCategoryAction({ id });
+      if (!result.ok) {
+        // Server refuses when products/sub-categories still reference it.
+        toast.error(result.error);
+        return;
+      }
+      setCategories((prev) =>
+        prev
+          .filter((root) => root.id !== id)
+          .map((root) => ({
+            ...root,
+            children: root.children.filter((child) => child.id !== id),
+          })),
+      );
+      toast.success("Category deleted.");
+    },
+    [],
+  );
+
+  /* ---------------------------------------------------------------- */
   /* Create / edit via dialog                                         */
   /* ---------------------------------------------------------------- */
 
@@ -299,6 +325,7 @@ export function CategoryManager({ initialCategories }: CategoryManagerProps) {
                   onToggleStatus={toggleStatus}
                   onRename={renameCategory}
                   onEdit={() => setDialog({ mode: "edit", target: root })}
+                  onDelete={() => deleteCategory(root.id)}
                   onAddChild={() =>
                     setDialog({
                       mode: "createChild",
@@ -332,6 +359,7 @@ export function CategoryManager({ initialCategories }: CategoryManagerProps) {
                           onEdit={() =>
                             setDialog({ mode: "edit", target: child })
                           }
+                          onDelete={() => deleteCategory(child.id)}
                           summary={
                             <span className="text-xs text-muted-foreground">
                               {child.productCount}{" "}
