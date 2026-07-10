@@ -339,6 +339,7 @@ Built in Phase 1, consumed by everything after. **No component ships colors/spac
 **Goal:** full accountability — which admin did what, and when/where they were signed in. (`AuditLog` + `writeAudit` already record mutations; this adds capture depth + the viewing UI.)
 - **Capture:** ensure every admin mutation writes an audit entry (actorType, actorId, actorName snapshot, action, entity, entityId, before/after diff, at). Add **IP + userAgent** to `Session` and to admin-login audit; record `lastLoginAt`. Consider a lightweight read-audit for sensitive views (who exported the catalog, who viewed a customer).
 - **Audit log viewer** `/admin/audit` (permission `settings.manage` or a new `audit.view`) — paginated, filter by actor / entity / action / date range, a diff viewer (before→after), export to CSV. Custom table → cards on mobile.
+- **Contextual audit previews (per module & per detail page):** a reusable `<AuditLogPreview entity entityId />` component that shows the latest N entries for that record (actor, action, when, diff summary, "view all" → filtered `/admin/audit`). Placed on **every detail page** (product editor, category, customer profile, brand, user/role) and as a **"recent activity" panel in each module** list (products, customers, requests, categories). Backed by `getRecentAuditForEntity(entity, entityId)` and `getRecentAuditForModule(entity)` — indexed queries, gated by permission. Loading skeleton, empty state, humanized diffs, relative timestamps.
 - **Session logs** `/admin/sessions` (and per-user in the Users page) — active sessions (device, IP, last seen, created), force sign-out of a session or all sessions for a user; login history. TTL/retention policy noted.
 - **Data hygiene:** audit/session rows grow fast → TTL index (e.g. 180–365 days) + pagination; never store secrets in diffs; redact password fields.
 **Gate:** every admin mutation is traceable to an actor; force-logout works; viewer paginates + filters; typecheck+lint+vitest green.
@@ -375,6 +376,20 @@ A single reusable **custom Combobox/Autocomplete** component (Base UI/own — NO
 - **Admin global search** (future) — jump to product/customer/order.
 Backed by cached `distinct()` queries (Redis/short revalidate) so it scales; debounced; keyboard-navigable; created-on-the-fly values allowed where sensible (specs) or constrained to the master (brand).
 **Gate:** SpecEditor keys & values autocomplete from real data; no native datalist anywhere; typo-prone fields identified and covered.
+
+### Cross-cutting — UI preferences (admin & retailer)
+A custom **Preferences** surface (in admin Settings and the storefront account), persisted per user (localStorage + cookie for SSR, optionally synced to the account for cross-device):
+- **Theme** — Light / Dark / System (F-U21, done) surfaced here too.
+- **Density** — Comfortable / Compact (affects tables, grids, lists, cards) via a `data-density` attribute + token spacing.
+- **Default view mode** — Grid / Compact / Table (retailer listings; ties to Phase 7.6).
+- **Motion** — Reduce motion toggle (overrides beyond the OS setting).
+- **Results per page / infinite-scroll** preference; **number/date locale** (en-IN default, tabular numerals).
+- **Accessibility**: larger text option; high-contrast check.
+All via custom controls (segmented toggles/switches — never native selects), instant apply, no reload.
+**Gate:** preferences persist across reloads + SSR (no flash), apply app-wide via tokens/attributes, custom controls only, respect reduced-motion.
+
+### Logo & brand assets (done)
+Real **The Memory Deals (TMD)** logo wired into storefront + admin headers, footer, and login; white-background PWA icons (192/512/maskable) + apple-touch + favicon generated from it; manifest + metadata + real business name/tagline/Maps link updated. `Logo` component (`src/components/brand/Logo.tsx`) with mark / wordmark / dark-surface chip variants. Brand colors (navy `#1e2a9c` + red) noted for an optional future accent-token refresh.
 
 ### Cross-cutting — Charts & analytics (graphs where they add insight)
 Custom, token-styled, responsive, accessible charts (lean to **hand-built SVG** to match the "custom components" ethos; a small headless lib only if justified — decided at build, no heavyweight dep). Respect reduced-motion; skeleton while loading; empty state when no data.
