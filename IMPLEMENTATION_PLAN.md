@@ -221,6 +221,82 @@ Built in Phase 1, consumed by everything after. **No component ships colors/spac
 - Admin login records `lastLoginAt`; blocked/inactive users can't sign in. Seed updated to create roles + assign admin.
 **Gate:** a non-Owner user only sees/does what its role permits (test: a Sales user cannot reach products.edit actions/pages); last-Owner protection holds; typecheck+lint+vitest green.
 
+### Phase 7.5 — Storefront modernization & full retailer experience (deep dive)
+**Goal:** a modern, polished, complete retailer-facing storefront. Everything here meets the §0 Quality Bar (custom components only — no native dropdowns/popups/alerts; skeleton + spinner + empty + error states; tooltips; motion; responsive; PWA; pagination; usable filters; theme; typography). The price gate (§5) remains inviolable on every surface.
+
+**Retailer-visible page inventory (what a retailer can see):**
+1. **Home / landing** — hero, value props ("Wholesale prices on approval"), featured categories, new/featured products (locked prices via PriceGate), brand strip, "how it works" (browse → request access → get approved → see prices), CTA to request access, trust signals. ISR.
+2. **Catalog / all products** — grid with filters (category, brand, price band — only meaningful once approved, else hidden, stock status), sort (newest, name, price when approved), search box; pagination or infinite "load more" (cursor-based, scalable to 10k+); skeleton grid; empty state.
+3. **Category page** `/c/[slug]` — sub-category chips, same filter/sort/paginate; category hero; SEO metadata (no price).
+4. **Sub-category page** — nested browse.
+5. **Brand page** `/b/[slug]` — browse by brand (reads the Brand master), brand header/logo.
+6. **Product detail** `/p/[slug]` — gallery (Embla, zoom, per-variant images), title/brand/specs table, **variant selector** (§Phase 11 — swatches/option pickers; price + stock update per variant), PriceGate card (locked → request; unblur+count-up when approved), MOQ, "Enquire on WhatsApp", **add to enquiry list**, related products / "customers also viewed", share, breadcrumb, shared-element transition from card. Dynamic when approved / ISR when anon.
+7. **Search** — full-screen overlay with **autocomplete suggestions** (products, brands, categories — see Cross-cutting Autocomplete), recent searches, instant results; dedicated results page with the same filters; DB-backed (not in-memory), scalable.
+8. **Enquiry list / quote cart** — retailers add products (+variant, qty) to a list and send one enquiry (WhatsApp deep-link or a stored EnquiryRequest that notifies admin). Persisted per customer; badge in header. (Replaces v1's per-product enquiry as the richer flow.)
+9. **Favorites / saved products** — heart to save; a saved list in the account area (per approved customer).
+10. **Account area** `/account` — status + expiry banner, request/renew access (bottom sheet), profile (business name, GST, contact — editable), **price-list PDF download** (watermarked with business name + date; approved only), enquiry history, favorites, sessions ("signed-in devices" + sign-out everywhere), sign-out. 
+11. **Login** — phone + password (custom form, OTP-free per project decision), request-access entry.
+12. **Static/support** — About, Contact, FAQ, Terms, Privacy, Shipping & returns policy — simple content pages in the footer.
+13. **System** — custom 404, 500 (error boundary), offline (PWA), maintenance.
+
+**Global storefront chrome:** sticky condensing header (logo, search, enquiry-list badge, account, theme toggle, install-app), mega/simple category nav, footer (categories, brands, support links, contact, social), announcement bar (optional), bottom tab bar on mobile (Home / Categories / Search / Enquiry / Account), PWA install prompt.
+
+**Modern design language:** refined type scale + spacing rhythm, generous imagery with blur-up placeholders, tasteful motion (stagger, shared-element, price reveal), consistent iconography, light/dark theme, accessible contrast, empty/error/loading states everywhere, 60fps on low-end Android.
+
+**Security/scale corner cases:** anon/pending/expired never see a price on ANY of these pages (verified per page); approved-then-expired mid-session degrades gracefully; favorites/enquiry require login; rate-limit request-access + search; all lists paginated; images via CDN; ISR for anon pages (can't leak prices by construction).
+
+**Workflow shape:** parallel page-builders (worktree isolation) → integrate → design-review at 360/768/1280 ∥ **security re-attack (price extraction incl. ISR cache)** ∥ perf (Lighthouse ≥90/≥95). No dev-server verify (static + component tests).
+
+### Phase 8.7 — Audit & session logs (admin observability)
+**Goal:** full accountability — which admin did what, and when/where they were signed in. (`AuditLog` + `writeAudit` already record mutations; this adds capture depth + the viewing UI.)
+- **Capture:** ensure every admin mutation writes an audit entry (actorType, actorId, actorName snapshot, action, entity, entityId, before/after diff, at). Add **IP + userAgent** to `Session` and to admin-login audit; record `lastLoginAt`. Consider a lightweight read-audit for sensitive views (who exported the catalog, who viewed a customer).
+- **Audit log viewer** `/admin/audit` (permission `settings.manage` or a new `audit.view`) — paginated, filter by actor / entity / action / date range, a diff viewer (before→after), export to CSV. Custom table → cards on mobile.
+- **Session logs** `/admin/sessions` (and per-user in the Users page) — active sessions (device, IP, last seen, created), force sign-out of a session or all sessions for a user; login history. TTL/retention policy noted.
+- **Data hygiene:** audit/session rows grow fast → TTL index (e.g. 180–365 days) + pagination; never store secrets in diffs; redact password fields.
+**Gate:** every admin mutation is traceable to an actor; force-logout works; viewer paginates + filters; typecheck+lint+vitest green.
+
+### Phase 11 — Product variants (deep analysis — cross-cutting, affects many features)
+**Why it's big:** price, stock, SKU, and images can differ per variant (e.g. Power Bank 10000mAh vs 20000mAh; cable 1m vs 2m; case colors). Price is the gated asset, so **the price gate must apply per variant**. This touches the data model, editor, grid, import/export, DTO/DAL, storefront, search, and analytics.
+
+**Data model (schema + migration):**
+- `ProductOptionType` (per product or reusable): e.g. "Color", "Capacity", "Length" with ordered values.
+- `ProductVariant { productId, name (derived from options, e.g. "Black · 20000mAh"), optionValues (Json: {Color:"Black", Capacity:"20000mAh"}), sku (unique), price(paise), mrp?(paise), moq?, stockStatus, images? (variant-specific), isDefault, status, sortOrder }`.
+- `Product` keeps shared fields (name, brand, category, description, base specs); a product with no variants keeps a single implicit/default variant so existing code paths still work. **Migration:** wrap every current product into one default variant carrying its current price/sku/stock; keep `Product.price` as a denormalized "from" price (min active variant) for list/sort, or compute it.
+- **Backward-compat strategy:** introduce a `hasVariants` flag; single-variant products render exactly as today. The DAL/DTO expose `priceFrom`/`priceRange` (gated) for lists and full per-variant pricing (gated) on detail.
+
+**Feature impacts (each must be updated):**
+- **Product editor:** an option-type builder (add "Color" with values) → auto-generate the variant matrix; per-variant price/sku/stock/images; bulk set price across variants; mark default.
+- **DealSheet bulk grid:** decide UX — either a variant-expandable row, or a "variants" cell opening a sub-grid; bulk price adjust must target variants. (Non-trivial; may ship as a variant sub-editor first.)
+- **Import/export:** variant rows (parent SKU + option columns + per-variant price/stock), preview validation, create/update by variant SKU.
+- **Storefront detail:** variant selector (swatches for color, chips for capacity), price/stock/gallery update on selection; PriceGate per selected variant; enquiry list stores the chosen variant.
+- **DTO/DAL/price gate:** `PublicVariant` (no price) vs `PricedVariant`; list pages show gated price range; invariant tests extended to variants (anon sees no variant price anywhere).
+- **Search/filter:** filter by option values (e.g. capacity), stock at variant level.
+- **Analytics/most-viewed/PageView:** optional per-variant view tracking.
+**Gate:** anon sees no variant price; a product with 3 variants edits/imports/renders correctly; single-variant products unchanged; price gate invariant passes for variants; typecheck+lint+vitest green. **Sequencing:** land before final launch if variants are needed at go-live; otherwise a fast-follow — flagged as a large phase either way.
+
+### Cross-cutting — Autocomplete / auto-suggest (reduce typos everywhere)
+A single reusable **custom Combobox/Autocomplete** component (Base UI/own — NOT a native `<datalist>`), backed by "distinct value" server actions, applied wherever free text invites typos:
+- **Specification keys** (product editor SpecEditor) — suggest keys already used across products ("Wattage", "Cable Length", "Material", "Warranty", "Compatibility"…).
+- **Specification values per key** — suggest existing values for the chosen key ("Wattage" → 18W/20W/33W/65W…).
+- **Variant option names & values** — "Color" → existing colors; "Capacity" → existing capacities.
+- **Tags** (already token-autocomplete — unify on the same component).
+- **Brand** — resolved by the Brand master dropdown (F-A7b).
+- **Customer city** (request-access + admin edit) — suggest Indian cities.
+- **SKU** — auto-suggest a generated SKU from brand + category + name (editable), with uniqueness check.
+- **Storefront search** — product/brand/category suggestions.
+- **Admin global search** (future) — jump to product/customer/order.
+Backed by cached `distinct()` queries (Redis/short revalidate) so it scales; debounced; keyboard-navigable; created-on-the-fly values allowed where sensible (specs) or constrained to the master (brand).
+**Gate:** SpecEditor keys & values autocomplete from real data; no native datalist anywhere; typo-prone fields identified and covered.
+
+### Cross-cutting — Charts & analytics (graphs where they add insight)
+Custom, token-styled, responsive, accessible charts (lean to **hand-built SVG** to match the "custom components" ethos; a small headless lib only if justified — decided at build, no heavyweight dep). Respect reduced-motion; skeleton while loading; empty state when no data.
+- **Admin dashboard:** access requests over time (line/area), approvals vs rejections (stacked bar), customers by status (donut), most-viewed products (horizontal bar), catalog growth, accesses expiring in next 7/30 days (bar), enquiry volume.
+- **Product (admin):** views over time (sparkline/line) — powered by PageView.
+- **Customer profile:** activity timeline / views.
+- **Roles/users:** small stat chips.
+Data via pre-aggregated daily counters (avoid scanning PageView live at scale). 
+**Gate:** dashboard shows real charts from real data; charts responsive + accessible + themed; no layout shift.
+
 ### Phase 9 — Hardening & launch
 **Goal:** production confidence.
 **Build/do:** full E2E regression suite as CI; load sanity (k6: 200 concurrent browsers, grid with 5k products); **final adversarial security review** (fresh panel, whole system: price gate, session fixation, IDOR on admin actions, R2 presign scope, rate-limit bypass, cache poisoning of ISR pages); Sentry + structured logging; security headers (CSP, HSTS) verified; Atlas indexes reviewed against slow-query log; backup/restore drill (Atlas snapshot → staging); deploy pipeline (preview → production, env checklist); DEPLOYMENT.md runbook (Atlas / R2 / Upstash / Turnstile / VAPID setup, domain, Cloudflare in front); UAT script for you (the admin) with real catalog data.
