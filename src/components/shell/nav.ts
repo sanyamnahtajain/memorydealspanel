@@ -44,6 +44,7 @@ export const storefrontNav: readonly NavItem[] = [
 export const adminPrimaryNav: readonly NavItem[] = [
   { label: "Dashboard", href: "/admin", icon: LayoutDashboard, exact: true },
   { label: "Products", href: "/admin/products", icon: Package },
+  { label: "Categories", href: "/admin/categories", icon: LayoutGrid },
   { label: "Requests", href: "/admin/requests", icon: Inbox },
   { label: "Customers", href: "/admin/customers", icon: Users },
 ] as const

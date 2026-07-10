@@ -1,5 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { securityHeaders } from "@/server/security/headers";
+import {
+  buildContentSecurityPolicy,
+  securityHeaders,
+} from "@/server/security/headers";
 // Import ONLY the cookie name from the dependency-free module. Importing it
 // from `@/server/auth/session` would transitively pull Prisma (no Edge wasm
 // engine) and `node:crypto` (unavailable in Edge) into the middleware bundle,
@@ -12,6 +15,11 @@ import { SESSION_COOKIE } from "@/server/auth/cookie";
  * 1. Stamp every response with the app's security headers (CSP, HSTS in prod,
  *    frame/MIME/referrer guards). This is defence-in-depth that complements the
  *    price gate; it is applied uniformly so no route can accidentally opt out.
+ *    A fresh per-request nonce is minted here and woven into `script-src`; it
+ *    is also forwarded to the App Router on the *request* headers so Next
+ *    stamps the same nonce onto its inline bootstrap scripts and the app can
+ *    hydrate. Without the nonce the strict CSP blocks those inline scripts,
+ *    React never hydrates, and every client component (login included) breaks.
  *
  * 2. Coarse admin-area protection: any `/admin/*` request without an
  *    `md_session` cookie is bounced to `/admin/login`. This is a presence check
@@ -38,16 +46,45 @@ function isAdminPublic(pathname: string): boolean {
   );
 }
 
-/** Attach the security headers to an already-created response. */
-function withSecurityHeaders(response: NextResponse): NextResponse {
-  for (const { key, value } of securityHeaders()) {
+/**
+ * The header Next's App Router reads to discover the request nonce. When this
+ * request header carries a CSP containing `'nonce-<v>'`, Next extracts `<v>`
+ * and stamps it onto every inline bootstrap script it renders.
+ */
+const CSP_HEADER = "Content-Security-Policy";
+
+/** Whether the Next dev server is running (relaxes CSP: eval + websockets). */
+const IS_DEV = process.env.NODE_ENV !== "production";
+
+/** Attach the security headers (with this request's nonce) to a response. */
+function withSecurityHeaders(
+  response: NextResponse,
+  nonce: string,
+): NextResponse {
+  for (const { key, value } of securityHeaders(IS_DEV, nonce)) {
     response.headers.set(key, value);
   }
   return response;
 }
 
+/**
+ * A short, unguessable per-request nonce. `crypto.randomUUID` is available in
+ * the Edge runtime and gives ~122 bits of entropy — ample for a CSP nonce.
+ */
+function makeNonce(): string {
+  return crypto.randomUUID().replace(/-/g, "");
+}
+
 export function middleware(request: NextRequest): NextResponse {
   const { pathname } = request.nextUrl;
+  const nonce = makeNonce();
+
+  // Forward the nonce to the App Router on the *request* headers. Next parses
+  // this CSP, lifts out the `'nonce-…'` token, and applies it to the inline
+  // scripts it emits — the piece that lets the document hydrate.
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set(CSP_HEADER, buildContentSecurityPolicy(IS_DEV, nonce));
+  requestHeaders.set("x-nonce", nonce);
 
   const isAdminArea = pathname.startsWith("/admin");
   if (isAdminArea && !isAdminPublic(pathname)) {
@@ -56,11 +93,14 @@ export function middleware(request: NextRequest): NextResponse {
       const loginUrl = new URL("/admin/login", request.url);
       // Preserve where the admin was headed so the login flow could restore it.
       loginUrl.searchParams.set("next", pathname);
-      return withSecurityHeaders(NextResponse.redirect(loginUrl));
+      return withSecurityHeaders(NextResponse.redirect(loginUrl), nonce);
     }
   }
 
-  return withSecurityHeaders(NextResponse.next());
+  return withSecurityHeaders(
+    NextResponse.next({ request: { headers: requestHeaders } }),
+    nonce,
+  );
 }
 
 /**

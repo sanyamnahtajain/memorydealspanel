@@ -62,6 +62,35 @@ describe("buildContentSecurityPolicy", () => {
     expect(value).toContain("ws:");
     expect(value).not.toContain("upgrade-insecure-requests");
   });
+
+  it("embeds the per-request nonce in script-src when supplied", () => {
+    delete process.env.R2_PUBLIC_URL;
+    const value = buildContentSecurityPolicy(false, "abc123");
+    const scriptSrc = value
+      .split(";")
+      .map((s) => s.trim())
+      .find((s) => s.startsWith("script-src"))!;
+    expect(scriptSrc).toContain("'nonce-abc123'");
+    // strict-dynamic lets the nonce'd bootstrap pull the rest of the chunk graph.
+    expect(scriptSrc).toContain("'strict-dynamic'");
+    // The nonce must never leak into other fetch directives.
+    const connectSrc = value
+      .split(";")
+      .map((s) => s.trim())
+      .find((s) => s.startsWith("connect-src"))!;
+    expect(connectSrc).not.toContain("nonce");
+  });
+
+  it("omits nonce/strict-dynamic from script-src when none is supplied", () => {
+    delete process.env.R2_PUBLIC_URL;
+    const value = buildContentSecurityPolicy(false);
+    const scriptSrc = value
+      .split(";")
+      .map((s) => s.trim())
+      .find((s) => s.startsWith("script-src"))!;
+    expect(scriptSrc).not.toContain("nonce");
+    expect(scriptSrc).not.toContain("strict-dynamic");
+  });
 });
 
 describe("securityHeaders", () => {
@@ -80,6 +109,24 @@ describe("securityHeaders", () => {
     expect(keyed["X-Content-Type-Options"]).toBe("nosniff");
     expect(keyed["X-Frame-Options"]).toBe("DENY");
     expect(keyed["Referrer-Policy"]).toBe("strict-origin-when-cross-origin");
+  });
+
+  it("allows same-origin camera but no other powerful features", () => {
+    const keyed = Object.fromEntries(
+      securityHeaders(false).map((h) => [h.key, h.value]),
+    );
+    const perms = keyed["Permissions-Policy"];
+    // Same-origin getUserMedia for the admin image-capture flow.
+    expect(perms).toContain("camera=(self)");
+    // Everything else stays fully disabled.
+    expect(perms).toContain("microphone=()");
+    expect(perms).toContain("geolocation=()");
+    expect(perms).toContain("browsing-topics=()");
+  });
+
+  it("threads a nonce into the CSP header when supplied", () => {
+    const value = csp(securityHeaders(false, "nonceXYZ"));
+    expect(value).toContain("'nonce-nonceXYZ'");
   });
 
   it("emits HSTS only in production", () => {

@@ -40,8 +40,20 @@ function r2ImageOrigin(): string | null {
  * Production stays strict. We intentionally allow `'unsafe-inline'` for
  * styles only (Tailwind/Next inject inline style tags); scripts do NOT get
  * `'unsafe-inline'` in production.
+ *
+ * `nonce` — the App Router injects inline bootstrap scripts on every document
+ * (the `self.__next_r` request-id shim and the RSC flight payload). Under a
+ * strict `script-src` those inline scripts are blocked, hydration never runs,
+ * and every client component (including the login form) silently dies. The
+ * correct fix is a per-request nonce: middleware mints one, threads it through
+ * here, and Next stamps the same nonce onto its inline scripts (it reads it
+ * back off the CSP request header). Callers that emit a static CSP (e.g. a
+ * `next.config` `headers()` block) pass no nonce and get the nonce-free policy.
  */
-export function buildContentSecurityPolicy(isDev: boolean): string {
+export function buildContentSecurityPolicy(
+  isDev: boolean,
+  nonce?: string,
+): string {
   const imgOrigin = r2ImageOrigin();
 
   const imgSrc = ["'self'", "data:", "blob:"];
@@ -50,6 +62,14 @@ export function buildContentSecurityPolicy(isDev: boolean): string {
   const scriptSrc = ["'self'", TURNSTILE_ORIGIN];
   const connectSrc = ["'self'", TURNSTILE_ORIGIN];
   if (imgOrigin) connectSrc.push(imgOrigin);
+
+  if (nonce) {
+    // Allow Next's inline bootstrap scripts, which carry this exact nonce.
+    // `'strict-dynamic'` lets those trusted scripts load the rest of the
+    // chunk graph without having to enumerate every hashed filename, while
+    // still ignoring the host-based allowlist for scripts in modern browsers.
+    scriptSrc.push(`'nonce-${nonce}'`, "'strict-dynamic'");
+  }
 
   if (isDev) {
     // HMR + React Refresh need eval and a live websocket back to the dev server.
@@ -97,21 +117,26 @@ export interface SecurityHeader {
  * @param isDev  When true, relaxes CSP for the Next dev server and omits HSTS
  *               (HSTS on localhost would poison the browser for other local
  *               apps). Defaults to `NODE_ENV !== "production"`.
+ * @param nonce  Per-request nonce to embed in `script-src` so the App Router's
+ *               inline bootstrap scripts execute and the app can hydrate.
+ *               Supplied by the middleware; omit for a static CSP.
  *
- * Usage in `next.config.ts`:
+ * Usage in middleware (per-request nonce):
  * ```ts
- * async headers() {
- *   return [{ source: "/:path*", headers: securityHeaders() }];
+ * const nonce = crypto.randomUUID();
+ * for (const { key, value } of securityHeaders(isDev, nonce)) {
+ *   response.headers.set(key, value);
  * }
  * ```
  */
 export function securityHeaders(
   isDev: boolean = process.env.NODE_ENV !== "production",
+  nonce?: string,
 ): SecurityHeader[] {
   const headers: SecurityHeader[] = [
     {
       key: "Content-Security-Policy",
-      value: buildContentSecurityPolicy(isDev),
+      value: buildContentSecurityPolicy(isDev, nonce),
     },
     // Block MIME-type sniffing.
     { key: "X-Content-Type-Options", value: "nosniff" },
@@ -122,10 +147,12 @@ export function securityHeaders(
       key: "Referrer-Policy",
       value: "strict-origin-when-cross-origin",
     },
-    // Drop powerful features we never use.
+    // Drop powerful features we never use. `camera=(self)` keeps same-origin
+    // getUserMedia available for the admin image-capture flow while still
+    // denying every cross-origin frame; the rest stay fully disabled.
     {
       key: "Permissions-Policy",
-      value: "camera=(), microphone=(), geolocation=(), browsing-topics=()",
+      value: "camera=(self), microphone=(), geolocation=(), browsing-topics=()",
     },
     // Isolate our browsing context group.
     { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
