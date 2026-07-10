@@ -89,8 +89,8 @@ A mobile-accessories wholesaler receives daily price enquiries from many retail 
 
 ### 4.6 Notifications (to Admin)
 - F-A31. In-panel notification center with badge count for new access requests.
-- F-A32. **WhatsApp and/or email alert** to admin on each new access request (configurable).
-- F-A33. Daily digest option instead of per-request pings.
+- F-A32. **Web Push notification** on the admin's phone for each new access request (free, via the PWA — no SMS/WhatsApp service needed), deep-linking to approve/reject.
+- F-A33. Daily digest option (single push summarizing the day) instead of per-request pings.
 
 ### 4.7 Dashboard
 - F-A34. KPIs: total products, active/inactive counts, total customers by status, pending requests, accesses expiring in next 7 days.
@@ -119,16 +119,17 @@ A mobile-accessories wholesaler receives daily price enquiries from many retail 
 - F-C7. Clicking **"See Price"** (logged out) opens a popup form:
   - Business name *(required)*
   - Contact person name *(required)*
-  - Phone number *(required, OTP-verified)*
+  - Phone number *(required — the login ID)*
+  - Password *(required — set once, used to log in after approval)*
   - GST number *(optional)*
   - Email, city *(optional)*
-- F-C8. Phone verified via **SMS/WhatsApp OTP** → prevents junk requests and establishes the login identity.
-- F-C9. On submit: "Request received — you'll be notified once approved." Request appears instantly in admin panel + admin gets WhatsApp/email alert.
-- F-C10. Customer notified on approval/rejection via WhatsApp/SMS (with login link).
+- F-C8. Junk-request protection **without OTP**: invisible captcha (Cloudflare Turnstile, free) on the form + per-IP rate limits + duplicate-phone detection. No SMS/WhatsApp infrastructure required.
+- F-C9. On submit: "Request received — check back soon or log in anytime to see your status." Request appears instantly in the admin panel + admin gets a **push notification** on their phone.
+- F-C10. Approval status is **shown in-app**: the customer logs in with phone + password anytime and sees Pending / Approved (prices unlock immediately) / Rejected. No outbound SMS/WhatsApp/email needed.
 - F-C11. Duplicate-request handling: same phone re-requesting sees current status instead of creating duplicates.
 
 ### 5.3 Approved Customer Experience
-- F-C12. **Login = phone + OTP** (passwordless — simplest for retailers).
+- F-C12. **Login = phone number + password** (set during the access request; admin can reset a customer's password from the panel if they forget it).
 - F-C13. Once logged in and approved (and unexpired): prices visible across all listing and detail pages.
 - F-C14. Expiry banner when access is ending soon ("Your access expires in 3 days — request renewal").
 - F-C15. Expired/rejected users see catalog without prices + a "Request access / renewal" button.
@@ -229,12 +230,12 @@ Prices must be unobtainable without an approved, unexpired session:
 2. **No public price API.** There is no endpoint that returns a price without an authenticated, approved session. API responses for public pages simply omit the price field.
 3. **HttpOnly, Secure, SameSite session cookies** — tokens are not readable by page JavaScript.
 4. **Middleware-enforced checks on every request** (session valid → customer approved → not expired → not blocked), not just at login.
-5. **Rate limiting & bot defense:** per-IP and per-session rate limits on all routes; stricter limits on the OTP and request-access endpoints; Cloudflare (or similar) in front for bot filtering, WAF, and DDoS protection.
+5. **Rate limiting & bot defense:** per-IP and per-session rate limits on all routes; stricter limits on the login and request-access endpoints; Cloudflare (or similar) in front for bot filtering, WAF, and DDoS protection.
 6. **Scraping-behavior detection:** flag sessions that fetch abnormally many product pages per minute; auto-throttle and alert admin (an approved customer's account can also be abused or shared).
 7. **Session controls:** limit concurrent sessions per customer; instant revocation on block/expiry.
 8. **Search-engine hygiene:** prices never appear in any public render, so crawlers/caches can never index them; no price in structured data (schema.org) markup.
 9. **Audit trail:** log which customer viewed which product pages (deters and traces leaks).
-10. **OTP abuse protection:** cooldowns, max attempts, per-number daily caps.
+10. **Signup/login abuse protection:** invisible captcha (Turnstile) on the request form, login attempt limits with lockout/backoff, passwords hashed with bcrypt/argon2.
 11. All traffic HTTPS; security headers (CSP, HSTS); images served via CDN with no pricing metadata.
 
 ---
@@ -246,8 +247,8 @@ Prices must be unobtainable without an approved, unexpired session:
 | **Framework** | **Next.js 15 (App Router) + TypeScript** | First-class SSR (the core security requirement), one codebase for storefront + admin + API, huge ecosystem, easy hiring |
 | **Database** | **MongoDB (Atlas)** | Free M0 tier to start, zero server management, document fit for flexible product specs & embedded images. **Prices stored as integer paise** (₹499.50 → 49950) since the MongoDB connector has no Decimal type — never floats for money |
 | **ORM** | **Prisma 6** (MongoDB connector) | Type-safe schema, enums, and relations; `prisma db push` for schema sync (no SQL migrations needed) |
-| **Auth** | **Auth.js (NextAuth)** — admin: email+password+TOTP; customers: phone OTP | Session cookies (httpOnly), battle-tested |
-| **OTP / SMS / WhatsApp** | **MSG91** or **Twilio**; WhatsApp via **Interakt / AiSensy / WhatsApp Cloud API** | India-friendly delivery and pricing, GST-market fit |
+| **Auth** | **Auth.js (NextAuth)** — admin: email+password+TOTP; customers: phone+password | Session cookies (httpOnly), battle-tested; no SMS/OTP infrastructure or DLT registration needed |
+| **Bot protection** | **Cloudflare Turnstile** (free) on the access-request form | Blocks junk requests without OTP costs |
 | **UI components** | **Tailwind CSS + shadcn/ui** (customized) + **Vaul** (bottom sheets) + **Embla** (swipeable carousels) | Fast to build, fully ownable/customizable base for the signature components |
 | **Animations / motion** | **Motion (Framer Motion)** + **View Transitions API** | Spring physics, gestures (swipe deck, bottom sheets), shared-element page transitions, layout animations |
 | **PWA / offline / push** | **Serwist** (service worker for Next.js) + Web Push API + Background Sync | Installable app, offline edit queue, push notifications for access requests |
@@ -255,7 +256,7 @@ Prices must be unobtainable without an approved, unexpired session:
 | **Spreadsheet grid (bulk edit)** | **Custom "DealSheet" suite** (§5A.4a) built on **TanStack Table + TanStack Virtual** + TanStack Query | Headless primitives give full control over the Excel keyboard model, typed cells, autosave engine, and mobile card mode — one engine reused for products, import preview, customers, and trash |
 | **File/Image storage** | **Cloudflare R2** (S3-compatible) + image resizing (next/image or Cloudflare Images) | Cheap egress, CDN-backed, thumbnails |
 | **CSV/XLSX import-export** | **SheetJS (xlsx)** + **Zod** row validation | Robust parsing + per-cell validation for the foolproof preview screen |
-| **Cache / rate limiting** | **Redis (Upstash)** | Rate limits, OTP counters, session throttling |
+| **Cache / rate limiting** | **Redis (Upstash)** | Rate limits, login-attempt counters, session throttling |
 | **Edge / security** | **Cloudflare** (DNS, WAF, bot management, CDN) | Anti-scraping outer layer |
 | **Hosting** | **Vercel** (simplest) or a VPS (Hetzner/DigitalOcean) with Docker + **Coolify** | Vercel = zero-ops SSR; VPS = lower fixed cost at scale |
 | **Managed DB** | **MongoDB Atlas** — M0 (free) → Flex (~$8+/mo) as data grows | Automated backups (paid tiers), monitoring, one-click scaling, Indian regions (Mumbai) available |
@@ -273,8 +274,9 @@ Product       _id, categoryId, name, slug, sku, brand, description, specs(json),
               price(paise int), mrp?(paise int), moq?, stockStatus, status,
               tags[], images[] (embedded: url, thumbUrl, sortOrder, isPrimary),
               deletedAt?
-Customer      _id, businessName, contactName, phone(unique), email?, gstNumber?,
-              city?, status(pending|approved|rejected|expired|blocked), notes?
+Customer      _id, businessName, contactName, phone(unique), passwordHash,
+              email?, gstNumber?, city?,
+              status(pending|approved|rejected|expired|blocked), notes?
 AccessGrant   _id, customerId, approvedAt, expiresAt?, revokedAt?, grantedBy
 AccessRequest _id, customerId, createdAt, status, decidedAt?, reason?
 Admin         _id, email, passwordHash, totpSecret?, name
@@ -299,7 +301,7 @@ Conventions: product images are **embedded** in the product document (always rea
 ## 10. Release Plan
 
 **Phase 1 — MVP (~5–7 weeks of build)**
-Admin auth + 2FA · categories & products CRUD with photos · **phone camera batch capture (F-A10a)** · **DealSheet core** (virtualized grid, Excel keyboard model, typed cells, copy-paste, validation, autosave — F-G1–F-G8) · **mobile card editor (F-G20/F-U14)** · CSV import with validation preview (**ImportPreviewGrid**, F-G19) · storefront (SSR, no prices public) · **PWA install + push notifications** · **bottom-sheet access request form + OTP** · approve/reject with expiry · price gating with **PriceGate reveal animation** · core motion system (page transitions, skeletons, optimistic UI) · admin notifications (push + in-panel + WhatsApp) · basic dashboard.
+Admin auth + 2FA · categories & products CRUD with photos · **phone camera batch capture (F-A10a)** · **DealSheet core** (virtualized grid, Excel keyboard model, typed cells, copy-paste, validation, autosave — F-G1–F-G8) · **mobile card editor (F-G20/F-U14)** · CSV import with validation preview (**ImportPreviewGrid**, F-G19) · storefront (SSR, no prices public) · **PWA install + push notifications** · **bottom-sheet access request form** (phone + password + Turnstile) · approve/reject with expiry · price gating with **PriceGate reveal animation** · core motion system (page transitions, skeletons, optimistic UI) · admin notifications (push + in-panel) · basic dashboard.
 
 **Phase 2**
 Bulk image upload by SKU · rapid cataloging mode (F-A10b) · **approval swipe deck** · **offline edit queue + background sync** · **DealSheet productivity layer** (undo/redo, fill-down, saved views, group-by-category, search-in-grid, quick row add — F-G9–F-G18) · **CustomerSheet + TrashGrid** (F-G21/F-G22) · sub-categories · customer analytics & most-viewed · watermarked PDF price list · daily digest · scrape-detection auto-throttle · trash/restore UI.
@@ -309,7 +311,7 @@ Per-customer price tiers (different prices for different buyers) · order/enquir
 
 ## 10A. Deployment & Operating Cost
 
-**Free-tier launch path (₹0/month infra):** Vercel Hobby (note: licensed for non-commercial use — fine for building/testing, move to Pro when the business runs on it) · MongoDB Atlas M0 (512 MB ≈ tens of thousands of products) · Cloudflare R2 free tier (10 GB storage, zero egress fees) · Upstash Redis free tier · Web Push (free). Unavoidable spends even on this path: domain (~₹1,000/yr), SMS OTP per message, one-time DLT registration for sending SMS in India (~₹6,000).
+**Free-tier launch path (₹0/month infra):** Vercel Hobby (note: licensed for non-commercial use — fine for building/testing, move to Pro when the business runs on it) · MongoDB Atlas M0 (512 MB ≈ tens of thousands of products) · Cloudflare R2 free tier (10 GB storage, zero egress fees) · Upstash Redis free tier · Web Push notifications (free) · Cloudflare Turnstile (free). No SMS/OTP or WhatsApp API means **no per-message costs and no DLT registration**. The only unavoidable spend: a domain (~₹1,000/yr).
 
 **Monthly cost envelope:**
 
@@ -319,11 +321,8 @@ Per-customer price tiers (different prices for different buyers) · order/enquir
 | MongoDB Atlas (M0 → Flex/M10) | ₹0 | ₹700–2,500 |
 | Images: Cloudflare R2 | ₹0 | ~₹100 |
 | Redis: Upstash | ₹0 | ~₹200 |
-| WhatsApp API platform (Interakt/AiSensy) | ₹0 (defer; use manual WhatsApp) | ₹1,000–2,500 |
-| SMS OTP (MSG91, ~₹0.20/SMS) | ₹100–300 (usage) | ₹300–800 |
-| WhatsApp conversation charges (Meta) | ₹0 | ₹200–500 |
 | Domain (amortized) | ~₹85 | ~₹85 |
-| **Total** | **~₹200–400/mo** | **~₹4,000–8,500/mo** |
+| **Total** | **~₹85/mo (domain only)** | **~₹2,800–4,600/mo** |
 
 Alternative to Vercel Pro at the "comfortable" stage: a Hetzner/DigitalOcean VPS (~₹400–800/mo) with Docker + Coolify — cheaper, needs basic ops comfort.
 

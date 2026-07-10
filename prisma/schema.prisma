@@ -93,6 +93,7 @@ model Customer {
   businessName String
   contactName  String
   phone        String          @unique
+  passwordHash String
   email        String?
   gstNumber    String?
   city         String?
