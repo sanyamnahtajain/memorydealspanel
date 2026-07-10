@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils"
 import { Tooltip } from "@/components/ui/tooltip"
 import { ThemeToggle } from "@/components/theme/ThemeToggle"
 import { TabBadge } from "@/components/shell/TabBadge"
+import { StorefrontFooter } from "@/components/shell/StorefrontFooter"
 import {
   isNavItemActive,
   storefrontNav,
@@ -149,9 +150,14 @@ export function StorefrontShell({ children, badges }: StorefrontShellProps) {
       </header>
 
       {/* ——— Content ——— */}
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:px-6 md:pb-12">
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-8 md:px-6 md:pb-12">
         {children}
       </main>
+
+      {/* ——— Footer (clears the fixed mobile tab bar) ——— */}
+      <div className="pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0">
+        <StorefrontFooter />
+      </div>
 
       {/* ——— Mobile bottom tab bar ——— */}
       <nav
