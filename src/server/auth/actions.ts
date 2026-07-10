@@ -33,6 +33,7 @@ export type AdminLoginResult =
   | { status: "totp_required" }
   | { status: "invalid_credentials" }
   | { status: "invalid_totp" }
+  | { status: "disabled" }
   | { status: "rate_limited" };
 
 export type CustomerLoginResult =
@@ -90,6 +91,20 @@ export async function adminLogin(
     return { status: "invalid_credentials" };
   }
 
+  // Reject deactivated accounts only AFTER the password checks out, so the
+  // "disabled" signal can't be used to enumerate valid emails. Checked before
+  // the TOTP prompt so a disabled admin never advances the login flow.
+  if (!admin.isActive) {
+    await writeAudit({
+      actorType: "admin",
+      actorId: admin.id,
+      action: "admin.login.disabled",
+      entity: "Admin",
+      entityId: admin.id,
+    });
+    return { status: "disabled" };
+  }
+
   if (admin.totpSecret) {
     if (!totp) {
       return { status: "totp_required" };
@@ -101,6 +116,10 @@ export async function adminLogin(
   }
 
   await createSession({ kind: "admin", adminId: admin.id });
+  await prisma.admin.update({
+    where: { id: admin.id },
+    data: { lastLoginAt: new Date() },
+  });
   await writeAudit({
     actorType: "admin",
     actorId: admin.id,

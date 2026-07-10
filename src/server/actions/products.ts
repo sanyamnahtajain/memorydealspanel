@@ -6,6 +6,8 @@ import { z } from "zod";
 import { prisma } from "@/server/db";
 import { resolveViewer } from "@/server/auth/viewer";
 import { assertAdmin, isForbiddenError } from "@/server/dal/guard";
+import { assertPermission } from "@/server/auth/require-permission";
+import { PERMISSIONS } from "@/lib/permissions";
 import { writeAudit } from "@/server/security/audit";
 import {
   toPricedProduct,
@@ -97,6 +99,7 @@ export async function createProductAction(
   return guarded(async () => {
     const viewer = await resolveViewer();
     assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.PRODUCTS_EDIT);
 
     const data = createProductSchema.parse(input);
     const product = await createProduct(data);
@@ -126,6 +129,7 @@ export async function updateProductAction(
   return guarded(async () => {
     const viewer = await resolveViewer();
     assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.PRODUCTS_EDIT);
 
     const productId = objectIdSchema.parse(id);
     const data = updateProductSchema.parse(patch);
@@ -157,6 +161,7 @@ export async function saveProductField(
   return guarded<{ product: PricedProduct }>(async () => {
     const viewer = await resolveViewer();
     assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.PRODUCTS_EDIT);
 
     const productId = objectIdSchema.parse(id);
     const data = updateProductSchema.parse(patch);
@@ -190,6 +195,7 @@ export async function duplicateProductAction(
   return guarded(async () => {
     const viewer = await resolveViewer();
     assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.PRODUCTS_EDIT);
 
     const productId = objectIdSchema.parse(id);
     const product = await duplicateProduct(productId);
@@ -219,6 +225,7 @@ export async function setProductStatusAction(
   return guarded(async () => {
     const viewer = await resolveViewer();
     assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.PRODUCTS_EDIT);
 
     const productId = objectIdSchema.parse(id);
     const nextStatus = entityStatusSchema.parse(status);
@@ -244,6 +251,7 @@ export async function softDeleteProductAction(
   return guarded(async () => {
     const viewer = await resolveViewer();
     assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.PRODUCTS_DELETE);
 
     const productId = objectIdSchema.parse(id);
     const product = await softDeleteProduct(productId);
@@ -268,6 +276,7 @@ export async function restoreProductAction(
   return guarded(async () => {
     const viewer = await resolveViewer();
     assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.PRODUCTS_DELETE);
 
     const productId = objectIdSchema.parse(id);
     const product = await restoreProduct(productId);
@@ -331,6 +340,7 @@ export async function listProductsAction(
   return guarded(async () => {
     const viewer = await resolveViewer();
     assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.PRODUCTS_VIEW);
 
     const params = listProductsInputSchema.parse(input);
 

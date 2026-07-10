@@ -9,6 +9,8 @@ import {
 import { objectIdSchema, entityStatusSchema } from "@/lib/schemas/shared";
 import { resolveViewer } from "@/server/auth/viewer";
 import { isAdmin } from "@/server/types/viewer";
+import { can } from "@/server/auth/require-permission";
+import { PERMISSIONS, type Permission } from "@/lib/permissions";
 import { writeAudit } from "@/server/security/audit";
 import { createUploadTarget, type UploadTarget } from "@/server/storage/r2";
 import {
@@ -39,13 +41,20 @@ export type ActionResult<T = void> = [T] extends [void]
   ? { ok: true } | { ok: false; error: string }
   : { ok: true; data: T } | { ok: false; error: string };
 
-/** Resolves the admin viewer or returns a typed forbidden result. */
-async function requireAdmin(): Promise<
-  { ok: true; adminId: string } | { ok: false; error: string }
-> {
+/**
+ * Resolves the admin viewer and (optionally) requires an RBAC permission,
+ * returning a typed forbidden result rather than throwing. Owner ("*") passes
+ * every permission, so the seeded admin is unaffected.
+ */
+async function requireAdmin(
+  permission?: Permission,
+): Promise<{ ok: true; adminId: string } | { ok: false; error: string }> {
   const viewer = await resolveViewer();
   if (!isAdmin(viewer)) {
     return { ok: false, error: "You must be signed in as an admin." };
+  }
+  if (permission && !(await can(viewer, permission))) {
+    return { ok: false, error: "You are not authorised to do that." };
   }
   return { ok: true, adminId: viewer.adminId };
 }
@@ -67,7 +76,7 @@ function firstIssue(error: z.ZodError): string {
 export async function createCategoryAction(
   input: unknown,
 ): Promise<ActionResult<CategoryRecord>> {
-  const auth = await requireAdmin();
+  const auth = await requireAdmin(PERMISSIONS.CATEGORIES_MANAGE);
   if (!auth.ok) return auth;
 
   const parsed = createCategorySchema.safeParse(input);
@@ -127,7 +136,7 @@ const updateActionSchema = z.object({
 export async function updateCategoryAction(
   input: unknown,
 ): Promise<ActionResult<CategoryRecord>> {
-  const auth = await requireAdmin();
+  const auth = await requireAdmin(PERMISSIONS.CATEGORIES_MANAGE);
   if (!auth.ok) return auth;
 
   const parsed = updateActionSchema.safeParse(input);
@@ -168,7 +177,7 @@ const reorderActionSchema = z.object({
 export async function reorderCategoriesAction(
   input: unknown,
 ): Promise<ActionResult> {
-  const auth = await requireAdmin();
+  const auth = await requireAdmin(PERMISSIONS.CATEGORIES_MANAGE);
   if (!auth.ok) return auth;
 
   const parsed = reorderActionSchema.safeParse(input);
@@ -209,7 +218,7 @@ const statusActionSchema = z.object({
 export async function setCategoryStatusAction(
   input: unknown,
 ): Promise<ActionResult<CategoryRecord>> {
-  const auth = await requireAdmin();
+  const auth = await requireAdmin(PERMISSIONS.CATEGORIES_MANAGE);
   if (!auth.ok) return auth;
 
   const parsed = statusActionSchema.safeParse(input);
@@ -249,7 +258,7 @@ const deleteActionSchema = z.object({ id: objectIdSchema });
 export async function deleteCategoryAction(
   input: unknown,
 ): Promise<ActionResult> {
-  const auth = await requireAdmin();
+  const auth = await requireAdmin(PERMISSIONS.CATEGORIES_MANAGE);
   if (!auth.ok) return auth;
 
   const parsed = deleteActionSchema.safeParse(input);
@@ -302,7 +311,7 @@ const uploadTargetSchema = z.object({
 export async function createCategoryImageUploadTargetAction(
   input: unknown,
 ): Promise<ActionResult<UploadTarget>> {
-  const auth = await requireAdmin();
+  const auth = await requireAdmin(PERMISSIONS.CATEGORIES_MANAGE);
   if (!auth.ok) return auth;
 
   const parsed = uploadTargetSchema.safeParse(input);

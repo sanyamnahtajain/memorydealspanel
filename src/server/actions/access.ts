@@ -6,6 +6,8 @@ import { z } from "zod";
 
 import { resolveViewer } from "@/server/auth/viewer";
 import { assertAdmin, isForbiddenError } from "@/server/dal/guard";
+import { assertPermission } from "@/server/auth/require-permission";
+import { PERMISSIONS } from "@/lib/permissions";
 import { writeAudit } from "@/server/security/audit";
 import {
   approveRequest,
@@ -228,6 +230,7 @@ export async function approveAccessAction(
   return guarded(async () => {
     const viewer = await resolveViewer();
     assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.CUSTOMERS_APPROVE);
 
     const { customerId, expiry } = approveSchema.parse(input);
     await approveRequest(customerId, {
@@ -255,6 +258,7 @@ export async function extendAccessAction(
   return guarded(async () => {
     const viewer = await resolveViewer();
     assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.CUSTOMERS_APPROVE);
 
     const { customerId, expiry } = approveSchema.parse(input);
     const days = resolveDays(expiry);
@@ -288,6 +292,7 @@ export async function rejectAccessAction(
   return guarded(async () => {
     const viewer = await resolveViewer();
     assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.CUSTOMERS_APPROVE);
 
     const { customerId, reason } = rejectSchema.parse(input);
     await rejectRequest(customerId, reason);
@@ -312,6 +317,7 @@ export async function revokeAccessAction(
   return guarded(async () => {
     const viewer = await resolveViewer();
     assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.CUSTOMERS_APPROVE);
 
     const { customerId } = revokeSchema.parse(input);
     await revokeGrant(customerId);
@@ -339,6 +345,7 @@ export async function bulkApproveAccessAction(
   return guarded(async () => {
     const viewer = await resolveViewer();
     assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.CUSTOMERS_APPROVE);
 
     const { customerIds, expiry } = bulkSchema.parse(input);
     const result = await bulkApprove(customerIds, {
@@ -366,6 +373,7 @@ export async function bulkExtendAccessAction(
   return guarded(async () => {
     const viewer = await resolveViewer();
     assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.CUSTOMERS_APPROVE);
 
     const { customerIds, expiry } = bulkSchema.parse(input);
     const days = resolveDays(expiry);
@@ -397,6 +405,7 @@ export async function bulkRevokeAccessAction(
   return guarded(async () => {
     const viewer = await resolveViewer();
     assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.CUSTOMERS_APPROVE);
 
     const { customerIds } = bulkRevokeSchema.parse(input);
     const result = await bulkRevoke(customerIds);

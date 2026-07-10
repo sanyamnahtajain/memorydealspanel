@@ -250,14 +250,82 @@ async function main(): Promise<void> {
     productIds.push(row.id);
   }
 
-  // 3. Admin (upsert by email)
-  await prisma.admin.upsert({
-    where: { email: "admin@memorydeals.test" },
-    create: { email: "admin@memorydeals.test", passwordHash: adminHash, name: "Anchal", totpSecret: null },
-    update: { passwordHash: adminHash, name: "Anchal", totpSecret: null },
+  // 3. Roles (RBAC) — upsert by unique name, then assign the seed admin to Owner.
+  //
+  // Owner holds the "*" wildcard and is a system role (cannot be edited/deleted
+  // from the roles UI). "Catalog Manager" and "Sales" are editable presets that
+  // give new deployments sensible starting points. Permission keys come from the
+  // central catalog in src/lib/permissions.ts.
+  const ownerRole = await prisma.role.upsert({
+    where: { name: "Owner" },
+    create: {
+      name: "Owner",
+      description: "Full access to everything. Cannot be edited or deleted.",
+      permissions: ["*"],
+      isSystem: true,
+    },
+    update: { permissions: ["*"], isSystem: true },
   });
 
-  // 4. Customers (upsert by phone)
+  await prisma.role.upsert({
+    where: { name: "Catalog Manager" },
+    create: {
+      name: "Catalog Manager",
+      description: "Manages the product catalog, categories, brands, and imports/exports.",
+      permissions: [
+        "products.view",
+        "products.edit",
+        "products.delete",
+        "categories.manage",
+        "brands.manage",
+        "import.run",
+        "export.data",
+        "dashboard.view",
+      ],
+      isSystem: false,
+    },
+    update: {},
+  });
+
+  await prisma.role.upsert({
+    where: { name: "Sales" },
+    create: {
+      name: "Sales",
+      description: "Handles customers and access requests; read-only on the catalog.",
+      permissions: [
+        "products.view",
+        "customers.view",
+        "customers.approve",
+        "customers.edit",
+        "customers.block",
+        "dashboard.view",
+      ],
+      isSystem: false,
+    },
+    update: {},
+  });
+
+  // 4. Admin (upsert by email) — assigned to Owner so it keeps full access.
+  await prisma.admin.upsert({
+    where: { email: "admin@memorydeals.test" },
+    create: {
+      email: "admin@memorydeals.test",
+      passwordHash: adminHash,
+      name: "Anchal",
+      totpSecret: null,
+      isActive: true,
+      roleId: ownerRole.id,
+    },
+    update: {
+      passwordHash: adminHash,
+      name: "Anchal",
+      totpSecret: null,
+      isActive: true,
+      roleId: ownerRole.id,
+    },
+  });
+
+  // 5. Customers (upsert by phone)
   const customerIds: string[] = [];
   let grantCount = 0;
   let requestCount = 0;
@@ -335,7 +403,7 @@ async function main(): Promise<void> {
     }
   }
 
-  // 5. PageViews — replaced for seeded products each run.
+  // 6. PageViews — replaced for seeded products each run.
   await prisma.pageView.deleteMany({ where: { productId: { in: productIds } } });
 
   const approvedCustomerIds = customerIds.slice(0, 5); // first 5 seeds are APPROVED
@@ -350,14 +418,15 @@ async function main(): Promise<void> {
   }
   await prisma.pageView.createMany({ data: pageViewData });
 
-  // 6. Summary
-  const [categoryCount, productCount, activeProducts, softDeleted, adminCount, customerCount, pageViewCount] =
+  // 7. Summary
+  const [categoryCount, productCount, activeProducts, softDeleted, adminCount, roleCount, customerCount, pageViewCount] =
     await Promise.all([
       prisma.category.count(),
       prisma.product.count(),
       prisma.product.count({ where: { status: EntityStatus.ACTIVE, deletedAt: null } }),
       prisma.product.count({ where: { deletedAt: { not: null } } }),
       prisma.admin.count(),
+      prisma.role.count(),
       prisma.customer.count(),
       prisma.pageView.count(),
     ]);
@@ -369,6 +438,7 @@ async function main(): Promise<void> {
     { entity: "Products (active, not deleted)", count: activeProducts },
     { entity: "Products (soft-deleted)", count: softDeleted },
     { entity: "Admins", count: adminCount },
+    { entity: "Roles", count: roleCount },
     { entity: "Customers", count: customerCount },
     { entity: "Access requests (seeded)", count: requestCount },
     { entity: "Access grants (seeded)", count: grantCount },

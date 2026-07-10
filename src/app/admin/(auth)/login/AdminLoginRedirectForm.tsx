@@ -25,6 +25,8 @@ async function submit(values: AdminLoginValues): Promise<AdminLoginResult> {
       return { status: "totp_required" };
     case "invalid_totp":
       return { status: "error", message: "Incorrect authentication code." };
+    case "disabled":
+      return { status: "error", message: "This account is disabled." };
     case "rate_limited":
       return {
         status: "error",

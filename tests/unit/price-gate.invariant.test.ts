@@ -28,6 +28,9 @@ import {
 const ADMIN_VIEWER: AdminViewer = {
   kind: "admin",
   adminId: "0000000000000000000000aa",
+  name: "Test Admin",
+  roleId: null,
+  permissions: ["*"],
 };
 
 /** Keys that must never appear anywhere in an anon-facing product payload. */

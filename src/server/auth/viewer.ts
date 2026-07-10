@@ -46,12 +46,26 @@ export async function resolveViewer(): Promise<ViewerContext> {
   if (session.adminId) {
     const admin = await prisma.admin.findUnique({
       where: { id: session.adminId },
-      select: { id: true },
+      select: {
+        id: true,
+        name: true,
+        isActive: true,
+        roleId: true,
+        role: { select: { permissions: true } },
+      },
     });
-    if (!admin) {
+    // A vanished or deactivated admin is treated as unauthenticated so their
+    // live session immediately loses all access.
+    if (!admin || !admin.isActive) {
       return ANON_VIEWER;
     }
-    return { kind: "admin", adminId: admin.id };
+    return {
+      kind: "admin",
+      adminId: admin.id,
+      name: admin.name,
+      roleId: admin.roleId ?? null,
+      permissions: admin.role?.permissions ?? [],
+    };
   }
 
   if (session.customerId) {

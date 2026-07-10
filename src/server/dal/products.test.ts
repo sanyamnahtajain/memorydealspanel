@@ -81,6 +81,9 @@ const DENIED_VIEWERS: ReadonlyArray<[string, CustomerViewer]> = [
 const ADMIN_VIEWER: AdminViewer = {
   kind: "admin",
   adminId: "0000000000000000000000aa",
+  name: "Test Admin",
+  roleId: null,
+  permissions: ["*"],
 };
 
 async function firstActiveSlug(): Promise<string> {

@@ -6,6 +6,8 @@ import { z } from "zod";
 import { prisma } from "@/server/db";
 import { resolveViewer } from "@/server/auth/viewer";
 import { assertAdmin, isForbiddenError } from "@/server/dal/guard";
+import { assertPermission } from "@/server/auth/require-permission";
+import { PERMISSIONS } from "@/lib/permissions";
 import { writeAudit } from "@/server/security/audit";
 import {
   parseWorkbook,
@@ -103,6 +105,7 @@ export async function uploadAndParse(
   return guarded<ParsedUpload>(async () => {
     const viewer = await resolveViewer();
     assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.IMPORT_RUN);
 
     const base64 = z.string().min(1, "No file provided.").parse(fileBase64);
     let bytes: Uint8Array;
@@ -171,6 +174,7 @@ export async function previewImport(
   return guarded(async () => {
     const viewer = await resolveViewer();
     assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.IMPORT_RUN);
 
     const { rows, mapping } = previewInputSchema.parse(input);
     const { existingSkus, categories } = await loadImportContext();
@@ -214,6 +218,7 @@ export async function commitImportAction(
   return guarded(async () => {
     const viewer = await resolveViewer();
     assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.IMPORT_RUN);
 
     const { rows, mapping } = commitInputSchema.parse(input);
     const { existingSkus, categories } = await loadImportContext();
@@ -276,6 +281,7 @@ export async function downloadTemplate(): Promise<ActionResult<TemplateFile>> {
   return guarded(async () => {
     const viewer = await resolveViewer();
     assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.IMPORT_RUN);
 
     const bytes = buildTemplateWorkbook();
     return {

@@ -4,6 +4,8 @@ import { z } from "zod";
 import { prisma } from "@/server/db";
 import { resolveViewer } from "@/server/auth/viewer";
 import { assertAdmin, isForbiddenError } from "@/server/dal/guard";
+import { assertPermission } from "@/server/auth/require-permission";
+import { PERMISSIONS } from "@/lib/permissions";
 import { writeAudit } from "@/server/security/audit";
 import { MAX_IMAGES_PER_PRODUCT } from "@/lib/constants";
 
@@ -112,6 +114,7 @@ export async function matchImagesToSkus(
   try {
     const viewer = await resolveViewer();
     assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.PRODUCTS_EDIT);
     const input = matchInputSchema.parse(files);
 
     // Parse SKUs up front; collect the distinct set for one DB round-trip.

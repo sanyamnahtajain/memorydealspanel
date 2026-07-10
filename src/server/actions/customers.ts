@@ -6,6 +6,8 @@ import { z } from "zod";
 import { prisma } from "@/server/db";
 import { resolveViewer } from "@/server/auth/viewer";
 import { assertAdmin, isForbiddenError } from "@/server/dal/guard";
+import { assertPermission } from "@/server/auth/require-permission";
+import { PERMISSIONS } from "@/lib/permissions";
 import { writeAudit } from "@/server/security/audit";
 import {
   addCustomerManually,
@@ -292,6 +294,7 @@ export async function listCustomersAction(
   return guarded(async () => {
     const viewer = await resolveViewer();
     assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.CUSTOMERS_VIEW);
 
     const params = listSchema.parse(input);
     const take = params.take;
@@ -327,6 +330,7 @@ export async function getCustomerProfileAction(
   return guarded<{ profile: CustomerProfile }>(async () => {
     const viewer = await resolveViewer();
     assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.CUSTOMERS_VIEW);
 
     const customerId = objectIdSchema.parse(id);
     const detail = await getCustomer(customerId);
@@ -348,6 +352,7 @@ export async function updateCustomerAction(
   return guarded<{ customer: CustomerRow }>(async () => {
     const viewer = await resolveViewer();
     assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.CUSTOMERS_EDIT);
 
     const customerId = objectIdSchema.parse(id);
     const data = updateCustomerSchema.parse(patch);
@@ -386,6 +391,7 @@ export async function updateCustomerNotesAction(
   return guarded(async () => {
     const viewer = await resolveViewer();
     assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.CUSTOMERS_EDIT);
 
     const { customerId, notes } = notesSchema.parse(input);
     await updateCustomerNotes(customerId, notes);
@@ -420,6 +426,7 @@ export async function addCustomerManuallyAction(
   return guarded(async () => {
     const viewer = await resolveViewer();
     assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.CUSTOMERS_EDIT);
 
     const data = addCustomerSchema.parse(input);
     const expiresInDays =
@@ -472,6 +479,7 @@ export async function setCustomerStatusAction(
   return guarded<{ customerId: string; status: CustomerStatus }>(async () => {
     const viewer = await resolveViewer();
     assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.CUSTOMERS_BLOCK);
 
     const customerId = objectIdSchema.parse(id);
     const nextStatus = customerStatusSchema.parse(status);
@@ -545,6 +553,7 @@ export async function resetCustomerPasswordAction(
   return guarded(async () => {
     const viewer = await resolveViewer();
     assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.CUSTOMERS_EDIT);
 
     const { customerId, password } = resetPasswordSchema.parse(input);
     await resetCustomerPassword(customerId, password);

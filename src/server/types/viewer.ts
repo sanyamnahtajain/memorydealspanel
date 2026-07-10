@@ -1,3 +1,4 @@
+import { hasPermission, type Permission } from "@/lib/permissions";
 import type { CustomerStatus } from "@/lib/schemas/shared";
 
 /**
@@ -24,6 +25,15 @@ export interface CustomerViewer {
 export interface AdminViewer {
   kind: "admin";
   adminId: string;
+  /** Display name, resolved from the Admin row at session time. */
+  name: string;
+  /** Assigned role id, or null when the admin has no role. */
+  roleId: string | null;
+  /**
+   * Flattened permission keys from the admin's role. The Owner role's `["*"]`
+   * wildcard flows through verbatim and is expanded by `hasPermission`.
+   */
+  permissions: string[];
 }
 
 export type ViewerContext = AnonViewer | CustomerViewer | AdminViewer;
@@ -41,6 +51,17 @@ export function isCustomer(viewer: ViewerContext): viewer is CustomerViewer {
 
 export function isAdmin(viewer: ViewerContext): viewer is AdminViewer {
   return viewer.kind === "admin";
+}
+
+/**
+ * Does this viewer hold `key`? Only admins carry permissions; anon/customer
+ * viewers never do. The Owner wildcard is honoured via `hasPermission`.
+ */
+export function viewerHasPermission(
+  viewer: ViewerContext,
+  key: Permission,
+): boolean {
+  return viewer.kind === "admin" && hasPermission(viewer.permissions, key);
 }
 
 /**

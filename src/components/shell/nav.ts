@@ -7,6 +7,7 @@ import {
   Package,
   Search,
   Settings,
+  ShieldCheck,
   Trash2,
   Upload,
   Users,
@@ -59,6 +60,15 @@ export const adminSecondaryNav: readonly NavItem[] = [
   { label: "Settings", href: "/admin/settings", icon: Settings },
 ] as const
 
+/**
+ * Admin surface — access-control destinations (RBAC). Their own section so
+ * "Users" and "Roles" read as a distinct concern from general System tools.
+ */
+export const adminAccessNav: readonly NavItem[] = [
+  { label: "Users", href: "/admin/users", icon: Users },
+  { label: "Roles", href: "/admin/roles", icon: ShieldCheck },
+] as const
+
 /** Sidebar sections with labels, in render order. */
 export const adminNavSections: readonly {
   label: string
@@ -66,6 +76,7 @@ export const adminNavSections: readonly {
 }[] = [
   { label: "Manage", items: adminPrimaryNav },
   { label: "System", items: adminSecondaryNav },
+  { label: "Access", items: adminAccessNav },
 ] as const
 
 /**
