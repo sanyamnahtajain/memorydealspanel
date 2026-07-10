@@ -6,6 +6,7 @@ import {
   Boxes,
   ClipboardList,
   FolderTree,
+  Inbox,
   UserCheck,
   Users,
 } from "lucide-react";
@@ -15,14 +16,19 @@ import { resolveViewer } from "@/server/auth/viewer";
 import { isAdmin } from "@/server/types/viewer";
 import { AdminShell } from "@/components/shell/AdminShell";
 import { PageHeader } from "@/components/common";
+import { FadeUp } from "@/components/motion/primitives";
+import { PushToggle } from "@/components/admin/PushToggle";
 import {
   ActivityFeed,
   DashboardPanel,
+  ExpiringList,
   MiniList,
   PanelSkeleton,
+  QuickActionCard,
   StatGrid,
   StatGridSkeleton,
   humanizeAudit,
+  type ExpiringGrantItem,
   type StatItem,
 } from "@/components/admin/dashboard";
 
@@ -71,7 +77,30 @@ export default async function AdminDashboardPage() {
         <PageHeader
           title="Dashboard"
           description="Catalog, customers and activity at a glance."
+          actions={<PushToggle />}
         />
+
+        {/* Quick action: pending requests — rendered from the count we already
+            fetched for the nav badge, so it's instant (no extra Suspense). */}
+        <FadeUp>
+          <QuickActionCard
+            label={
+              pendingRequestCount === 1
+                ? "access request"
+                : "access requests"
+            }
+            value={fmt(pendingRequestCount)}
+            caption={
+              pendingRequestCount > 0
+                ? "waiting for your review"
+                : "you're all caught up"
+            }
+            href="/admin/requests"
+            icon={<Inbox aria-hidden />}
+            actionLabel={pendingRequestCount > 0 ? "Review" : "Open"}
+            urgent={pendingRequestCount > 0}
+          />
+        </FadeUp>
 
         <Suspense fallback={<StatGridSkeleton count={6} columns={3} />}>
           <KpiSection />
@@ -79,12 +108,16 @@ export default async function AdminDashboardPage() {
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <Suspense fallback={<PanelSkeleton rows={6} />}>
-            <ActivitySection />
+            <ExpiringSection />
           </Suspense>
           <Suspense fallback={<PanelSkeleton rows={5} />}>
             <MostViewedSection />
           </Suspense>
         </div>
+
+        <Suspense fallback={<PanelSkeleton rows={6} />}>
+          <ActivitySection />
+        </Suspense>
       </div>
     </AdminShell>
   );
@@ -164,6 +197,53 @@ async function KpiSection() {
   ];
 
   return <StatGrid items={items} columns={3} />;
+}
+
+/* ------------------------------------------------------------------ */
+/* Expiring access grants (next 7 days)                                */
+/* ------------------------------------------------------------------ */
+
+async function ExpiringSection() {
+  const now = new Date();
+  const windowEnd = new Date(now.getTime() + EXPIRING_WINDOW_DAYS * DAY_MS);
+
+  // Live grants (not revoked) with an expiry inside the window, soonest first.
+  const grants = await prisma.accessGrant.findMany({
+    where: {
+      revokedAt: null,
+      expiresAt: { gt: now, lte: windowEnd },
+    },
+    orderBy: { expiresAt: "asc" },
+    take: 8,
+    select: {
+      id: true,
+      expiresAt: true,
+      customer: {
+        select: { id: true, businessName: true, contactName: true, city: true },
+      },
+    },
+  });
+
+  const items: ExpiringGrantItem[] = grants.map((grant) => ({
+    id: grant.id,
+    businessName: grant.customer.businessName,
+    subtitle: grant.customer.city
+      ? `${grant.customer.contactName} · ${grant.customer.city}`
+      : grant.customer.contactName,
+    // Filtered on `gt: now`, so expiresAt is always present here.
+    expiresAt: grant.expiresAt!.toISOString(),
+    href: `/admin/customers/${grant.customer.id}`,
+  }));
+
+  return (
+    <DashboardPanel
+      title={`Expiring in ${EXPIRING_WINDOW_DAYS} days`}
+      description="Access grants nearing their expiry date."
+      action={{ label: "All customers", href: "/admin/customers" }}
+    >
+      <ExpiringList items={items} now={now.getTime()} />
+    </DashboardPanel>
+  );
 }
 
 /* ------------------------------------------------------------------ */
