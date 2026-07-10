@@ -1,0 +1,33 @@
+/*
+ * Shared shimmer effect for skeletons and the locked PricePill.
+ * Colors derive from theme tokens only; the sweep highlight is a
+ * translucent mix of the current foreground so it works in both themes.
+ * Reduced motion is handled globally in globals.css (animations are
+ * forced to ~0ms), so no extra media query is needed here.
+ */
+
+@keyframes md-shimmer-sweep {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.md-shimmer {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--muted);
+}
+
+.md-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background-image: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--foreground) 7%, transparent),
+    transparent
+  );
+  animation: md-shimmer-sweep 1.8s var(--ease-out, ease-in-out) infinite;
+}

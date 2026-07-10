@@ -11,7 +11,7 @@
 3. **Server Components by default.** Client components only where interactivity demands it (grid, camera, motion). Keeps bundles small → app-like speed on cheap phones.
 4. **Mobile-first, desktop-enhanced.** Every screen ships at 360 px first. The desktop spreadsheet is the enhancement, not the baseline.
 5. **Scalable by statelessness.** No server memory state: sessions in DB + cookie, rate limits in Redis, images on CDN. Any number of serverless instances can serve traffic; MongoDB indexes cover every hot query.
-6. **Every phase exits through a gate**: typecheck + lint + build + phase acceptance tests green, security invariants pass, UI reviewed against the design system.
+6. **Every phase exits through a gate**: typecheck + lint + phase acceptance tests green, security invariants pass, UI reviewed against the design system. (`npm run build` is deliberately NOT part of phase gates — it runs once at MVP completion and once at final hardening.)
 
 ## 2. System Architecture
 
