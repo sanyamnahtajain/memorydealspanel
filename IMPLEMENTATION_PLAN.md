@@ -289,6 +289,34 @@ Built in Phase 1, consumed by everything after. **No component ships colors/spac
 **Security/scale:** every view mode (grid/list/table) is fed by the same viewer-gated DAL — **no price in any mode for anon/pending/expired**; table/compact views must not leak a price column when locked (render the PriceGate chip in the price cell). Comparison/quick-view/quick-order all respect the gate. View-mode preference is presentation-only (never affects gating).
 **Gate:** switch grid↔list↔table with prices correctly gated in each; preference persists; compare + quick-view + quick-order work; a11y (sortable headers keyboard-operable); responsive; typecheck+lint+vitest + a price-gate test across all view modes.
 
+### Phase 7.7 — Discovery & search (full retailer flexibility)
+**Goal:** let a retailer find anything, any way — by brand, category, price band, spec, use-case, SKU — with fast, scalable, typo-tolerant search. Custom UI per §0. **The price gate governs price-based flows** (see security note).
+
+**Faceted filtering (combinable, with live counts):**
+- **Brand** (multi-select; from the Brand master) · **Category / sub-category** · **Spec facets** dynamically derived from the catalog (Wattage, Capacity, Cable length, Material, Compatibility, Color…) · **Stock** (in-stock only) · **Tags** ("New", "Hot Seller", "Fast charging") · **MOQ band**.
+- **Price band** (approved only): a range slider + preset bands (e.g. ≤₹100, ₹100–500, ₹500–1000, ₹1000+). For anon/pending, the price facet is replaced by a "Log in to filter & sort by price" chip — never a broken/empty control.
+- Filters combine (brand AND category AND spec…), show result + per-facet counts, render as removable **active-filter chips**, and are **URL-encoded** so a filtered view is shareable/bookmarkable and SSR-friendly.
+
+**Search entry points & flows (multiple ways in):**
+- **Global search** with autocomplete (products, brands, categories, SKUs; typo-tolerant, synonyms like charger↔adapter, partial match), recent + saved searches.
+- **Search by SKU** (exact/near — for repeat buyers who know codes) and **scoped search** ("search within this brand/category").
+- **Barcode/QR scan** on mobile (scan a physical product's barcode/label to jump to it) — a natural fit for a wholesaler standing at their stock.
+- **Browse-by-brand** directory (A–Z + logo grid) and **browse-by-category** visual tree.
+- **Curated collections / use-cases** ("Fast chargers", "Travel essentials", "Car accessories", "Under ₹100" [approved]) — admin-curatable, seasonal.
+- **New arrivals**, **trending / most-viewed**, and (approved) **best-margin** sort — a wholesale-buyer-centric lens.
+- **Compatibility finder** ("accessories for iPhone 15", "USB-C cables") via spec/tag facets.
+- Optional guided wizard ("What are you looking for?" → category → brand → specs) for first-timers.
+
+**Results UX:** relevance ranking + highlight matched terms; sort (relevance, newest, name, price low/high [approved], most-viewed); persistent filters; rich **empty state** ("no matches → try these / popular / contact"); pagination or cursor "load more"; the Phase 7.6 **view-mode switcher** (grid/list/table) applies to results too.
+
+**Security (the load-bearing constraint):**
+- **Price-band filter & price sort run SERVER-SIDE and only for approved viewers.** A client-side price filter would require prices in the payload → a leak for anon/pending. So the DAL computes price-filtered/sorted results server-side and the price facet is simply absent (replaced by the login CTA) for non-approved viewers. Every other facet (brand/category/spec/stock) is price-free and available to everyone.
+- Spec facets, counts, and search are computed server-side from gated projections — no price ever enters an anon payload, in results, facets, autocomplete, or URL. Extend the price-gate invariant tests to cover search/facets.
+- Search never surfaces inactive/soft-deleted products or any admin data; rate-limit search + autocomplete.
+
+**Scale:** MongoDB text index + the existing hot-path indexes; facet counts via cached aggregation (short revalidate/Redis); debounced autocomplete over cached distinct values; results paginated; targets 10k+ SKUs smoothly.
+**Gate:** filter by brand/category/spec as anon (no price anywhere); approved viewer can filter & sort by price band (server-side, correct); combined facets + counts + URL sharing work; barcode/SKU/brand/category/collection flows reachable; search is typo-tolerant and paginated; price-gate invariant passes across search/facets; typecheck+lint+vitest green.
+
 ### Phase 8.7 — Audit & session logs (admin observability)
 **Goal:** full accountability — which admin did what, and when/where they were signed in. (`AuditLog` + `writeAudit` already record mutations; this adds capture depth + the viewing UI.)
 - **Capture:** ensure every admin mutation writes an audit entry (actorType, actorId, actorName snapshot, action, entity, entityId, before/after diff, at). Add **IP + userAgent** to `Session` and to admin-login audit; record `lastLoginAt`. Consider a lightweight read-audit for sensitive views (who exported the catalog, who viewed a customer).
