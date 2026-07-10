@@ -211,6 +211,16 @@ Built in Phase 1, consumed by everything after. **No component ships colors/spac
 - Storefront brand filter reads the Brand master; product DTO exposes brand `{id,name,slug}` (public, non-priced).
 **Gate:** no product carries a free-text brand; every brand reference resolves to a master row; product/grid/import/storefront all use the dropdown/master; typecheck+lint+vitest green; a test proving two products with the "same" brand share one Brand id.
 
+### Phase 8.6 — Users, roles & permissions (RBAC) — configurable access rights
+**Goal:** multiple admin/staff users, each with a role; roles carry a configurable permission set; every admin capability is gated by a permission.
+**Data model (done by the driver — schema + migration):** `Role { name unique, description?, permissions String[], isSystem }` (built-in **Owner** = `["*"]`, uneditable); `Admin` gains `roleId`, `isActive`, `lastLoginAt`. Permission catalog in `src/lib/permissions.ts` (grouped keys: products.view/edit/delete, categories.manage, brands.manage, import.run, export.data, customers.view/approve/edit/block, dashboard.view, users.manage, roles.manage, settings.manage). Migration bootstraps Owner + preset roles (Catalog Manager, Sales) and assigns the existing admin to Owner.
+**Build (workflow):**
+- Extend `resolveViewer`/session to load the admin's role + permissions; add `hasPermission(viewer, key)` + `assertPermission`. Enforce on every admin server action and page (replace bare `assertAdmin` with permission checks; Owner passes all). Nav items hide when the viewer lacks the permission.
+- `/admin/users` — user CRUD: list (name, email, role, active, last login), create (email + temp password + role), edit, activate/deactivate, reset password, assign role. Guarded by `users.manage`. Cannot deactivate/delete the last Owner.
+- `/admin/roles` — role CRUD with a **permission matrix** (grouped checkboxes, select-all per group), create/edit/delete (system roles locked). Guarded by `roles.manage`. Show how many users hold each role; block deleting a role in use.
+- Admin login records `lastLoginAt`; blocked/inactive users can't sign in. Seed updated to create roles + assign admin.
+**Gate:** a non-Owner user only sees/does what its role permits (test: a Sales user cannot reach products.edit actions/pages); last-Owner protection holds; typecheck+lint+vitest green.
+
 ### Phase 9 — Hardening & launch
 **Goal:** production confidence.
 **Build/do:** full E2E regression suite as CI; load sanity (k6: 200 concurrent browsers, grid with 5k products); **final adversarial security review** (fresh panel, whole system: price gate, session fixation, IDOR on admin actions, R2 presign scope, rate-limit bypass, cache poisoning of ISR pages); Sentry + structured logging; security headers (CSP, HSTS) verified; Atlas indexes reviewed against slow-query log; backup/restore drill (Atlas snapshot → staging); deploy pipeline (preview → production, env checklist); DEPLOYMENT.md runbook (Atlas / R2 / Upstash / Turnstile / VAPID setup, domain, Cloudflare in front); UAT script for you (the admin) with real catalog data.

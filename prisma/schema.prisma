@@ -136,14 +136,37 @@ model AccessRequest {
   @@index([status, createdAt])
 }
 
+// An admin/staff user. Access is governed by the assigned Role's permissions.
 model Admin {
   id           String    @id @default(auto()) @map("_id") @db.ObjectId
   email        String    @unique
   passwordHash String
   totpSecret   String?
   name         String
+  isActive     Boolean   @default(true)
+  roleId       String?   @db.ObjectId
+  role         Role?     @relation(fields: [roleId], references: [id])
+  lastLoginAt  DateTime?
   createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
   sessions     Session[]
+
+  @@index([roleId])
+}
+
+// A named set of permissions (RBAC). Permission keys are free-form strings from
+// a central catalog (see src/lib/permissions.ts), so access is fully
+// configurable. `isSystem` marks built-in roles (e.g. Owner) that cannot be
+// deleted and always retain full access.
+model Role {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String   @unique
+  description String?
+  permissions String[] @default([])
+  isSystem    Boolean  @default(false)
+  admins      Admin[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model Session {
