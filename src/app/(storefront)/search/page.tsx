@@ -3,16 +3,17 @@ import type { Metadata } from "next";
 import { PAGE_SIZES } from "@/lib/constants";
 import { listActive } from "@/server/dal/categories";
 import { getViewer } from "@/server/auth/viewer";
+import { canSeePrices } from "@/server/types/viewer";
 import { searchCatalog } from "@/server/storefront/catalog";
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
 import { FadeUp } from "@/components/motion/primitives";
 import { EmptyState } from "@/components/common/EmptyState";
 import {
-  ProductCardGrid,
-  type ProductCardItem,
-} from "@/components/storefront/ProductCardGrid";
+  StorefrontListing,
+  buildListingItems,
+  type ListingItem,
+} from "@/components/storefront/listing";
 import { SearchLauncher } from "@/components/storefront/SearchLauncher";
-import { renderPriceSlot } from "@/components/storefront/priceSlot";
 import { loadMoreSearchProducts } from "./actions";
 
 export const metadata: Metadata = {
@@ -24,7 +25,11 @@ export const metadata: Metadata = {
 /**
  * Search results. Reads the current viewer to unlock live pricing for
  * approved customers, so it is dynamic. Gated viewers only ever receive
- * PublicProduct projections; the price slot renders a locked pill.
+ * PublicProduct projections; each listing item renders a locked pill.
+ *
+ * The results surface (view modes, stock filter, sort, load-more) is the
+ * client {@link StorefrontListing}; this page server-loads the first gated
+ * page and binds a load-more server action.
  */
 export const dynamic = "force-dynamic";
 
@@ -47,15 +52,12 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
     ? await searchCatalog(rawQuery)
     : { items: [], query: "", total: 0 };
 
-  const items: ProductCardItem[] = products.map((product) => ({
-    product,
-    priceSlot: renderPriceSlot(product, viewer),
-  }));
+  const items: ListingItem[] = buildListingItems(products, viewer);
 
-  // Bind the query to the load-more action; the client grid passes only the
+  // Bind the query to the load-more action; the client listing passes only the
   // next page number. Price slots stay server-rendered.
   const boundQuery = query;
-  async function loadMore(nextPage: number): Promise<ProductCardItem[]> {
+  async function loadMore(nextPage: number): Promise<ListingItem[]> {
     "use server";
     return loadMoreSearchProducts(boundQuery, nextPage);
   }
@@ -84,15 +86,16 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
       ) : (
         <div>
           <p className="mb-4 text-sm text-muted-foreground">
-            {total.toLocaleString("en-IN")}{" "}
-            {total === 1 ? "result" : "results"} for{" "}
+            Showing results for{" "}
             <span className="font-medium text-foreground">“{query}”</span>
           </p>
-          <ProductCardGrid
+          <StorefrontListing
             initialItems={items}
             loadMore={loadMore}
             pageSize={PAGE_SIZES.storefront}
             initialPage={1}
+            canSeePrices={canSeePrices(viewer)}
+            total={total}
             emptyTitle={`No results for “${query}”`}
             emptyDescription="Try a different keyword, or browse by category."
           />
