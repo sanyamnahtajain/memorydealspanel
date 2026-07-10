@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { PackageIcon, PlusIcon } from "lucide-react";
+import { PackageIcon, PlusIcon, TablePropertiesIcon } from "lucide-react";
 
 import { getViewer } from "@/server/auth/viewer";
 import { isAdmin } from "@/server/types/viewer";
@@ -114,10 +114,19 @@ export default async function AdminProductsPage({
               : "Manage your product catalog."
           }
           actions={
-            <Button render={<Link href="/admin/products/new" />}>
-              <PlusIcon aria-hidden />
-              New product
-            </Button>
+            <>
+              <Button
+                variant="outline"
+                render={<Link href="/admin/products/grid" />}
+              >
+                <TablePropertiesIcon aria-hidden />
+                Bulk edit
+              </Button>
+              <Button render={<Link href="/admin/products/new" />}>
+                <PlusIcon aria-hidden />
+                New product
+              </Button>
+            </>
           }
         />
 
