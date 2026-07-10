@@ -81,16 +81,26 @@ describe("generateCategorySlug", () => {
 
 describe("createCategory", () => {
   it("auto-appends new top-level categories after existing siblings", async () => {
-    const cat = await track(
+    // Deterministic regardless of ambient DB state: create one sibling, then a
+    // second with the default sortOrder — the service must append it strictly
+    // after the first.
+    const first = await track(
       await createCategory({
-        name: `Appended ${Date.now()}`,
+        name: `Appended A ${Date.now()}`,
+        sortOrder: 0,
+        status: "ACTIVE",
+        parentId: null,
+      }),
+    );
+    const second = await track(
+      await createCategory({
+        name: `Appended B ${Date.now()}`,
         sortOrder: 0, // caller left it default -> service should append
         status: "ACTIVE",
         parentId: null,
       }),
     );
-    // Some seeded categories exist, so append should land past 0.
-    expect(cat.sortOrder).toBeGreaterThan(0);
+    expect(second.sortOrder).toBeGreaterThan(first.sortOrder);
   });
 
   it("honors an explicit non-zero sortOrder", async () => {
