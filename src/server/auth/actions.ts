@@ -56,6 +56,22 @@ async function clientIp(): Promise<string> {
   return h.get("x-real-ip") ?? "unknown";
 }
 
+/**
+ * Best-effort request context (IP + User-Agent) captured at login and stored on
+ * the Session row for the admin Sessions viewer. `ip` is passed in to reuse the
+ * value already computed for rate-limiting (avoids a second `headers()` read);
+ * an "unknown" IP is normalized to null so the viewer can show "—".
+ */
+async function sessionContext(
+  ip: string,
+): Promise<{ ipAddress: string | null; userAgent: string | null }> {
+  const h = await headers();
+  return {
+    ipAddress: ip && ip !== "unknown" ? ip : null,
+    userAgent: h.get("user-agent"),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Admin login
 // ---------------------------------------------------------------------------
@@ -115,7 +131,10 @@ export async function adminLogin(
     }
   }
 
-  await createSession({ kind: "admin", adminId: admin.id });
+  await createSession(
+    { kind: "admin", adminId: admin.id },
+    await sessionContext(ip),
+  );
   await prisma.admin.update({
     where: { id: admin.id },
     data: { lastLoginAt: new Date() },
@@ -182,7 +201,10 @@ export async function customerLogin(
     return { status: "blocked" };
   }
 
-  await createSession({ kind: "customer", customerId: customer.id });
+  await createSession(
+    { kind: "customer", customerId: customer.id },
+    await sessionContext(ip),
+  );
   await prisma.customer.update({
     where: { id: customer.id },
     data: { lastLoginAt: new Date() },

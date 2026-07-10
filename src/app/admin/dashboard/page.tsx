@@ -20,6 +20,8 @@ import { FadeUp } from "@/components/motion/primitives";
 import { PushToggle } from "@/components/admin/PushToggle";
 import {
   ActivityFeed,
+  DashboardCharts,
+  DashboardChartsSkeleton,
   DashboardPanel,
   ExpiringList,
   MiniList,
@@ -31,6 +33,7 @@ import {
   type ExpiringGrantItem,
   type StatItem,
 } from "@/components/admin/dashboard";
+import { getDashboardCharts } from "@/server/services/dashboard-metrics";
 
 export const metadata: Metadata = {
   title: "Dashboard — MemoryDeals Admin",
@@ -104,6 +107,10 @@ export default async function AdminDashboardPage() {
 
         <Suspense fallback={<StatGridSkeleton count={6} columns={3} />}>
           <KpiSection />
+        </Suspense>
+
+        <Suspense fallback={<DashboardChartsSkeleton count={6} />}>
+          <ChartsSection />
         </Suspense>
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -197,6 +204,16 @@ async function KpiSection() {
   ];
 
   return <StatGrid items={items} columns={3} />;
+}
+
+/* ------------------------------------------------------------------ */
+/* Insights charts (streamed, admin-guarded aggregations)              */
+/* ------------------------------------------------------------------ */
+
+async function ChartsSection() {
+  // Admin-guarded aggregation loader; every dataset resolves in parallel.
+  const data = await getDashboardCharts();
+  return <DashboardCharts data={data} />;
 }
 
 /* ------------------------------------------------------------------ */

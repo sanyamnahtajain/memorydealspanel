@@ -41,6 +41,21 @@ function isProd(): boolean {
   return process.env.NODE_ENV === "production";
 }
 
+/**
+ * Trim + length-cap an optional request-context string, collapsing empty /
+ * whitespace-only values to null. Keeps stray-long UA/IP headers from bloating
+ * the row without rejecting the login.
+ */
+function normalizeContextValue(
+  value: string | null | undefined,
+  maxLength: number,
+): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed.slice(0, maxLength);
+}
+
 export interface CreateSessionResult {
   /** The raw (unhashed) token — only returned here, never persisted. */
   token: string;
@@ -52,12 +67,29 @@ type SessionSubject =
   | { kind: "customer"; customerId: string };
 
 /**
+ * Optional request-context captured at login so the admin Sessions viewer can
+ * show which device/network a session belongs to. Both fields are best-effort
+ * and may be absent (e.g. programmatic logins, tests); they are never trusted
+ * for authorization — only surfaced for observability.
+ */
+export interface SessionContext {
+  /** Client IP as derived from x-forwarded-for / x-real-ip. */
+  ipAddress?: string | null;
+  /** Raw User-Agent header, parsed into a friendly label at read time. */
+  userAgent?: string | null;
+}
+
+/**
  * Create a session for an admin or customer, persist only its hash, and set
  * the httpOnly cookie. Returns the raw token + expiry (mostly for testing;
  * callers normally just rely on the cookie side effect).
+ *
+ * `context` (ip/userAgent) is optional and additive: existing callers that omit
+ * it keep working, and the columns simply stay null.
  */
 export async function createSession(
   subject: SessionSubject,
+  context?: SessionContext,
 ): Promise<CreateSessionResult> {
   const token = randomBytes(TOKEN_BYTES).toString("hex");
   const tokenHash = hashToken(token);
@@ -70,6 +102,8 @@ export async function createSession(
       expiresAt,
       adminId: subject.kind === "admin" ? subject.adminId : null,
       customerId: subject.kind === "customer" ? subject.customerId : null,
+      ipAddress: normalizeContextValue(context?.ipAddress, 100),
+      userAgent: normalizeContextValue(context?.userAgent, 512),
     },
   });
 

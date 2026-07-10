@@ -1,6 +1,7 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { Shimmer, SkeletonStat } from "@/components/common";
+import { ChartCardSkeleton } from "@/components/charts";
 
 /** Skeleton matching the KPI {@link StatGrid} while counts load. */
 export function StatGridSkeleton({
@@ -58,5 +59,34 @@ export function PanelSkeleton({
         ))}
       </div>
     </section>
+  );
+}
+
+/** Skeleton for the responsive charts grid while metrics load. */
+export function DashboardChartsSkeleton({
+  count = 6,
+  className,
+}: {
+  count?: number;
+  className?: string;
+}) {
+  return (
+    <div
+      aria-hidden
+      className={cn("grid grid-cols-1 gap-4 lg:grid-cols-2", className)}
+    >
+      {Array.from({ length: count }, (_, i) => (
+        <section
+          key={i}
+          className="rounded-xl border border-border bg-card p-4 shadow-sm sm:p-5"
+        >
+          <Shimmer className="h-4 w-40" />
+          <Shimmer className="mt-1.5 h-3 w-28" />
+          <div className="mt-4">
+            <ChartCardSkeleton />
+          </div>
+        </section>
+      ))}
+    </div>
   );
 }
