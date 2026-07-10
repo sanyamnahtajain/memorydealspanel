@@ -11,6 +11,7 @@ import {
 } from "@/components/preferences/prefs-script";
 import { PWARegister } from "@/components/pwa/PWARegister";
 import { InstallPrompt } from "@/components/pwa/InstallPrompt";
+import { siteBaseUrl } from "./seo-site-url";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -24,6 +25,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(siteBaseUrl()),
   title: {
     default: "The Memory Deals — A Hub of Mobile Accessories",
     template: "%s · The Memory Deals",
