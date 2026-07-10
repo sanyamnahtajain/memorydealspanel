@@ -86,6 +86,8 @@ model Product {
 
   @@index([categoryId, status])
   @@index([deletedAt])
+  // Hot storefront listing: filter {status, deletedAt} sorted by createdAt.
+  @@index([status, deletedAt, createdAt])
 }
 
 model Customer {
