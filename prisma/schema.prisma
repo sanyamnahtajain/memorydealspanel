@@ -184,6 +184,20 @@ model Notification {
   @@index([readAt, createdAt])
 }
 
+// Web Push subscriptions (admin devices) — populated when an admin enables
+// push in the PWA; consumed by src/server/notify/push.ts to send alerts.
+model PushSubscription {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  adminId   String?  @db.ObjectId
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([adminId])
+}
+
 model PageView {
   id         String    @id @default(auto()) @map("_id") @db.ObjectId
   customerId String?   @db.ObjectId
