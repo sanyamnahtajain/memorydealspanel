@@ -56,7 +56,9 @@ const ACTOR = "admin" as const;
  * ISO timestamp (the dial's custom value), `expiresAt: null` for a
  * never-expiring grant, or absent ⇒ the default preset (30 days).
  */
-export const expiryInputSchema = z
+// NOTE: not exported — a "use server" file may only export async functions,
+// so runtime values (zod schemas) must stay module-internal.
+const expiryInputSchema = z
   .object({
     /** Convenience preset selector — one of ACCESS_EXPIRY_PRESETS_DAYS. */
     presetDays: z
@@ -71,7 +73,7 @@ export const expiryInputSchema = z
     expiresAt: z.iso.datetime().nullable().optional(),
   })
   .default({});
-export type ExpiryInput = z.infer<typeof expiryInputSchema>;
+type ExpiryInput = z.infer<typeof expiryInputSchema>;
 
 /**
  * Resolve an ExpiryInput to a concrete day count from now (or null = forever).
@@ -215,10 +217,15 @@ export async function requestAccessAction(
 }
 
 /**
- * Alias under the task's requested name for the storefront form import. Phase 7
- * calls `requestAccess({ form, turnstileToken })`.
+ * Storefront-facing name for the request-access action. A "use server" file may
+ * only export async functions (not a `const` alias), so this is a thin async
+ * wrapper rather than `export const requestAccess = requestAccessAction`.
  */
-export const requestAccess = requestAccessAction;
+export async function requestAccess(
+  input: z.input<typeof requestAccessSchema>,
+): Promise<RequestAccessResult> {
+  return requestAccessAction(input);
+}
 
 /* ------------------------------------------------------------------ */
 /* single-customer transitions                                         */

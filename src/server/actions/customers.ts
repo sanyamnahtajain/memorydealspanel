@@ -174,7 +174,7 @@ function toProfile(detail: CustomerDetail): CustomerProfile {
 /* ------------------------------------------------------------------ */
 
 /** Grid/profile field patch. Phone is read-only (unique login identity). */
-export const updateCustomerSchema = z
+const updateCustomerSchema = z
   .object({
     businessName: z.string().trim().min(2).max(120).optional(),
     contactName: z.string().trim().min(2).max(80).optional(),
@@ -210,7 +210,7 @@ const notesSchema = z.object({
  * chooses the grant validity: a preset (7/30/90) or an explicit day count, or
  * `null` for a never-expiring grant. Absent ⇒ the default preset (30 days).
  */
-export const addCustomerSchema = z.object({
+const addCustomerSchema = z.object({
   businessName: z.string().trim().min(2, "Business name is too short").max(120),
   contactName: z.string().trim().min(2, "Contact name is too short").max(80),
   phone: indianPhoneSchema,
