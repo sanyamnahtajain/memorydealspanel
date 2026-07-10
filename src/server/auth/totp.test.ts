@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { generate } from "otplib";
+import { APP_NAME } from "@/lib/constants";
 import {
   generateTotpSecret,
   totpAuthUri,
@@ -18,7 +19,7 @@ describe("totp", () => {
     const secret = generateTotpSecret();
     const uri = totpAuthUri(secret, "admin@memorydeals.test");
     expect(uri.startsWith("otpauth://totp/")).toBe(true);
-    expect(uri).toContain("issuer=MemoryDeals");
+    expect(uri).toContain(`issuer=${encodeURIComponent(APP_NAME)}`);
     expect(uri).toContain(encodeURIComponent("admin@memorydeals.test"));
     expect(uri).toContain(`secret=${secret}`);
   });

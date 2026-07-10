@@ -8,6 +8,7 @@ import { StorefrontShell } from "@/components/shell/StorefrontShell";
 import { FadeUp } from "@/components/motion/primitives";
 import { AccountStatus } from "@/components/storefront/AccountStatus";
 import { ExpiryBanner } from "@/components/storefront/ExpiryBanner";
+import { PreferencesPanel } from "@/components/preferences/PreferencesPanel";
 import { AccountLogoutButton } from "./AccountLogoutButton";
 import { AccountRenewalButton } from "./AccountRenewalButton";
 
@@ -113,6 +114,26 @@ export default async function AccountPage() {
             <div className="flex justify-end border-t border-border pt-4">
               <AccountLogoutButton />
             </div>
+          </div>
+        </FadeUp>
+
+        {/* Appearance & preferences — theme, density, default view, motion.
+            Applies instantly and is remembered on this device. */}
+        <FadeUp delay={0.1}>
+          <div className="space-y-4 rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-sm ring-1 ring-foreground/5 sm:p-7">
+            <div className="space-y-1">
+              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Preferences
+              </p>
+              <h2 className="font-heading text-lg font-semibold tracking-tight">
+                Appearance
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Personalise how the catalogue looks and feels. Saved on this
+                device.
+              </p>
+            </div>
+            <PreferencesPanel />
           </div>
         </FadeUp>
       </div>

@@ -23,6 +23,7 @@ import {
   expiryValueToInput,
   type ExpiryValue,
 } from "@/components/admin/ExpiryDial";
+import { EntityAuditList } from "@/components/admin/audit/EntityAuditList";
 import {
   updateCustomerAction,
   updateCustomerNotesAction,
@@ -330,6 +331,12 @@ export function CustomerProfileDrawer({
             ) : (
               <p className="text-xs text-muted-foreground">Loading history…</p>
             )}
+          </section>
+
+          {/* Recent changes — audit-log timeline for this customer. */}
+          <section className="space-y-2">
+            <h3 className="text-sm font-semibold">Recent changes</h3>
+            <EntityAuditList entity="Customer" entityId={c.id} />
           </section>
         </div>
       </SheetContent>

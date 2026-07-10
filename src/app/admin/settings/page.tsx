@@ -11,9 +11,9 @@ import { prisma } from "@/server/db";
 import { requireAdminPage } from "@/server/auth/require-admin-page";
 import { AdminShell } from "@/components/shell/AdminShell";
 import { PageHeader } from "@/components/common";
-import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { SignOutButton } from "@/components/admin/SignOutButton";
 import { ExportMenu } from "@/components/admin/ExportMenu";
+import { PreferencesPanel } from "@/components/preferences/PreferencesPanel";
 
 export const metadata: Metadata = {
   title: "Settings — MemoryDeals Admin",
@@ -45,6 +45,16 @@ export default async function AdminSettingsPage() {
           description="Your business profile, appearance, catalog exports, and account."
         />
 
+        {/* Appearance & preferences — theme, density, default view, page size,
+            and reduce-motion. Applies instantly and persists per browser. */}
+        <SettingsSection
+          icon={Palette}
+          title="Appearance & preferences"
+          description="Theme, layout density, default view, and motion — applied instantly and remembered on this device."
+        >
+          <PreferencesPanel />
+        </SettingsSection>
+
         <div className="grid gap-6 lg:grid-cols-2">
           {/* Business profile — read-only for now. */}
           <SettingsSection
@@ -66,15 +76,6 @@ export default async function AdminSettingsPage() {
                 }
               />
             </dl>
-          </SettingsSection>
-
-          {/* Appearance — mounts the theme toggle. */}
-          <SettingsSection
-            icon={Palette}
-            title="Appearance"
-            description="Switch between dark, light, and system themes."
-          >
-            <ThemeToggle />
           </SettingsSection>
 
           {/* Data — catalog export. */}

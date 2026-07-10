@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 
 import { PERMISSIONS } from "@/lib/permissions";
 import { requirePermissionPage } from "@/server/auth/permissions";
@@ -7,6 +8,10 @@ import { listRoles } from "@/server/services/roles";
 import { AdminShell } from "@/components/shell/AdminShell";
 import { PageHeader } from "@/components/common";
 import { UserTable } from "@/components/admin/users/UserTable";
+import {
+  RecentActivityPanel,
+  RecentActivityPanelSkeleton,
+} from "@/components/admin/audit/RecentActivityPanel";
 
 export const metadata: Metadata = {
   title: "Users — MemoryDeals Admin",
@@ -74,6 +79,14 @@ export default async function AdminUsersPage() {
           } · ${activeCount} active. Assign roles to control what each can do.`}
         />
         <UserTable rows={rows} roleOptions={roleOptions} />
+
+        {/* Recent user & role activity — audited under the Admin entity.
+            Subtle, admin-only, streams in behind a skeleton. */}
+        <div className="max-w-md">
+          <Suspense fallback={<RecentActivityPanelSkeleton />}>
+            <RecentActivityPanel entity="Admin" title="Recent user activity" />
+          </Suspense>
+        </div>
       </div>
     </AdminShell>
   );

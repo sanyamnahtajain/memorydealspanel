@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
+import { Suspense } from "react";
 
 import { prisma } from "@/server/db";
 import { getViewer } from "@/server/auth/viewer";
@@ -13,6 +14,10 @@ import {
   ProductEditorForm,
   type EditorProduct,
 } from "@/components/admin/products/ProductEditorForm";
+import {
+  AuditLogPreview,
+  AuditLogPreviewSkeleton,
+} from "@/components/admin/audit/AuditLogPreview";
 
 export const metadata: Metadata = {
   title: "Edit product — MemoryDeals Admin",
@@ -105,6 +110,12 @@ export default async function EditProductPage({
             parentId: c.parentId,
           }))}
         />
+
+        {/* Change history for this product. Self-loads (admin-only) and streams
+            in behind a skeleton so it never blocks the editor. */}
+        <Suspense fallback={<AuditLogPreviewSkeleton />}>
+          <AuditLogPreview entity="Product" entityId={priced.id} />
+        </Suspense>
       </div>
     </AdminShell>
   );

@@ -1,8 +1,14 @@
 import type { Metadata, Viewport } from "next";
+import { cookies } from "next/headers";
 import { Geist, Geist_Mono } from "next/font/google";
 import { AppToaster } from "@/components/common";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { themeScript } from "@/components/theme/theme-script";
+import { PreferencesProvider } from "@/components/preferences/PreferencesProvider";
+import {
+  DENSITY_COOKIE,
+  prefsScript,
+} from "@/components/preferences/prefs-script";
 import { PWARegister } from "@/components/pwa/PWARegister";
 import { InstallPrompt } from "@/components/pwa/InstallPrompt";
 import "./globals.css";
@@ -52,30 +58,44 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Resolve density from its cookie so SSR emits the matching `data-density`
+  // attribute and there is no layout shift before the client hydrates. The
+  // render-blocking prefs script still corrects it from localStorage first.
+  const cookieStore = await cookies();
+  const densityCookie = cookieStore.get(DENSITY_COOKIE)?.value;
+  const initialDensity =
+    densityCookie === "compact" ? "compact" : "comfortable";
+
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
       data-scroll-behavior="smooth"
+      data-density={initialDensity}
       suppressHydrationWarning
     >
       <head>
         {/* Render-blocking theme bootstrap — sets the `dark` class before the
             first paint to prevent a flash of the wrong theme (FOUC). */}
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        {/* Render-blocking UI-preferences bootstrap — sets `data-density`
+            (and `data-reduce-motion`) before the first paint. */}
+        <script dangerouslySetInnerHTML={{ __html: prefsScript }} />
       </head>
       <body className="min-h-full flex flex-col">
         <ThemeProvider>
-          {children}
-          {/* PWA_REGISTER_SLOT */}
-          <PWARegister />
-          <InstallPrompt />
-          <AppToaster />
+          <PreferencesProvider initialDensity={initialDensity}>
+            {children}
+            {/* PWA_REGISTER_SLOT */}
+            <PWARegister />
+            <InstallPrompt />
+            <AppToaster />
+          </PreferencesProvider>
         </ThemeProvider>
       </body>
     </html>
