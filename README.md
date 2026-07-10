@@ -6,9 +6,9 @@ Gated B2B price catalog for mobile-accessories wholesale. Anyone can browse the 
 
 ## Stack
 
-- **Next.js 15** (App Router, SSR) + TypeScript + Tailwind CSS
+- **Next.js** (App Router, SSR) + TypeScript + Tailwind CSS
 - **shadcn/ui** + Motion (Framer Motion) + Vaul + Embla — app-like UI & animations
-- **PostgreSQL** + Prisma
+- **MongoDB (Atlas)** + Prisma 6 — prices stored as integer paise
 - **TanStack Query** + Zod
 
 ## Getting started
@@ -18,8 +18,8 @@ Requires **Node.js 20+** (`nvm use` picks it up from `.nvmrc`).
 ```bash
 nvm use
 npm install
-cp .env.example .env        # fill in DATABASE_URL etc.
-npx prisma migrate dev      # create DB schema
+cp .env.example .env        # set DATABASE_URL to your Atlas connection string
+npx prisma db push          # sync schema to MongoDB
 npm run dev
 ```
 

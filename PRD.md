@@ -244,8 +244,8 @@ Prices must be unobtainable without an approved, unexpired session:
 | Layer | Choice | Why |
 |---|---|---|
 | **Framework** | **Next.js 15 (App Router) + TypeScript** | First-class SSR (the core security requirement), one codebase for storefront + admin + API, huge ecosystem, easy hiring |
-| **Database** | **PostgreSQL** | Relational fit (categories → products → prices → customers → access grants), rock-solid |
-| **ORM** | **Prisma** (or Drizzle) | Type-safe schema & migrations |
+| **Database** | **MongoDB (Atlas)** | Free M0 tier to start, zero server management, document fit for flexible product specs & embedded images. **Prices stored as integer paise** (₹499.50 → 49950) since the MongoDB connector has no Decimal type — never floats for money |
+| **ORM** | **Prisma 6** (MongoDB connector) | Type-safe schema, enums, and relations; `prisma db push` for schema sync (no SQL migrations needed) |
 | **Auth** | **Auth.js (NextAuth)** — admin: email+password+TOTP; customers: phone OTP | Session cookies (httpOnly), battle-tested |
 | **OTP / SMS / WhatsApp** | **MSG91** or **Twilio**; WhatsApp via **Interakt / AiSensy / WhatsApp Cloud API** | India-friendly delivery and pricing, GST-market fit |
 | **UI components** | **Tailwind CSS + shadcn/ui** (customized) + **Vaul** (bottom sheets) + **Embla** (swipeable carousels) | Fast to build, fully ownable/customizable base for the signature components |
@@ -258,34 +258,39 @@ Prices must be unobtainable without an approved, unexpired session:
 | **Cache / rate limiting** | **Redis (Upstash)** | Rate limits, OTP counters, session throttling |
 | **Edge / security** | **Cloudflare** (DNS, WAF, bot management, CDN) | Anti-scraping outer layer |
 | **Hosting** | **Vercel** (simplest) or a VPS (Hetzner/DigitalOcean) with Docker + **Coolify** | Vercel = zero-ops SSR; VPS = lower fixed cost at scale |
-| **Managed DB** | **Neon** or **Supabase** Postgres | Backups, branching, zero admin |
+| **Managed DB** | **MongoDB Atlas** — M0 (free) → Flex (~$8+/mo) as data grows | Automated backups (paid tiers), monitoring, one-click scaling, Indian regions (Mumbai) available |
 | **Monitoring** | Sentry + Vercel/Axiom logs | Error and abuse visibility |
 
 **Why not plain React SPA?** A SPA fetches prices via client-visible APIs — far easier to scrape and directly against the stated requirement. SSR with server-gated data is the correct architecture here.
 
 **Why not WordPress/WooCommerce?** The gated-pricing + expiring-access + Airtable-style bulk editing combo would be a pile of fragile plugins; custom Next.js keeps the security surface small and the UX exactly as specified.
 
-## 8. Data Model (core entities)
+## 8. Data Model (MongoDB collections, managed via Prisma)
 
 ```
-Category      id, name, slug, image, sortOrder, status, parentId?
-Product       id, categoryId, name, sku, brand, description, specs(jsonb),
-              price, mrp?, moq?, stockStatus, status, tags[], deletedAt?
-ProductImage  id, productId, url, thumbUrl, sortOrder, isPrimary
-Customer      id, businessName, contactName, phone(unique), email?, gstNumber?,
+Category      _id, name, slug, image, sortOrder, status, parentId?
+Product       _id, categoryId, name, slug, sku, brand, description, specs(json),
+              price(paise int), mrp?(paise int), moq?, stockStatus, status,
+              tags[], images[] (embedded: url, thumbUrl, sortOrder, isPrimary),
+              deletedAt?
+Customer      _id, businessName, contactName, phone(unique), email?, gstNumber?,
               city?, status(pending|approved|rejected|expired|blocked), notes?
-AccessGrant   id, customerId, approvedAt, expiresAt?, revokedAt?, grantedBy
-AccessRequest id, customerId, createdAt, status, decidedAt?, reason?
-Session       id, customerId/adminId, tokenHash, createdAt, lastSeenAt, revokedAt?
-AuditLog      id, actorType, actorId, action, entity, entityId, diff(jsonb), at
-Notification  id, type, payload(jsonb), readAt?
-PageView      id, customerId?, productId, at   (for analytics & scrape detection)
+AccessGrant   _id, customerId, approvedAt, expiresAt?, revokedAt?, grantedBy
+AccessRequest _id, customerId, createdAt, status, decidedAt?, reason?
+Admin         _id, email, passwordHash, totpSecret?, name
+Session       _id, customerId?/adminId?, tokenHash, createdAt, lastSeenAt,
+              expiresAt, revokedAt?
+AuditLog      _id, actorType, actorId, action, entity, entityId, diff(json), at
+Notification  _id, type, payload(json), readAt?
+PageView      _id, customerId?, productId, at   (for analytics & scrape detection)
 ```
+
+Conventions: product images are **embedded** in the product document (always read/written together); money fields are **integer paise**, formatted to ₹ only at the UI layer; cross-collection consistency (e.g. category must exist) is enforced in the service layer via Zod + Prisma relations.
 
 ## 9. Non-Functional Requirements
 
 - **Performance:** storefront pages < 2s on 4G; grid handles 5,000+ products smoothly (virtualized rows).
-- **Scale target v1:** ~500–5,000 SKUs, ~1,000 customers, ~50 concurrent users — modest; single Postgres + SSR handles this easily.
+- **Scale target v1:** ~500–5,000 SKUs, ~1,000 customers, ~50 concurrent users — modest; MongoDB Atlas free tier + SSR handles this easily.
 - **Availability:** 99.5%+; daily automated DB backups with tested restore.
 - **Localization-ready:** ₹ INR formatting, IST timestamps, GST field validation (15-char format check when provided).
 - **Accessibility & devices:** both surfaces fully usable on low-end Android phones (app-like PWA experience per §5A); desktop admin additionally gets the full spreadsheet grid. All animations respect `prefers-reduced-motion`.
@@ -301,6 +306,26 @@ Bulk image upload by SKU · rapid cataloging mode (F-A10b) · **approval swipe d
 
 **Phase 3 (ideas)**
 Per-customer price tiers (different prices for different buyers) · order/enquiry cart · staff sub-admin roles · customer-facing stock alerts · WhatsApp catalog sync.
+
+## 10A. Deployment & Operating Cost
+
+**Free-tier launch path (₹0/month infra):** Vercel Hobby (note: licensed for non-commercial use — fine for building/testing, move to Pro when the business runs on it) · MongoDB Atlas M0 (512 MB ≈ tens of thousands of products) · Cloudflare R2 free tier (10 GB storage, zero egress fees) · Upstash Redis free tier · Web Push (free). Unavoidable spends even on this path: domain (~₹1,000/yr), SMS OTP per message, one-time DLT registration for sending SMS in India (~₹6,000).
+
+**Monthly cost envelope:**
+
+| Item | Minimal (launch) | Comfortable (growing) |
+|---|---|---|
+| Hosting (Vercel Hobby → Pro) | ₹0 | ~₹1,700 ($20) |
+| MongoDB Atlas (M0 → Flex/M10) | ₹0 | ₹700–2,500 |
+| Images: Cloudflare R2 | ₹0 | ~₹100 |
+| Redis: Upstash | ₹0 | ~₹200 |
+| WhatsApp API platform (Interakt/AiSensy) | ₹0 (defer; use manual WhatsApp) | ₹1,000–2,500 |
+| SMS OTP (MSG91, ~₹0.20/SMS) | ₹100–300 (usage) | ₹300–800 |
+| WhatsApp conversation charges (Meta) | ₹0 | ₹200–500 |
+| Domain (amortized) | ~₹85 | ~₹85 |
+| **Total** | **~₹200–400/mo** | **~₹4,000–8,500/mo** |
+
+Alternative to Vercel Pro at the "comfortable" stage: a Hetzner/DigitalOcean VPS (~₹400–800/mo) with Docker + Coolify — cheaper, needs basic ops comfort.
 
 ## 11. Success Metrics
 

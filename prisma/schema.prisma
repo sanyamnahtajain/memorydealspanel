@@ -1,9 +1,13 @@
+// Prices (price, mrp) are stored as integer paise (₹499.50 → 49950)
+// because Prisma's MongoDB connector has no Decimal type and floats
+// are unsafe for money. Format at the UI layer only.
+
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mongodb"
   url      = env("DATABASE_URL")
 }
 
@@ -33,14 +37,14 @@ enum RequestStatus {
 }
 
 model Category {
-  id        String       @id @default(cuid())
+  id        String       @id @default(auto()) @map("_id") @db.ObjectId
   name      String
   slug      String       @unique
   image     String?
   sortOrder Int          @default(0)
   status    EntityStatus @default(ACTIVE)
-  parentId  String?
-  parent    Category?    @relation("SubCategories", fields: [parentId], references: [id])
+  parentId  String?      @db.ObjectId
+  parent    Category?    @relation("SubCategories", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   children  Category[]   @relation("SubCategories")
   products  Product[]
   createdAt DateTime     @default(now())
@@ -49,9 +53,18 @@ model Category {
   @@index([status, sortOrder])
 }
 
+// Images are embedded in the product document (Mongo-idiomatic:
+// they are always loaded and saved together with the product).
+type ProductImage {
+  url       String
+  thumbUrl  String?
+  sortOrder Int     @default(0)
+  isPrimary Boolean @default(false)
+}
+
 model Product {
-  id          String         @id @default(cuid())
-  categoryId  String
+  id          String         @id @default(auto()) @map("_id") @db.ObjectId
+  categoryId  String         @db.ObjectId
   category    Category       @relation(fields: [categoryId], references: [id])
   name        String
   slug        String         @unique
@@ -59,8 +72,8 @@ model Product {
   brand       String?
   description String?
   specs       Json?
-  price       Decimal        @db.Decimal(10, 2)
-  mrp         Decimal?       @db.Decimal(10, 2)
+  price       Int // paise
+  mrp         Int? // paise
   moq         Int?
   stockStatus StockStatus    @default(IN_STOCK)
   status      EntityStatus   @default(ACTIVE)
@@ -75,20 +88,8 @@ model Product {
   @@index([deletedAt])
 }
 
-model ProductImage {
-  id        String  @id @default(cuid())
-  productId String
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-  url       String
-  thumbUrl  String?
-  sortOrder Int     @default(0)
-  isPrimary Boolean @default(false)
-
-  @@index([productId])
-}
-
 model Customer {
-  id           String          @id @default(cuid())
+  id           String          @id @default(auto()) @map("_id") @db.ObjectId
   businessName String
   contactName  String
   phone        String          @unique
@@ -109,8 +110,8 @@ model Customer {
 }
 
 model AccessGrant {
-  id         String    @id @default(cuid())
-  customerId String
+  id         String    @id @default(auto()) @map("_id") @db.ObjectId
+  customerId String    @db.ObjectId
   customer   Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
   approvedAt DateTime  @default(now())
   expiresAt  DateTime?
@@ -121,8 +122,8 @@ model AccessGrant {
 }
 
 model AccessRequest {
-  id         String        @id @default(cuid())
-  customerId String
+  id         String        @id @default(auto()) @map("_id") @db.ObjectId
+  customerId String        @db.ObjectId
   customer   Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
   status     RequestStatus @default(PENDING)
   reason     String?
@@ -133,7 +134,7 @@ model AccessRequest {
 }
 
 model Admin {
-  id           String    @id @default(cuid())
+  id           String    @id @default(auto()) @map("_id") @db.ObjectId
   email        String    @unique
   passwordHash String
   totpSecret   String?
@@ -143,11 +144,11 @@ model Admin {
 }
 
 model Session {
-  id         String    @id @default(cuid())
+  id         String    @id @default(auto()) @map("_id") @db.ObjectId
   tokenHash  String    @unique
-  customerId String?
+  customerId String?   @db.ObjectId
   customer   Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  adminId    String?
+  adminId    String?   @db.ObjectId
   admin      Admin?    @relation(fields: [adminId], references: [id], onDelete: Cascade)
   createdAt  DateTime  @default(now())
   lastSeenAt DateTime  @default(now())
@@ -159,7 +160,7 @@ model Session {
 }
 
 model AuditLog {
-  id        String   @id @default(cuid())
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
   actorType String
   actorId   String
   action    String
@@ -173,7 +174,7 @@ model AuditLog {
 }
 
 model Notification {
-  id        String    @id @default(cuid())
+  id        String    @id @default(auto()) @map("_id") @db.ObjectId
   type      String
   payload   Json
   readAt    DateTime?
@@ -183,10 +184,10 @@ model Notification {
 }
 
 model PageView {
-  id         String    @id @default(cuid())
-  customerId String?
+  id         String    @id @default(auto()) @map("_id") @db.ObjectId
+  customerId String?   @db.ObjectId
   customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  productId  String
+  productId  String    @db.ObjectId
   product    Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
   createdAt  DateTime  @default(now())
 
