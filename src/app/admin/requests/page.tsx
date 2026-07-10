@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
 
 import type { Prisma } from "@prisma/client";
 
@@ -9,6 +10,10 @@ import { isAdmin } from "@/server/types/viewer";
 import { PAGE_SIZES } from "@/lib/constants";
 import { AdminShell } from "@/components/shell/AdminShell";
 import { PageHeader } from "@/components/common";
+import {
+  RecentActivityPanel,
+  RecentActivityPanelSkeleton,
+} from "@/components/admin/audit/RecentActivityPanel";
 import {
   RequestsTabs,
   type DecidedRequest,
@@ -159,6 +164,17 @@ export default async function AdminRequestsPage({
           decidedPageSize={DECIDED_PAGE_SIZE}
           decidedPageParam={DECIDED_PAGE_PARAM}
         />
+
+        {/* Recent access decisions & grants — audited under the Customer
+            entity. Subtle, admin-only, streams in behind a skeleton. */}
+        <div className="max-w-md">
+          <Suspense fallback={<RecentActivityPanelSkeleton />}>
+            <RecentActivityPanel
+              entity="Customer"
+              title="Recent access activity"
+            />
+          </Suspense>
+        </div>
       </div>
     </AdminShell>
   );

@@ -1,11 +1,16 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
 
 import { getViewer } from "@/server/auth/viewer";
 import { isAdmin } from "@/server/types/viewer";
 import { PAGE_SIZES } from "@/lib/constants";
 import { AdminShell } from "@/components/shell/AdminShell";
 import { PageHeader } from "@/components/common";
+import {
+  RecentActivityPanel,
+  RecentActivityPanelSkeleton,
+} from "@/components/admin/audit/RecentActivityPanel";
 import {
   listCustomers,
   countCustomers,
@@ -115,6 +120,13 @@ export default async function AdminCustomersPage({
           total={filteredTotal}
           pageSize={CUSTOMERS_PAGE_SIZE}
         />
+
+        {/* Module-level recent activity — subtle, admin-only, streams in. */}
+        <div className="max-w-md">
+          <Suspense fallback={<RecentActivityPanelSkeleton />}>
+            <RecentActivityPanel entity="Customer" />
+          </Suspense>
+        </div>
       </div>
     </AdminShell>
   );

@@ -14,6 +14,11 @@ const SNAPPY_SPRING: Transition = {
   mass: 0.7,
 }
 
+/** No-op subscription — the client snapshot never changes after hydration. */
+function subscribeNoop(): () => void {
+  return () => {}
+}
+
 const OPTIONS: ReadonlyArray<{
   value: Theme
   label: string
@@ -47,9 +52,14 @@ export function ThemeToggle({ variant = "full", className }: ThemeToggleProps) {
 
   // The stored theme is only known on the client (localStorage). Until mounted,
   // render the same "nothing selected" markup the server produced so hydration
-  // matches; the active pill then animates in on the client.
-  const [mounted, setMounted] = React.useState(false)
-  React.useEffect(() => setMounted(true), [])
+  // matches; the active pill then animates in on the client. Resolved via
+  // useSyncExternalStore so the server renders the neutral (false) branch and
+  // the client corrects on hydration — no setState-in-effect.
+  const mounted = React.useSyncExternalStore(
+    subscribeNoop,
+    () => true,
+    () => false,
+  )
 
   const groupId = React.useId()
 

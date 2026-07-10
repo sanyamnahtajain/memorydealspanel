@@ -1,11 +1,16 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
 
 import { prisma } from "@/server/db";
 import { getViewer } from "@/server/auth/viewer";
 import { isAdmin } from "@/server/types/viewer";
 import { AdminShell } from "@/components/shell/AdminShell";
 import { PageHeader } from "@/components/common";
+import {
+  RecentActivityPanel,
+  RecentActivityPanelSkeleton,
+} from "@/components/admin/audit/RecentActivityPanel";
 import {
   CategoryManager,
   type CategoryNode,
@@ -101,6 +106,13 @@ export default async function AdminCategoriesPage() {
           description="Organize your catalog. Drag to reorder, rename inline, and hide categories from the storefront without deleting them."
         />
         <CategoryManager initialCategories={tree} />
+
+        {/* Module-level recent activity — subtle, admin-only, streams in. */}
+        <div className="max-w-md">
+          <Suspense fallback={<RecentActivityPanelSkeleton />}>
+            <RecentActivityPanel entity="Category" />
+          </Suspense>
+        </div>
       </div>
     </AdminShell>
   );

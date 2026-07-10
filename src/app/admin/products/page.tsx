@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
 import { PackageIcon, PlusIcon, TablePropertiesIcon } from "lucide-react";
 
 import { getViewer } from "@/server/auth/viewer";
@@ -27,6 +28,10 @@ import {
 } from "@/components/ui/table";
 import { ProductFilters } from "@/components/admin/products/ProductFilters";
 import { ProductRowActions } from "@/components/admin/products/ProductRowActions";
+import {
+  RecentActivityPanel,
+  RecentActivityPanelSkeleton,
+} from "@/components/admin/audit/RecentActivityPanel";
 import type { StockStatus } from "@/lib/schemas/shared";
 
 export const metadata: Metadata = {
@@ -253,6 +258,15 @@ export default async function AdminProductsPage({
               total={total}
               pageSize={listPageSize}
             />
+          </div>
+        )}
+
+        {/* Module-level recent activity — subtle, admin-only, streams in. */}
+        {!hadError && (
+          <div className="max-w-md">
+            <Suspense fallback={<RecentActivityPanelSkeleton />}>
+              <RecentActivityPanel entity="Product" />
+            </Suspense>
           </div>
         )}
       </div>
