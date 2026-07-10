@@ -69,7 +69,10 @@ model Product {
   name        String
   slug        String         @unique
   sku         String         @unique
+  // Legacy free-text brand, retained during the Brand-master migration.
   brand       String?
+  brandId     String?        @db.ObjectId
+  brandRef    Brand?         @relation(fields: [brandId], references: [id])
   description String?
   specs       Json?
   price       Int // paise
@@ -80,12 +83,14 @@ model Product {
   tags        String[]       @default([])
   images      ProductImage[]
   pageViews   PageView[]
+  wishlistedBy WishlistItem[]
   deletedAt   DateTime?
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
   @@index([categoryId, status])
   @@index([deletedAt])
+  @@index([brandId])
   // Hot storefront listing: filter {status, deletedAt} sorted by createdAt.
   @@index([status, deletedAt, createdAt])
 }
@@ -105,6 +110,7 @@ model Customer {
   requests     AccessRequest[]
   sessions     Session[]
   pageViews    PageView[]
+  wishlist     WishlistItem[]
   lastLoginAt  DateTime?
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
@@ -176,6 +182,8 @@ model Session {
   customer   Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
   adminId    String?   @db.ObjectId
   admin      Admin?    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  ipAddress  String?
+  userAgent  String?
   createdAt  DateTime  @default(now())
   lastSeenAt DateTime  @default(now())
   expiresAt  DateTime
@@ -232,5 +240,33 @@ model PageView {
   createdAt  DateTime  @default(now())
 
   @@index([productId, createdAt])
+  @@index([customerId, createdAt])
+}
+
+model Brand {
+  id        String       @id @default(auto()) @map("_id") @db.ObjectId
+  name      String       @unique
+  slug      String       @unique
+  logo      String?
+  status    EntityStatus @default(ACTIVE)
+  sortOrder Int          @default(0)
+  products  Product[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@index([status, sortOrder])
+}
+
+model WishlistItem {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  customerId String   @db.ObjectId
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  productId  String   @db.ObjectId
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variantId  String?
+  note       String?
+  createdAt  DateTime @default(now())
+
+  @@unique([customerId, productId])
   @@index([customerId, createdAt])
 }

@@ -1,13 +1,16 @@
 import {
   CircleUserRound,
+  History,
   House,
   Inbox,
   LayoutDashboard,
   LayoutGrid,
+  MonitorSmartphone,
   Package,
   Search,
   Settings,
   ShieldCheck,
+  Tag,
   Trash2,
   Upload,
   Users,
@@ -46,6 +49,7 @@ export const adminPrimaryNav: readonly NavItem[] = [
   { label: "Dashboard", href: "/admin", icon: LayoutDashboard, exact: true },
   { label: "Products", href: "/admin/products", icon: Package },
   { label: "Categories", href: "/admin/categories", icon: LayoutGrid },
+  { label: "Brands", href: "/admin/brands", icon: Tag },
   { label: "Requests", href: "/admin/requests", icon: Inbox },
   { label: "Customers", href: "/admin/customers", icon: Users },
 ] as const
@@ -56,6 +60,8 @@ export const adminPrimaryNav: readonly NavItem[] = [
  */
 export const adminSecondaryNav: readonly NavItem[] = [
   { label: "Import", href: "/admin/import", icon: Upload },
+  { label: "Audit log", href: "/admin/audit", icon: History },
+  { label: "Sessions", href: "/admin/sessions", icon: MonitorSmartphone },
   { label: "Trash", href: "/admin/trash", icon: Trash2 },
   { label: "Settings", href: "/admin/settings", icon: Settings },
 ] as const
