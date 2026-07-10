@@ -164,6 +164,7 @@ Both the admin panel and the storefront must feel like a **native app on the pho
   - **Skeleton screens** everywhere data loads — never a blank page or spinner-only state.
   - Smooth scrolling with momentum; scroll-linked effects kept subtle (sticky category header that condenses on scroll).
 - F-U11. Delightful micro-interactions: animated success checkmarks, confetti-free but satisfying "request sent" state, animated notification badge, tactile button press states.
+- F-U21. **Light / Dark / System theme**: a custom, animated theme toggle (segmented control with icons — never a native select). Storefront defaults to light and follows the OS on first visit; admin defaults to dark. Choice is persisted, applied before first paint (no flash), driven entirely by the semantic design tokens, and both modes meet WCAG AA contrast. `theme-color` meta + PWA manifest colors follow the active theme.
 
 ### 5A.4 Crazy custom components (signature UX pieces)
 - F-U12. **PriceGate card** (storefront): the price area on every card is a shimmering locked chip — tapping it flips the card to the request form (or unblurs to the price when approved). This is the product's signature interaction.
