@@ -247,6 +247,48 @@ Built in Phase 1, consumed by everything after. **No component ships colors/spac
 
 **Workflow shape:** parallel page-builders (worktree isolation) → integrate → design-review at 360/768/1280 ∥ **security re-attack (price extraction incl. ISR cache)** ∥ perf (Lighthouse ≥90/≥95). No dev-server verify (static + component tests).
 
+### Phase 7.6 — Retailer usability & view modes (part of the storefront)
+**Goal:** let a wholesale buyer work the catalog *their* way — scan fast, compare, and build orders efficiently. All custom-built, per §0.
+
+**View modes (headline — a persistent switcher on every product listing):**
+- **Grid** (default) — image-forward cards for visual browsing.
+- **Compact list** — dense rows: thumbnail + name + brand + key spec + price (gated) + MOQ + stock; many per screen for fast scanning.
+- **Table** — spreadsheet-style columns (name, SKU, brand, key specs, MRP, wholesale price when approved, margin %, MOQ, stock), **sortable column headers**, sticky header, horizontal scroll on mobile — for buyers who compare quickly and know what they want.
+- **Detailed list** (optional) — medium density: larger thumbnail + 2–3 specs + price + quick-add.
+- The chosen mode + density **persists per user** (localStorage/cookie); a custom segmented toggle with icons (never a native select); respects reduced-motion when switching.
+
+**Compare:** select 2–4 products → a side-by-side comparison table (specs, price, MRP, margin, MOQ, stock) in a sheet/page; add the winner to the enquiry list.
+
+**Quick actions (from any list, without opening detail):**
+- **Quick-view** — peek at a product in a bottom sheet/dialog (gallery, specs, price gate, add-to-enquiry).
+- **Inline add-to-enquiry** with a **quantity stepper** (respecting MOQ) right on the card/row.
+- **Favorite/heart** toggle inline.
+
+**Search, filter & sort (usable, persistent):**
+- Faceted filters (category, brand, price band [approved], stock, spec facets e.g. wattage/capacity) in a bottom sheet on mobile / sidebar on desktop; **active-filter chips** with one-tap clear; result count.
+- Sort: newest, name A–Z, price low→high / high→low (approved only), most-viewed. 
+- **Saved filter presets** ("65W GaN chargers, in stock") and **recent searches**; autocomplete suggestions (cross-cutting Autocomplete).
+- "In stock only" quick toggle; all lists paginated / cursor "load more" (scalable).
+
+**Pro / repeat-buyer efficiency:**
+- **Quick order pad** — type SKU + qty in a fast grid to build an enquiry without browsing (for retailers restocking known items).
+- **Bulk add to enquiry** — multi-select in list/table → add all.
+- **Multiple enquiry lists** ("Monthly restock", "Diwali order"), rename/duplicate; enquiry history → **re-add / reorder**.
+- **Recently viewed** rail; **favorites** page.
+- **Price-list PDF/CSV download** (approved; watermarked) and **print-friendly** catalog/price list.
+- **Margin calculator** on priced views (MRP vs wholesale → margin %/₹) so the buyer sees profit at a glance.
+
+**Readability & awareness:**
+- Text-density/font-size control; tabular numerals for all prices/qty; sticky table headers.
+- Stock badges (In/Low/Out), "New" badge, optional "price dropped" indicator; MOQ shown clearly.
+- Expiry banner + renewal; notifications (access approved, price list updated).
+- Breadcrumbs, category quick-jump, back-to-top, scroll restoration; optional keyboard shortcuts for power users.
+
+**Mobile-first specifics:** sticky "add to enquiry" bar, swipe between product images, thumb-zone actions, bottom-sheet filters/quick-view.
+
+**Security/scale:** every view mode (grid/list/table) is fed by the same viewer-gated DAL — **no price in any mode for anon/pending/expired**; table/compact views must not leak a price column when locked (render the PriceGate chip in the price cell). Comparison/quick-view/quick-order all respect the gate. View-mode preference is presentation-only (never affects gating).
+**Gate:** switch grid↔list↔table with prices correctly gated in each; preference persists; compare + quick-view + quick-order work; a11y (sortable headers keyboard-operable); responsive; typecheck+lint+vitest + a price-gate test across all view modes.
+
 ### Phase 8.7 — Audit & session logs (admin observability)
 **Goal:** full accountability — which admin did what, and when/where they were signed in. (`AuditLog` + `writeAudit` already record mutations; this adds capture depth + the viewing UI.)
 - **Capture:** ensure every admin mutation writes an audit entry (actorType, actorId, actorName snapshot, action, entity, entityId, before/after diff, at). Add **IP + userAgent** to `Session` and to admin-login audit; record `lastLoginAt`. Consider a lightweight read-audit for sensitive views (who exported the catalog, who viewed a customer).
