@@ -18,10 +18,14 @@ Requires **Node.js 20+** (`nvm use` picks it up from `.nvmrc`).
 ```bash
 nvm use
 npm install
-cp .env.example .env        # set DATABASE_URL to your Atlas connection string
-npx prisma db push          # sync schema to MongoDB
+cp .env.example .env            # local DATABASE_URL is pre-filled
+./scripts/local-mongo.sh start  # project-local MongoDB replica set (port 27018, data in .localdb/)
+npx prisma db push              # sync schema
+npm run seed                    # demo data (admin@memorydeals.test / admin1234)
 npm run dev
 ```
+
+The local database is completely separate from any system MongoDB — stop it with `./scripts/local-mongo.sh stop`. For production, point `DATABASE_URL` at MongoDB Atlas instead.
 
 Open [http://localhost:3000](http://localhost:3000).
 
