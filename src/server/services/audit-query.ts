@@ -132,6 +132,66 @@ export async function getRecentAuditForEntity(
   return toPreviewEntries(rows, names);
 }
 
+/** A page of audit rows for the full viewer at /admin/audit. */
+export interface AuditPage {
+  entries: AuditPreviewEntry[];
+  total: number;
+  page: number;
+  pageCount: number;
+  pageSize: number;
+}
+
+/**
+ * Paginated audit log for the full viewer (`/admin/audit`). Admin-only.
+ * Optionally filtered by entity and/or a specific entityId (used by the
+ * "View all" links on the contextual previews).
+ */
+export async function listAudit(options: {
+  entity?: string;
+  entityId?: string;
+  page?: number;
+  pageSize?: number;
+}): Promise<AuditPage> {
+  const viewer = await resolveViewer();
+  assertAdmin(viewer);
+
+  const pageSize = Math.min(Math.max(options.pageSize ?? 25, 1), 100);
+  const page = Math.max(options.page ?? 1, 1);
+
+  const where: { entity?: string; entityId?: string } = {};
+  if (options.entity) where.entity = options.entity;
+  if (options.entityId) where.entityId = options.entityId;
+
+  const [total, rows] = await Promise.all([
+    prisma.auditLog.count({ where }),
+    prisma.auditLog.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      select: {
+        id: true,
+        actorType: true,
+        actorId: true,
+        action: true,
+        entity: true,
+        entityId: true,
+        diff: true,
+        createdAt: true,
+      },
+    }) as Promise<AuditRow[]>,
+  ]);
+
+  const names = await resolveActorNames(rows);
+  return {
+    entries: toPreviewEntries(rows, names),
+    total,
+    page,
+    pageCount: Math.max(1, Math.ceil(total / pageSize)),
+    pageSize,
+  };
+}
+
 /**
  * Recent audit entries across a whole entity type (module-level "recent
  * activity", e.g. the latest changes to any Product), newest first. Admin-only.

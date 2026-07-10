@@ -234,7 +234,7 @@ interface RequestAccessFormProps {
   onClose: () => void;
 }
 
-function RequestAccessForm({ onClose }: RequestAccessFormProps) {
+export function RequestAccessForm({ onClose }: RequestAccessFormProps) {
   const [values, setValues] = React.useState<FormValues>(EMPTY_FORM);
   const [errors, setErrors] = React.useState<FieldErrors>({});
   const [token, setToken] = React.useState("");
