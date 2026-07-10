@@ -36,6 +36,7 @@ import {
   type SpecRow,
 } from "./SpecEditor";
 import { TagEditor } from "./TagEditor";
+import { ProductImagesField } from "./ProductImagesField";
 
 /** Minimal category shape the editor needs for its select. */
 export interface EditorCategory {
@@ -67,18 +68,6 @@ export interface ProductEditorFormProps {
   categories: EditorCategory[];
   /** Present when editing; omit for a create form. */
   product?: EditorProduct;
-  /**
-   * Optional slot for the image manager / camera trigger. Those components live
-   * in '@/components/admin/images' and '@/components/admin/camera', which may
-   * not exist yet. The parent page mounts them here when available and passes
-   * `images` + `onImagesChange` through so this form stays their single source
-   * of truth. See integrator notes.
-   */
-  imagesSlot?: (args: {
-    images: ProductImageInput[];
-    onImagesChange: (images: ProductImageInput[]) => void;
-    disabled: boolean;
-  }) => React.ReactNode;
 }
 
 const STOCK_OPTIONS: { value: StockStatus; label: string }[] = [
@@ -152,7 +141,6 @@ function deriveMarginPct(price: number | null, mrp: number | null): number | nul
 export function ProductEditorForm({
   categories,
   product,
-  imagesSlot,
 }: ProductEditorFormProps) {
   const router = useRouter();
   const isEdit = Boolean(product);
@@ -442,12 +430,13 @@ export function ProductEditorForm({
           title="Photos"
           description="Up to 8 images. The first is the primary."
         >
-          {imagesSlot ? (
-            imagesSlot({
-              images: state.images,
-              onImagesChange: (images) => set("images", images),
-              disabled: pending,
-            })
+          {product?.id ? (
+            <ProductImagesField
+              productId={product.id}
+              images={state.images}
+              onImagesChange={(images) => set("images", images)}
+              disabled={pending}
+            />
           ) : (
             <div className="rounded-lg border border-dashed border-border bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
               <p className="font-medium text-foreground">

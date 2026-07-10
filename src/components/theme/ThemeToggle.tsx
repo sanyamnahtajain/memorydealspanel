@@ -45,6 +45,12 @@ export function ThemeToggle({ variant = "full", className }: ThemeToggleProps) {
   const spring: Transition = reducedMotion ? { duration: 0 } : SNAPPY_SPRING
   const compact = variant === "compact"
 
+  // The stored theme is only known on the client (localStorage). Until mounted,
+  // render the same "nothing selected" markup the server produced so hydration
+  // matches; the active pill then animates in on the client.
+  const [mounted, setMounted] = React.useState(false)
+  React.useEffect(() => setMounted(true), [])
+
   const groupId = React.useId()
 
   return (
@@ -58,7 +64,7 @@ export function ThemeToggle({ variant = "full", className }: ThemeToggleProps) {
     >
       {OPTIONS.map((option) => {
         const Icon = option.icon
-        const selected = theme === option.value
+        const selected = mounted && theme === option.value
         return (
           <button
             key={option.value}

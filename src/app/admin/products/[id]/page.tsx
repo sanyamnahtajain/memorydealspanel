@@ -13,7 +13,6 @@ import {
   ProductEditorForm,
   type EditorProduct,
 } from "@/components/admin/products/ProductEditorForm";
-import { ProductImagesField } from "@/components/admin/products/ProductImagesField";
 
 export const metadata: Metadata = {
   title: "Edit product — MemoryDeals Admin",
@@ -105,14 +104,6 @@ export default async function EditProductPage({
             name: c.name,
             parentId: c.parentId,
           }))}
-          imagesSlot={({ images, onImagesChange, disabled }) => (
-            <ProductImagesField
-              productId={product.id}
-              images={images}
-              onImagesChange={onImagesChange}
-              disabled={disabled}
-            />
-          )}
         />
       </div>
     </AdminShell>
