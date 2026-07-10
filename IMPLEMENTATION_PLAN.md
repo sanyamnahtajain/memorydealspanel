@@ -200,6 +200,17 @@ Built in Phase 1, consumed by everything after. **No component ships colors/spac
 **Workflow shape:** SW/offline agent ∥ motion-polish agents per surface → **device-matrix verify** (Playwright: iOS Safari, Android Chrome profiles × offline/online × install mode) → 60 fps trace audit on key interactions.
 **Gate:** installable on both platforms; airplane-mode admin edit syncs on reconnect; zero motion jank in traces.
 
+### Phase 8.5 — Brand master (data model + CRUD + dropdown) — PRD F-A7a–F-A7d
+**Goal:** Brand becomes a first-class master entity so products reference it, not a free-text string (kills typo duplicates).
+**Data model (done by the driver, not a workflow — it is a schema change):** new `Brand { id, name(unique, case-insensitive), slug, logo?, status, sortOrder, timestamps }`; `Product.brand: String?` → `brandId: String? @db.ObjectId` + relation + `@@index([brandId])`. **Migration script** (idempotent): read all distinct existing `Product.brand` strings, upsert a Brand per normalized name, set each product's `brandId`, drop the old string. Update the seed to create brands and link products.
+**Build (workflow, after 8B):**
+- Brand service + admin actions (create/update/setStatus/delete, guarded + audited), mirroring categories.
+- `/admin/brands` master CRUD page + BrandManager (reuse category manager patterns; custom dialogs, tooltips, states per §0). Nav entry under "Manage".
+- Product editor + DealSheet grid `brand` cell → custom **Select** from active brands, with inline "＋ Add brand" (creates in the master immediately). No free-text.
+- Bulk import: map brand column to Brand by case-insensitive name; unmatched surfaced in the ImportPreviewGrid, auto-created on commit (F-A7c).
+- Storefront brand filter reads the Brand master; product DTO exposes brand `{id,name,slug}` (public, non-priced).
+**Gate:** no product carries a free-text brand; every brand reference resolves to a master row; product/grid/import/storefront all use the dropdown/master; typecheck+lint+vitest green; a test proving two products with the "same" brand share one Brand id.
+
 ### Phase 9 — Hardening & launch
 **Goal:** production confidence.
 **Build/do:** full E2E regression suite as CI; load sanity (k6: 200 concurrent browsers, grid with 5k products); **final adversarial security review** (fresh panel, whole system: price gate, session fixation, IDOR on admin actions, R2 presign scope, rate-limit bypass, cache poisoning of ISR pages); Sentry + structured logging; security headers (CSP, HSTS) verified; Atlas indexes reviewed against slow-query log; backup/restore drill (Atlas snapshot → staging); deploy pipeline (preview → production, env checklist); DEPLOYMENT.md runbook (Atlas / R2 / Upstash / Turnstile / VAPID setup, domain, Cloudflare in front); UAT script for you (the admin) with real catalog data.

@@ -44,10 +44,16 @@ A mobile-accessories wholesaler receives daily price enquiries from many retail 
 - F-A6. **Mark category Inactive** → hides the category and all its products from the storefront instantly (soft hide, no data loss).
 - F-A7. Optional sub-categories (one level deep, e.g. Chargers → 20W / 45W / Car Chargers).
 
+### 4.2b Brand Master
+- F-A7a. **Brands are a master entity** (like categories) with their own CRUD — create / edit / mark Active-Inactive / delete. Fields: name (unique — case-insensitively deduped), slug (auto), optional logo, status, sort order.
+- F-A7b. **No free-text brand on products** — the product editor and bulk-edit grid pick the brand from a **dropdown of the brand master**, so a brand is spelled exactly one way everywhere (no "Ubon / ubon / UBON" duplicates). An inline "＋ Add brand" affordance in the dropdown lets the admin create a new brand without leaving the form; it's added to the master immediately.
+- F-A7c. On **bulk import**, a brand column value is matched to an existing brand by name (case-insensitive); unmatched brands are surfaced in the preview and can be auto-created on commit (never silently mistyped into a new brand).
+- F-A7d. Storefront brand filters read from the brand master (reliable, no orphan strings).
+
 ### 4.3 Product Master
 - F-A8. Create / edit products under a category.
 - F-A9. Product fields:
-  - Name, SKU/product code, category (+ sub-category), brand
+  - Name, SKU/product code, category (+ sub-category), **brand (selected from the Brand master — F-A7b)**
   - Description, specifications (key–value pairs, e.g. Wattage: 20W, Cable Length: 1m)
   - **Wholesale price**, MRP (optional), MOQ (minimum order quantity, optional)
   - Stock status (In Stock / Low / Out of Stock — status only, not full inventory)
