@@ -20,6 +20,7 @@ import { SignOutButton } from "@/components/admin/SignOutButton"
 import { THEME_STORAGE_KEY } from "@/components/theme/theme-script"
 import { useTheme } from "@/components/theme/ThemeProvider"
 import { TabBadge } from "@/components/shell/TabBadge"
+import { Logo } from "@/components/brand/Logo"
 import {
   adminNavSections,
   adminPrimaryNav,
@@ -119,15 +120,13 @@ export function AdminShell({
         >
           <Link
             href="/admin"
-            aria-label="MemoryDeals admin home"
+            aria-label="The Memory Deals admin home"
             className="flex min-h-11 items-center gap-2 rounded-lg outline-none focus-visible:ring-3 focus-visible:ring-sidebar-ring/50 active:scale-[0.97]"
           >
-            <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-xs font-bold text-sidebar-primary-foreground">
-              M
-            </span>
+            <Logo size={28} chip />
             {!collapsed && (
               <span className="truncate font-heading text-sm font-bold tracking-tight">
-                MemoryDeals
+                The Memory Deals
                 <span className="ml-1.5 font-normal text-sidebar-foreground/60">
                   Admin
                 </span>

@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { Mail, MessageCircle, Phone } from "lucide-react";
+import { Mail, MapPin, MessageCircle, Phone } from "lucide-react";
 
 import { APP_NAME, APP_TAGLINE, CONTACT } from "@/lib/constants";
+import { Logo } from "@/components/brand/Logo";
 
 const COLUMNS: { title: string; links: { label: string; href: string }[] }[] = [
   {
@@ -42,10 +43,8 @@ export function StorefrontFooter() {
         <div className="grid gap-8 md:grid-cols-[1.5fr_repeat(3,1fr)]">
           {/* Brand + contact */}
           <div>
-            <p className="font-heading text-lg font-semibold text-foreground">
-              {APP_NAME}
-            </p>
-            <p className="mt-2 max-w-xs text-sm text-muted-foreground">
+            <Logo size={40} withWordmark wordmarkClassName="text-base text-foreground" />
+            <p className="mt-3 max-w-xs text-sm text-muted-foreground">
               {APP_TAGLINE}
             </p>
             <ul className="mt-4 space-y-2 text-sm">
@@ -76,6 +75,17 @@ export function StorefrontFooter() {
                 >
                   <MessageCircle className="size-4" aria-hidden />
                   WhatsApp
+                </a>
+              </li>
+              <li>
+                <a
+                  href={CONTACT.mapsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <MapPin className="size-4" aria-hidden />
+                  Find us on Maps
                 </a>
               </li>
             </ul>

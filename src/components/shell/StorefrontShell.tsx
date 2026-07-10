@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils"
 import { Tooltip } from "@/components/ui/tooltip"
 import { ThemeToggle } from "@/components/theme/ThemeToggle"
 import { TabBadge } from "@/components/shell/TabBadge"
+import { Logo } from "@/components/brand/Logo"
 import { StorefrontFooter } from "@/components/shell/StorefrontFooter"
 import {
   isNavItemActive,
@@ -76,13 +77,17 @@ export function StorefrontShell({ children, badges }: StorefrontShellProps) {
         >
           <Link
             href="/"
-            className={cn(
-              "-ml-1 flex min-h-11 items-center rounded-lg px-1 font-heading font-bold tracking-tight outline-none transition-[font-size] duration-200 focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97]",
-              condensed ? "text-base" : "text-lg"
-            )}
-            aria-label="MemoryDeals home"
+            className="-ml-1 flex min-h-11 items-center rounded-lg px-1 outline-none focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97]"
+            aria-label="The Memory Deals home"
           >
-            MemoryDeals
+            <Logo
+              size={condensed ? 28 : 34}
+              withWordmark
+              wordmarkClassName={cn(
+                "hidden text-foreground transition-[font-size] duration-200 sm:inline",
+                condensed ? "text-sm" : "text-base",
+              )}
+            />
           </Link>
 
           {/* Desktop top nav (replaces bottom tabs) */}

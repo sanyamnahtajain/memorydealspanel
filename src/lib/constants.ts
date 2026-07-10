@@ -1,19 +1,31 @@
 /** App-wide constants for MemoryDeals. */
 
-export const APP_NAME = "MemoryDeals";
-export const APP_TAGLINE = "Wholesale mobile accessories — trade prices on approval.";
+export const APP_NAME = "The Memory Deals";
+export const APP_SHORT = "TMD";
+export const APP_TAGLINE = "A hub of mobile accessories — wholesale prices on approval.";
+/** Brand slogan from the logo. */
+export const APP_SLOGAN = "You need it — we have it.";
 
 /**
  * Business contact details shown in the footer / Contact page.
- * EDIT THESE with your real details before going live.
+ * EDIT the phone/email/address with your real details before going live.
+ * (Name, tagline and map link are from the real business.)
  */
 export const CONTACT = {
-  email: "hello@memorydeals.example",
+  email: "hello@thememorydeals.com",
+  website: "https://thememorydeals.com",
   /** Display phone + a wa.me-compatible number (digits only, incl. country code). */
   phoneDisplay: "+91 90000 00000",
   whatsappNumber: "919000000000",
-  addressLines: ["MemoryDeals Wholesale", "Your street, Area", "City, State — PIN", "India"],
-  hours: "Mon–Sat, 10:00–19:00 IST",
+  addressLines: [
+    "The Memory Deals",
+    "Best Branded Mobile Accessories Store",
+    "Faridabad, Haryana",
+    "India",
+  ],
+  /** Google Maps listing (real). */
+  mapsUrl: "https://maps.app.goo.gl/dczfg6BeqZV1LD5d6",
+  hours: "Mon–Sat, 10:00–20:00 IST",
 } as const;
 
 /** Effective date shown on the legal pages. Update when policies change. */

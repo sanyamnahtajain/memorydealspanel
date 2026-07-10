@@ -18,9 +18,20 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "MemoryDeals — Wholesale Mobile Accessories",
+  title: {
+    default: "The Memory Deals — A Hub of Mobile Accessories",
+    template: "%s · The Memory Deals",
+  },
   description:
-    "B2B wholesale catalog for mobile accessories — chargers, cables, power banks, cases and more. Trade pricing visible to approved retailers only.",
+    "The Memory Deals — a hub of mobile accessories. Wholesale prices on chargers, cables, power banks, cases and more, visible to approved retailers only.",
+  applicationName: "The Memory Deals",
+  icons: {
+    icon: [
+      { url: "/favicon.png", type: "image/png", sizes: "64x64" },
+      { url: "/icons/icon-192.png", type: "image/png", sizes: "192x192" },
+    ],
+    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180" }],
+  },
 };
 
 export const viewport: Viewport = {

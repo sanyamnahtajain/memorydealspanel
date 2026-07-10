@@ -12,35 +12,35 @@ import type { MetadataRoute } from "next";
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "MemoryDeals",
-    short_name: "MemoryDeals",
+    name: "The Memory Deals",
+    short_name: "TMD",
     description:
-      "B2B wholesale catalog for mobile accessories — chargers, cables, power banks and more. Trade pricing for approved retailers.",
+      "The Memory Deals — a hub of mobile accessories. Wholesale prices on chargers, cables, power banks and more, for approved retailers.",
     start_url: "/",
     scope: "/",
     display: "standalone",
     orientation: "portrait",
     background_color: "#ffffff",
-    theme_color: "#2563EB",
+    theme_color: "#1e2a9c",
     categories: ["business", "shopping"],
     icons: [
       {
-        src: "/icons/icon.svg",
-        sizes: "any",
-        type: "image/svg+xml",
+        src: "/icons/icon-192.png",
+        sizes: "192x192",
+        type: "image/png",
         purpose: "any",
       },
       {
-        src: "/icons/icon-maskable.svg",
-        sizes: "any",
-        type: "image/svg+xml",
+        src: "/icons/icon-512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "any",
+      },
+      {
+        src: "/icons/icon-512.png",
+        sizes: "512x512",
+        type: "image/png",
         purpose: "maskable",
-      },
-      {
-        src: "/icons/apple-touch-icon.svg",
-        sizes: "180x180",
-        type: "image/svg+xml",
-        purpose: "any",
       },
     ],
   };
