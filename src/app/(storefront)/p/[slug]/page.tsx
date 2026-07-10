@@ -1,21 +1,33 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChevronRight } from "lucide-react";
 
 import { getViewer } from "@/server/auth/viewer";
 import { canSeePrices, isCustomer } from "@/server/types/viewer";
-import { getBySlugForViewer } from "@/server/dal/products";
+import {
+  getBySlugForViewer,
+  listByCategoryForViewer,
+} from "@/server/dal/products";
+import { listActive } from "@/server/dal/categories";
 import type { PublicProduct, PricedProduct } from "@/server/dto/product";
 import type { StockStatus } from "@/lib/schemas/shared";
 import { APP_NAME } from "@/lib/constants";
+import { formatPaise } from "@/lib/money";
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
 import { StatusChip, type StatusChipVariant } from "@/components/common";
 import { FadeUp } from "@/components/motion/primitives";
 import { ProductGallery } from "@/components/storefront/ProductGallery";
 import { SpecTable } from "@/components/storefront/SpecTable";
-import { EnquireButton } from "@/components/storefront/EnquireButton";
+import { renderPriceSlot } from "@/components/storefront/priceSlot";
 import { recordProductView } from "@/server/services/pageviews";
+import {
+  ProductBreadcrumb,
+  type ProductBreadcrumbCategory,
+  WhatsAppEnquire,
+  RelatedRail,
+  type RelatedRailItem,
+  StickyMobileBar,
+  buildWhatsAppEnquiryLink,
+} from "@/components/storefront/product";
 import { ProductPriceArea } from "./ProductPriceArea";
 
 /**
@@ -23,15 +35,15 @@ import { ProductPriceArea } from "./ProductPriceArea";
  *
  * The DAL (`getBySlugForViewer`) is THE price gate: an anon/pending/expired
  * viewer gets a `PublicProduct` with NO price fields, so nothing on this page
- * — including metadata and any structured data — can leak a price. When the
- * viewer is price-authorised the page must be dynamic; otherwise it is a
- * price-free public page and is ISR-friendly.
+ * — including metadata, JSON-LD, the related rail, and the sticky mobile bar —
+ * can leak a price. Related products go through `listByCategoryForViewer` (the
+ * same gate) and their price cells are server-rendered `renderPriceSlot`
+ * nodes, so no amount ever crosses into a client component for a gated viewer.
+ *
+ * RENDERING: reading the viewer (cookies) makes this dynamic so an approved
+ * customer sees live pricing. It never embeds a price for a gated viewer.
  */
-
-// Anonymous renders are identical & price-free, so allow ISR. A price-
-// authorised viewer forces per-request rendering via `dynamic` below, which
-// Next honours because we read the (dynamic) session inside `getViewer()`.
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 interface PageParams {
   params: Promise<{ slug: string }>;
@@ -48,6 +60,9 @@ const STOCK_CHIP: Record<StockStatus, StatusChipVariant> = {
   LOW: "pending",
   OUT_OF_STOCK: "rejected",
 };
+
+/** Max related products shown in the "More in this category" rail. */
+const RELATED_LIMIT = 12;
 
 /**
  * OpenGraph / SEO metadata. NEVER includes a price — we resolve the product
@@ -83,6 +98,19 @@ export async function generateMetadata({
   };
 }
 
+/**
+ * Resolves the product's category to a { name, slug } for the breadcrumb.
+ * Categories are few and cached; we map the ACTIVE set by id. Returns null
+ * when the category is inactive/missing so no dead crumb is rendered.
+ */
+async function resolveCategory(
+  categoryId: string,
+): Promise<ProductBreadcrumbCategory | null> {
+  const categories = await listActive();
+  const match = categories.find((c) => c.id === categoryId);
+  return match ? { name: match.name, slug: match.slug } : null;
+}
+
 export default async function ProductDetailPage({ params }: PageParams) {
   const { slug } = await params;
   const viewer = await getViewer();
@@ -95,16 +123,45 @@ export default async function ProductDetailPage({ params }: PageParams) {
   const showPrices = canSeePrices(viewer);
   const customerStatus = isCustomer(viewer) ? viewer.status : undefined;
 
-  // Record the view for the dashboard's "Most viewed" aggregation. This is
-  // best-effort analytics: `recordProductView` never throws, we do NOT await
-  // it into the render path, and it reads nothing gated — so it can neither
-  // block the page nor alter price-gate behaviour.
+  // Record the view for the dashboard's "Most viewed" aggregation. Best-effort
+  // analytics: never throws, not awaited into render, reads nothing gated.
   void recordProductView(
     product.id,
     isCustomer(viewer) ? viewer.customerId : null,
   );
+
+  // Category (breadcrumb) + related products (same category), both gated. We
+  // over-fetch by one so we can drop the current product and still fill the
+  // rail. `renderPriceSlot` produces the per-viewer price cell server-side.
+  const [category, relatedRaw] = await Promise.all([
+    resolveCategory(product.categoryId),
+    listByCategoryForViewer(viewer, product.categoryId, {
+      page: 1,
+      take: RELATED_LIMIT + 1,
+    }),
+  ]);
+
+  const related: RelatedRailItem[] = relatedRaw
+    .filter((p) => p.id !== product.id)
+    .slice(0, RELATED_LIMIT)
+    .map((p) => ({
+      // The rail is a client component; hand it only the public projection.
+      product: toPublicShape(p),
+      priceSlot: renderPriceSlot(p, viewer, "sm"),
+    }));
+
   const primaryImage =
     product.images.find((img) => img.isPrimary) ?? product.images[0] ?? null;
+
+  // The sticky mobile bar receives a *formatted string* only when the gate is
+  // open — never a raw amount. When gated this is undefined and the bar shows
+  // the "See price" affordance / a status word.
+  const stickyPriceLabel =
+    showPrices && hasPrice(product) ? formatPaise(product.price) : undefined;
+  const enquireHref = buildWhatsAppEnquiryLink({
+    productName: product.name,
+    sku: product.sku,
+  });
 
   // JSON-LD: deliberately OMITS `offers`/`price` — the price gate applies to
   // structured data too. Only price-free descriptive fields are emitted.
@@ -128,15 +185,17 @@ export default async function ProductDetailPage({ params }: PageParams) {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
       <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:py-8">
-        <Breadcrumb name={product.name} />
+        <ProductBreadcrumb productName={product.name} category={category} />
 
         <div className="mt-4 grid gap-8 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
           <FadeUp>
-            <ProductGallery
-              images={product.images}
-              productName={product.name}
-              productId={product.id}
-            />
+            <div className="lg:sticky lg:top-20">
+              <ProductGallery
+                images={product.images}
+                productName={product.name}
+                productId={product.id}
+              />
+            </div>
           </FadeUp>
 
           <FadeUp delay={0.05}>
@@ -182,28 +241,100 @@ export default async function ProductDetailPage({ params }: PageParams) {
                 </p>
               ) : null}
 
-              <EnquireButton productName={product.name} sku={product.sku} />
+              {/* Inline Enquire — hidden on mobile where the sticky bar owns it. */}
+              <div className="hidden md:block">
+                <WhatsAppEnquire productName={product.name} sku={product.sku} />
+              </div>
 
-              <SpecTable specs={product.specs} />
+              <SpecSection specs={product.specs} />
             </div>
           </FadeUp>
         </div>
+
+        {related.length > 0 ? (
+          <FadeUp delay={0.1}>
+            <section className="mt-12" aria-labelledby="related-heading">
+              <h2
+                id="related-heading"
+                className="mb-4 font-heading text-lg font-semibold tracking-tight sm:text-xl"
+              >
+                More in {category ? category.name : "this category"}
+              </h2>
+              <RelatedRail items={related} />
+            </section>
+          </FadeUp>
+        ) : null}
       </div>
+
+      <StickyMobileBar
+        enquireHref={enquireHref}
+        canSeePrices={showPrices}
+        priceLabel={stickyPriceLabel}
+        status={customerStatus}
+      />
     </StorefrontShell>
   );
 }
 
-function Breadcrumb({ name }: { name: string }) {
+/** Narrows a product DTO to its priced form without trusting a leaked field. */
+function hasPrice(
+  product: PublicProduct | PricedProduct,
+): product is PricedProduct {
+  return "price" in product && typeof product.price === "number";
+}
+
+/**
+ * Strips any price fields off a DTO before it crosses into the client rail.
+ * For a gated viewer the DAL already returned a PublicProduct (no money), but
+ * this explicit allow-list is belt-and-braces so a PricedProduct handed to a
+ * *client* component can never carry an amount.
+ */
+function toPublicShape(p: PublicProduct | PricedProduct): PublicProduct {
+  return {
+    id: p.id,
+    categoryId: p.categoryId,
+    name: p.name,
+    slug: p.slug,
+    sku: p.sku,
+    brand: p.brand,
+    description: p.description,
+    specs: p.specs,
+    moq: p.moq,
+    stockStatus: p.stockStatus,
+    status: p.status,
+    tags: p.tags,
+    images: p.images,
+    createdAt: p.createdAt,
+    updatedAt: p.updatedAt,
+  };
+}
+
+/**
+ * True when `specs` has at least one printable key/value — mirrors the empty
+ * check in {@link SpecTable} so we can hide the whole section (heading
+ * included) when there's nothing to show.
+ */
+function hasPrintableSpecs(specs: unknown): boolean {
+  if (specs === null || typeof specs !== "object" || Array.isArray(specs)) {
+    return false;
+  }
+  return Object.values(specs as Record<string, unknown>).some((v) => {
+    if (typeof v === "string") return v.trim().length > 0;
+    if (typeof v === "number" || typeof v === "boolean") return true;
+    if (Array.isArray(v)) return v.some((item) => String(item ?? "").trim().length > 0);
+    return false;
+  });
+}
+
+/** Specs block with a heading; renders nothing when there are no specs. */
+function SpecSection({ specs }: { specs: unknown }) {
+  if (!hasPrintableSpecs(specs)) return null;
   return (
-    <nav
-      aria-label="Breadcrumb"
-      className="flex items-center gap-1 text-sm text-muted-foreground"
-    >
-      <Link href="/" className="transition-colors hover:text-foreground">
-        Catalog
-      </Link>
-      <ChevronRight aria-hidden className="size-4 shrink-0" />
-      <span className="truncate font-medium text-foreground">{name}</span>
-    </nav>
+    <div className="space-y-3">
+      <h2 className="font-heading text-base font-semibold tracking-tight">
+        Specifications
+      </h2>
+      <SpecTable specs={specs} />
+    </div>
   );
 }

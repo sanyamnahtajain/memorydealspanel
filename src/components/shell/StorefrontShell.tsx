@@ -12,6 +12,9 @@ import { ThemeToggle } from "@/components/theme/ThemeToggle"
 import { TabBadge } from "@/components/shell/TabBadge"
 import { Logo } from "@/components/brand/Logo"
 import { StorefrontFooter } from "@/components/shell/StorefrontFooter"
+import { SearchOverlay } from "@/components/storefront/SearchOverlay"
+import { searchCategoryChips } from "@/components/storefront/search/actions"
+import type { CategoryChip } from "@/components/storefront/search/types"
 import {
   isNavItemActive,
   storefrontNav,
@@ -44,6 +47,24 @@ export function StorefrontShell({ children, badges }: StorefrontShellProps) {
   const reducedMotion = useReducedMotion()
   const spring: Transition = reducedMotion ? { duration: 0 } : SNAPPY_SPRING
   const [condensed, setCondensed] = React.useState(false)
+
+  // Full-screen search overlay, opened from the header search button. Category
+  // chips are fetched lazily on first open (they carry no pricing) and cached.
+  const [searchOpen, setSearchOpen] = React.useState(false)
+  const [searchCategories, setSearchCategories] = React.useState<CategoryChip[]>([])
+  const chipsLoaded = React.useRef(false)
+
+  const openSearch = React.useCallback(() => {
+    setSearchOpen(true)
+    if (chipsLoaded.current) return
+    chipsLoaded.current = true
+    searchCategoryChips()
+      .then(setSearchCategories)
+      .catch(() => {
+        // Non-fatal: the overlay still works without chips. Allow a retry.
+        chipsLoaded.current = false
+      })
+  }, [])
 
   React.useEffect(() => {
     let ticking = false
@@ -133,13 +154,23 @@ export function StorefrontShell({ children, badges }: StorefrontShellProps) {
 
           <div className="ml-auto flex items-center gap-0.5">
             <ThemeToggle variant="compact" className="mr-1 hidden sm:inline-flex" />
-            <HeaderIconLink
-              href="/search"
-              label="Search"
-              active={isNavItemActive(storefrontNav[2], pathname)}
-            >
-              <Search className="size-5" aria-hidden />
-            </HeaderIconLink>
+            <Tooltip content="Search">
+              <button
+                type="button"
+                onClick={openSearch}
+                aria-label="Search"
+                aria-haspopup="dialog"
+                aria-expanded={searchOpen}
+                className={cn(
+                  "inline-flex size-11 items-center justify-center rounded-full outline-none transition-[background-color,color,transform] duration-150 hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-90",
+                  searchOpen || isNavItemActive(storefrontNav[2], pathname)
+                    ? "bg-muted text-foreground"
+                    : "text-foreground/70 hover:text-foreground",
+                )}
+              >
+                <Search className="size-5" aria-hidden />
+              </button>
+            </Tooltip>
             <HeaderIconLink
               href="/account"
               label="Account"
@@ -214,6 +245,13 @@ export function StorefrontShell({ children, badges }: StorefrontShellProps) {
           })}
         </ul>
       </nav>
+
+      {/* ——— Full-screen search overlay ——— */}
+      <SearchOverlay
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        categories={searchCategories}
+      />
     </div>
   )
 }

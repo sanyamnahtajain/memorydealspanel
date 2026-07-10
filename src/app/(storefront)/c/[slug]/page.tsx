@@ -7,14 +7,14 @@ import { PAGE_SIZES } from "@/lib/constants";
 import { getBySlug } from "@/server/dal/categories";
 import { listByCategoryForViewer } from "@/server/dal/products";
 import { getViewer } from "@/server/auth/viewer";
+import { canSeePrices } from "@/server/types/viewer";
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
 import { FadeUp } from "@/components/motion/primitives";
 import {
-  ProductCardGrid,
-  type ProductCardItem,
-} from "@/components/storefront/ProductCardGrid";
-import { CategoryFilters } from "@/components/storefront/CategoryFilters";
-import { renderPriceSlot } from "@/components/storefront/priceSlot";
+  StorefrontListing,
+  buildListingItems,
+  type ListingItem,
+} from "@/components/storefront/listing";
 import { loadMoreCategoryProducts } from "./actions";
 
 /**
@@ -22,15 +22,18 @@ import { loadMoreCategoryProducts } from "./actions";
  *
  * RENDERING: this route reads the current viewer (cookies) so it can unlock
  * live pricing for approved customers, which makes it dynamic. It never
- * embeds a price for a gated viewer — the DAL projects prices away and the
- * price slot renders a locked pill. (A pure-ISR variant is impossible on the
+ * embeds a price for a gated viewer — the DAL projects prices away and each
+ * listing item renders a locked pill. (A pure-ISR variant is impossible on the
  * same route while gating per-viewer; keep it dynamic.)
+ *
+ * The listing surface itself (view modes, stock filter, sort, load-more) is
+ * the client {@link StorefrontListing}; this page only server-loads the first
+ * page (already gated) and binds a load-more server action.
  */
 export const dynamic = "force-dynamic";
 
 interface CategoryPageProps {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ brand?: string }>;
 }
 
 export async function generateMetadata({
@@ -52,23 +55,8 @@ export async function generateMetadata({
   };
 }
 
-function parseBrands(raw: string | undefined): string[] {
-  if (!raw) return [];
-  return Array.from(
-    new Set(
-      raw
-        .split(",")
-        .map((b) => b.trim())
-        .filter(Boolean),
-    ),
-  );
-}
-
-export default async function CategoryPage({
-  params,
-  searchParams,
-}: CategoryPageProps) {
-  const [{ slug }, { brand }] = await Promise.all([params, searchParams]);
+export default async function CategoryPage({ params }: CategoryPageProps) {
+  const { slug } = await params;
   const category = await getBySlug(slug);
   if (!category) {
     notFound();
@@ -80,22 +68,12 @@ export default async function CategoryPage({
     take: PAGE_SIZES.storefront,
   });
 
-  const brands = Array.from(
-    new Set(products.map((p) => p.brand).filter((b): b is string => Boolean(b))),
-  ).sort((a, b) => a.localeCompare(b));
+  const items: ListingItem[] = buildListingItems(products, viewer);
 
-  // Only honour brand params that actually exist in this category.
-  const selectedBrands = parseBrands(brand).filter((b) => brands.includes(b));
-
-  const items: ProductCardItem[] = products.map((product) => ({
-    product,
-    priceSlot: renderPriceSlot(product, viewer),
-  }));
-
-  // Bind the category id to the load-more action so the client grid only needs
-  // to pass the next page number. Price slots stay server-rendered.
+  // Bind the category id to the load-more action so the client listing only
+  // needs to pass the next page number. Price slots stay server-rendered.
   const categoryId = category.id;
-  async function loadMore(nextPage: number): Promise<ProductCardItem[]> {
+  async function loadMore(nextPage: number): Promise<ListingItem[]> {
     "use server";
     return loadMoreCategoryProducts(categoryId, nextPage);
   }
@@ -117,18 +95,12 @@ export default async function CategoryPage({
         </div>
       </FadeUp>
 
-      {brands.length > 0 ? (
-        <div className="sticky top-14 z-30 -mx-4 mb-4 border-b border-transparent bg-background/80 px-4 py-2 backdrop-blur md:top-16">
-          <CategoryFilters brands={brands} selected={selectedBrands} />
-        </div>
-      ) : null}
-
-      <ProductCardGrid
+      <StorefrontListing
         initialItems={items}
         loadMore={loadMore}
         pageSize={PAGE_SIZES.storefront}
         initialPage={1}
-        filterBrands={selectedBrands}
+        canSeePrices={canSeePrices(viewer)}
         emptyTitle="Nothing in this category yet"
         emptyDescription="We're adding stock here soon — check back shortly."
       />
