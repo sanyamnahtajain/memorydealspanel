@@ -7,6 +7,7 @@ import { CircleUserRound, Search } from "lucide-react"
 import { motion, useReducedMotion, type Transition } from "motion/react"
 
 import { cn } from "@/lib/utils"
+import { ThemeToggle } from "@/components/theme/ThemeToggle"
 import { TabBadge } from "@/components/shell/TabBadge"
 import {
   isNavItemActive,
@@ -124,6 +125,7 @@ export function StorefrontShell({ children, badges }: StorefrontShellProps) {
           </nav>
 
           <div className="ml-auto flex items-center gap-0.5">
+            <ThemeToggle variant="compact" className="mr-1 hidden sm:inline-flex" />
             <HeaderIconLink
               href="/search"
               label="Search"

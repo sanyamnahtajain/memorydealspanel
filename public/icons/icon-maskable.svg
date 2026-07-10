@@ -1,0 +1,22 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MemoryDeals">
+  <defs>
+    <linearGradient id="mdMaskBg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2F6BFF"/>
+      <stop offset="1" stop-color="#1E4FD1"/>
+    </linearGradient>
+  </defs>
+  <!-- Full-bleed background so the maskable safe-zone is entirely brand color -->
+  <rect width="512" height="512" fill="url(#mdMaskBg)"/>
+  <!-- Content confined to the central ~80% safe zone (scaled + centered) -->
+  <g transform="translate(102 102) scale(0.6)">
+    <g fill="#FFFFFF">
+      <path d="M108 356V172c0-6 5-11 11-11h20c4 0 8 2 10 6l45 82c2 4 8 4 10 0l45-82c2-4 6-6 10-6h20c6 0 11 5 11 11v184c0 6-5 11-11 11h-16c-6 0-11-5-11-11V245l-33 60c-2 4-6 6-10 6h-14c-4 0-8-2-10-6l-33-60v111c0 6-5 11-11 11h-16c-6 0-11-5-11-11z"/>
+      <path d="M330 356V172c0-6 5-11 11-11h44c58 0 96 39 96 98s-38 97-96 97h-44c-6 0-11-5-11-11zm38-22h17c34 0 56-24 56-64s-22-64-56-64h-17v128z"/>
+    </g>
+    <g fill="#BFE0FF">
+      <rect x="240" y="404" width="14" height="26" rx="4"/>
+      <rect x="258" y="404" width="14" height="26" rx="4"/>
+      <rect x="228" y="428" width="56" height="20" rx="8"/>
+    </g>
+  </g>
+</svg>

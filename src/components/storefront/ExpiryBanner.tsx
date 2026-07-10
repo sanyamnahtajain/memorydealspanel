@@ -57,6 +57,20 @@ function toDate(value: Date | string | null): Date | null {
 const DISMISS_PREFIX = "md.expiryBanner.dismissed:";
 
 /**
+ * `useSyncExternalStore` subscriber for the dismissal flag. The flag lives in
+ * `sessionStorage`, which is per-tab and never mutated by other tabs, and this
+ * component's own `dismiss()` drives an immediate local override — so there is
+ * no external source to subscribe to. We still register the `storage` listener
+ * (fired for cross-document changes) to keep the subscription contract honest
+ * and re-read on the rare event, then no-op cleanly on teardown.
+ */
+function subscribeToStorage(onStoreChange: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener("storage", onStoreChange);
+  return () => window.removeEventListener("storage", onStoreChange);
+}
+
+/**
  * Dismissible renewal nudge for an approved customer whose price access is
  * about to lapse. Renders only when the grant expires within
  * {@link EXPIRY_WARNING_DAYS} days. Dismissal is remembered in `sessionStorage`

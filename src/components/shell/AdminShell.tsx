@@ -14,6 +14,9 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet"
+import { ThemeToggle } from "@/components/theme/ThemeToggle"
+import { THEME_STORAGE_KEY } from "@/components/theme/theme-script"
+import { useTheme } from "@/components/theme/ThemeProvider"
 import { TabBadge } from "@/components/shell/TabBadge"
 import {
   adminNavSections,
@@ -44,13 +47,19 @@ export interface AdminShellProps {
 }
 
 /**
- * Admin app shell (dark surface — applies `dark` on its root).
+ * Admin app shell.
+ *
+ * The theme is driven globally by `<ThemeProvider>` on `<html>` — this shell no
+ * longer hardcodes `dark`. Instead admin *defaults* to dark: on a first visit
+ * with no stored preference we seed `dark`, but an explicit user choice
+ * (including switching to light/system via the header `ThemeToggle`) always
+ * wins.
  *
  * - Mobile: bottom tabs (Dashboard / Products / Requests / Customers) plus a
  *   "More" bottom sheet for Import / Trash / Settings.
  * - Desktop: collapsible sidebar with section labels and the full nav.
- * - Top bar with a page-title slot and a notification bell with an animated
- *   badge count.
+ * - Top bar with a page-title slot, a theme toggle, and a notification bell
+ *   with an animated badge count.
  * - Content area owns its scrolling (`overflow-y-auto` + overscroll
  *   containment) so the chrome never moves.
  */
@@ -64,6 +73,21 @@ export function AdminShell({
   const pathname = usePathname()
   const reducedMotion = useReducedMotion()
   const spring: Transition = reducedMotion ? { duration: 0 } : SNAPPY_SPRING
+  const { setTheme } = useTheme()
+
+  // Admin defaults to dark: seed `dark` only when the user has no stored
+  // preference yet. A previously stored choice is left untouched.
+  React.useEffect(() => {
+    let hasStored = false
+    try {
+      const stored = window.localStorage.getItem(THEME_STORAGE_KEY)
+      hasStored =
+        stored === "light" || stored === "dark" || stored === "system"
+    } catch {
+      hasStored = false
+    }
+    if (!hasStored) setTheme("dark")
+  }, [setTheme])
 
   const [collapsed, setCollapsed] = React.useState(false)
   const [moreOpen, setMoreOpen] = React.useState(false)
@@ -77,7 +101,7 @@ export function AdminShell({
   )
 
   return (
-    <div className="dark flex h-dvh overflow-hidden bg-background text-foreground">
+    <div className="flex h-dvh overflow-hidden bg-background text-foreground">
       {/* ——— Desktop sidebar ——— */}
       <aside
         className={cn(
@@ -173,6 +197,7 @@ export function AdminShell({
             <h1 className="min-w-0 truncate font-heading text-base font-semibold">
               {title}
             </h1>
+            <ThemeToggle variant="compact" className="ml-auto" />
             <button
               type="button"
               onClick={onNotificationsClick}
@@ -181,7 +206,7 @@ export function AdminShell({
                   ? `Notifications (${notificationCount} unread)`
                   : "Notifications"
               }
-              className="ml-auto inline-flex size-11 shrink-0 items-center justify-center rounded-full text-foreground/70 outline-none transition-[background-color,color,transform] duration-150 hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-90"
+              className="inline-flex size-11 shrink-0 items-center justify-center rounded-full text-foreground/70 outline-none transition-[background-color,color,transform] duration-150 hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-90"
             >
               <span className="relative flex items-center justify-center">
                 <Bell className="size-5" aria-hidden />
