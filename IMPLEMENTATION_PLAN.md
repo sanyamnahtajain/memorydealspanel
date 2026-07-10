@@ -400,6 +400,51 @@ Custom, token-styled, responsive, accessible charts (lean to **hand-built SVG** 
 Data via pre-aggregated daily counters (avoid scanning PageView live at scale). 
 **Gate:** dashboard shows real charts from real data; charts responsive + accessible + themed; no layout shift.
 
+### Phase 12 — Cart & Orders (approved customers, no payment) — deep security & corner-case design
+**Goal:** an approved retailer can build a **cart** and **place an order** (a purchase request — **no payment collected**; the wholesaler fulfils offline). This formalises the loose "enquiry list / quote cart" from 7.6/7.8 into a real Cart→Order system. WhatsApp-enquire remains as a quick alternative. **Only APPROVED, unexpired customers** may cart or order — pending/expired/blocked cannot (they can't even see prices).
+
+**Data model (schema + migration — done by the driver):**
+- `CartItem { id, customerId, productId, variantId?, quantity, createdAt, updatedAt }` with `@@unique([customerId, productId, variantId])` (one line per product/variant; adding again increments qty) and `@@index([customerId])`. Cascades on customer/product delete. (One implicit cart per customer.)
+- `Order { id, orderNumber (unique, non-sequential/non-guessable), customerId, status (PLACED|CONFIRMED|PROCESSING|FULFILLED|CANCELLED), items Json (embedded SNAPSHOT: productId, name, sku, brand, variant, quantity, unitPricePaise, lineTotalPaise), subtotalPaise, itemCount, note?, placedAt, updatedAt, adminNote? }` with `@@index([customerId, placedAt])`, `@@index([status, placedAt])`.
+- `OrderEvent { orderId, actorType, actorId, from, to, at, note? }` (status history / audit) — or reuse AuditLog.
+
+**Server-authoritative — the anti-cheat core (NON-NEGOTIABLE):**
+1. **Price is NEVER trusted from the client.** Unit prices and line totals are computed **server-side** at placement from the viewer-gated DAL (the price that customer is entitled to). The client sends only `{productId, variantId?, quantity}`. Any price in the request is ignored. Order snapshots the server price so later catalog price changes don't alter a placed order.
+2. **Access re-checked on EVERY cart/order mutation AND at placement.** A customer may add to cart while approved, then access expires — placement must re-verify `priceAccess` (approved + unexpired grant + not revoked + not blocked) and reject if lost. All cart/order server actions call `resolveViewer` and require `priceAccess` (not just a session).
+3. **Ownership / IDOR:** a customer can only read/mutate their **own** cart and orders; every action asserts `order.customerId === viewer.customerId`. Order numbers are random (not enumerable) and looking up an order still checks ownership. Admin bypass is explicit + audited.
+
+**Rate limiting & abuse controls (Upstash + in-memory fallback):**
+- **add-to-cart / update-qty:** throttled per customer (e.g. 60/min) — stops spam.
+- **place-order:** strict cap (e.g. ≤ N orders/hour and ≤ M/day per customer) → returns a friendly "slow down" error.
+- **Idempotency / double-submit:** placement takes an idempotency key (or dedups an identical cart placed within a short window) so a double-click / retry can't create duplicate orders; cart-clear + order-create happen in ONE transaction.
+- **Caps:** max distinct cart lines (e.g. 100), max quantity per line and per order, max order value sanity ceiling — reject absurd values. Quantity must be a **positive integer** within `[MOQ, cap]`; reject non-integers, negatives, overflow, NaN.
+- **Note field:** length-capped, plain-text only (no HTML), trimmed.
+- **Bot/automation:** rate limits + caps; optional per-session throttle. (No captcha needed for authenticated approved users.)
+
+**Corner cases (handled explicitly, with clear UI):**
+- Add a product already in cart → increment (never duplicate). Adding below MOQ → clamp to MOQ.
+- Product **price changes** while in cart → cart shows the live gated price; order snapshots at placement.
+- Product goes **inactive / soft-deleted** while in cart → flagged "no longer available", excluded from the order (never silently ordered).
+- Product goes **OUT_OF_STOCK** → line flagged; blocked from ordering (LOW allowed with a warning).
+- **Access expires** while items in cart → cart prices lock; "Place order" disabled with a renew prompt.
+- **Blocked** customer → cart frozen, ordering denied immediately.
+- Empty cart placement → rejected. Stale cart (items changed) → re-validated at placement; user shown a diff before confirming.
+- Two tabs / race placing the same cart → idempotent single order (transactional clear+create).
+- Variant (Phase 11) removed/renamed → line re-validated.
+- Session expires mid-checkout → re-auth.
+- Cancellation: customer may cancel within a window / before admin CONFIRMED; after that admin-only. All transitions audited.
+
+**UI (per §0 — custom components, all states):**
+- **Add to cart** with qty stepper (respects MOQ + caps) from listing/compact/table/quick-view/detail — optimistic, toast, cart badge in header updates.
+- **Cart page** (`/account/cart`): line items (image, name, brand, variant, unit price, stepper, line total, remove), inline MOQ/stock/availability warnings, subtotal + item count, sticky mobile summary, "Place order", rich empty state, skeleton/error.
+- **Place-order → confirmation** page with order number + "what happens next" (we'll contact you to confirm & arrange dispatch).
+- **Order history** (`/account/orders`): list + status chips, order detail, **reorder** (re-add available items), cancel (when allowed).
+- **Admin orders** (`/admin/orders`): queue (new PLACED badge + push notification), order detail, **status management** (custom control, audited), admin notes, notify customer, filters + Pager + CSV export, and an abuse view (orders per customer, flags).
+- Prices everywhere obey the gate (only shown to the approved owner; admin sees all).
+
+**Gate:** approved customer can cart → place → see it in history; **a manipulated price/quantity in the request is ignored** (server recomputes) — an explicit exploit test; expired/blocked/pending cannot cart or order; rate limits + idempotency proven (no duplicate orders under double-submit/flood); IDOR test (cannot read another's cart/order); inactive/out-of-stock/price-change corner cases handled; typecheck+lint+vitest green; price-gate invariant extended to cart/order payloads.
+**Sequencing:** its own schema step (Cart/Order models), then a build workflow; best after Brand + Variants so line snapshots carry brand/variant. Not required for first launch, but high-value.
+
 ### Phase 9 — Hardening & launch
 **Goal:** production confidence.
 **Build/do:** full E2E regression suite as CI; load sanity (k6: 200 concurrent browsers, grid with 5k products); **final adversarial security review** (fresh panel, whole system: price gate, session fixation, IDOR on admin actions, R2 presign scope, rate-limit bypass, cache poisoning of ISR pages); Sentry + structured logging; security headers (CSP, HSTS) verified; Atlas indexes reviewed against slow-query log; backup/restore drill (Atlas snapshot → staging); deploy pipeline (preview → production, env checklist); DEPLOYMENT.md runbook (Atlas / R2 / Upstash / Turnstile / VAPID setup, domain, Cloudflare in front); UAT script for you (the admin) with real catalog data.
