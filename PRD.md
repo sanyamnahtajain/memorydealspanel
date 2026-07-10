@@ -134,6 +134,46 @@ A mobile-accessories wholesaler receives daily price enquiries from many retail 
 
 ---
 
+## 5A. Mobile App-Like Experience & UI/UX (hard requirement — both surfaces)
+
+Both the admin panel and the storefront must feel like a **native app on the phone**, not a website.
+
+### 5A.1 PWA — installable app experience
+- F-U1. Both surfaces ship as **Progressive Web Apps**: "Add to Home Screen" prompt, custom app icon and name, splash screen, standalone mode (no browser chrome/URL bar).
+- F-U2. **Offline-tolerant admin**: catalog grid and product pages cached; edits and photo uploads made offline are queued and synced when the connection returns, with a visible sync-status pill.
+- F-U3. **Push notifications** (Web Push): admin gets a real push on the phone for every new access request — approve/reject directly from the notification's deep link.
+- F-U4. Instant back/forward navigation with preserved scroll position (no full-page reloads anywhere).
+
+### 5A.2 App-like navigation & gestures
+- F-U5. **Bottom tab bar** on mobile (admin: Dashboard / Products / Requests / Customers; storefront: Home / Categories / Search / Account) with badge counts.
+- F-U6. **Bottom sheets** instead of desktop modals on mobile (access-request form, filters, product quick-view) — drag handle, swipe-down to dismiss, snap points.
+- F-U7. **Swipe gestures**: swipe between product images; in the admin requests queue, swipe right to approve / left to reject (with undo toast).
+- F-U8. **Pull-to-refresh** on lists; infinite scroll with skeleton loaders (no pagination buttons on mobile).
+- F-U9. Haptic-style micro-feedback (where supported) on key actions: approve, save, delete.
+
+### 5A.3 Motion & animation system
+- F-U10. A consistent motion language (spring-based, 150–300 ms, respects `prefers-reduced-motion`):
+  - **Page transitions**: shared-element transition from product card → product detail (image morphs into place) via the View Transitions API.
+  - **List animations**: staggered fade-up on category/product grids as they enter the viewport.
+  - **Price reveal moment**: when an approved customer logs in, prices animate in with a subtle unblur + count-up — the "unlock" is felt.
+  - **Optimistic UI**: approvals, status toggles, and grid edits reflect instantly with animated state changes, then confirm/rollback.
+  - **Skeleton screens** everywhere data loads — never a blank page or spinner-only state.
+  - Smooth scrolling with momentum; scroll-linked effects kept subtle (sticky category header that condenses on scroll).
+- F-U11. Delightful micro-interactions: animated success checkmarks, confetti-free but satisfying "request sent" state, animated notification badge, tactile button press states.
+
+### 5A.4 Crazy custom components (signature UX pieces)
+- F-U12. **PriceGate card** (storefront): the price area on every card is a shimmering locked chip — tapping it flips the card to the request form (or unblurs to the price when approved). This is the product's signature interaction.
+- F-U13. **Batch camera capturer** (admin): the F-A10a full-screen capture UI — shutter, growing thumbnail strip, tap-to-retake — built as a custom component.
+- F-U14. **Mobile grid editor** (admin): the spreadsheet degrades gracefully on phone into an editable card list — tap a field to edit in place, long-press to multi-select for bulk actions, sticky bulk-action bar slides up from the bottom.
+- F-U15. **Approval swipe deck** (admin): pending requests presented as swipeable cards (business details + GST + phone) — swipe to decide, tap to expand; clears the queue fast.
+- F-U16. **Expiry dial** (admin): setting access duration via a radial/slider control with live preview of the expiry date, plus quick-pick chips (7/30/90 days).
+- F-U17. **Smart search overlay** (storefront): full-screen search with recent searches, category chips, instant results as you type, and highlighted matches.
+
+### 5A.5 Responsive design rules
+- F-U18. Mobile-first breakpoints; every screen designed for 360 px width first, then scaled up. Desktop admin gets the full spreadsheet grid; mobile admin gets the card editor (F-U14) — same data, adapted UI, never a shrunken desktop page.
+- F-U19. Touch targets ≥ 44 px, thumb-zone placement for primary actions (bottom third of screen), safe-area insets (notches) respected.
+- F-U20. Storefront tested on low-end Android + slow 4G as the baseline device, not the exception.
+
 ## 6. Security & Anti-Scraping Design (hard requirement)
 
 Prices must be unobtainable without an approved, unexpired session:
@@ -161,6 +201,10 @@ Prices must be unobtainable without an approved, unexpired session:
 | **ORM** | **Prisma** (or Drizzle) | Type-safe schema & migrations |
 | **Auth** | **Auth.js (NextAuth)** — admin: email+password+TOTP; customers: phone OTP | Session cookies (httpOnly), battle-tested |
 | **OTP / SMS / WhatsApp** | **MSG91** or **Twilio**; WhatsApp via **Interakt / AiSensy / WhatsApp Cloud API** | India-friendly delivery and pricing, GST-market fit |
+| **UI components** | **Tailwind CSS + shadcn/ui** (customized) + **Vaul** (bottom sheets) + **Embla** (swipeable carousels) | Fast to build, fully ownable/customizable base for the signature components |
+| **Animations / motion** | **Motion (Framer Motion)** + **View Transitions API** | Spring physics, gestures (swipe deck, bottom sheets), shared-element page transitions, layout animations |
+| **PWA / offline / push** | **Serwist** (service worker for Next.js) + Web Push API + Background Sync | Installable app, offline edit queue, push notifications for access requests |
+| **Camera capture** | `getUserMedia` / `<input capture>` + custom batch-capture component + **browser-image-compression** | Multi-shot product photography from the phone with client-side compression before upload |
 | **Spreadsheet grid (bulk edit)** | **AG Grid** (Community) or **Glide Data Grid** + TanStack Query | Proven Excel-like UX: inline edit, keyboard nav, copy-paste, fill-down — don't build this from scratch |
 | **File/Image storage** | **Cloudflare R2** (S3-compatible) + image resizing (next/image or Cloudflare Images) | Cheap egress, CDN-backed, thumbnails |
 | **CSV/XLSX import-export** | **SheetJS (xlsx)** + **Zod** row validation | Robust parsing + per-cell validation for the foolproof preview screen |
@@ -197,15 +241,16 @@ PageView      id, customerId?, productId, at   (for analytics & scrape detection
 - **Scale target v1:** ~500–5,000 SKUs, ~1,000 customers, ~50 concurrent users — modest; single Postgres + SSR handles this easily.
 - **Availability:** 99.5%+; daily automated DB backups with tested restore.
 - **Localization-ready:** ₹ INR formatting, IST timestamps, GST field validation (15-char format check when provided).
-- **Accessibility:** storefront usable on low-end Android phones; admin optimized for desktop.
+- **Accessibility & devices:** both surfaces fully usable on low-end Android phones (app-like PWA experience per §5A); desktop admin additionally gets the full spreadsheet grid. All animations respect `prefers-reduced-motion`.
+- **Perceived performance:** 60 fps animations on mid-range phones; interaction feedback < 100 ms via optimistic UI; images lazy-loaded with blur-up placeholders.
 
 ## 10. Release Plan
 
-**Phase 1 — MVP (~4–6 weeks of build)**
-Admin auth + 2FA · categories & products CRUD with photos · spreadsheet grid with inline edit + autosave · CSV import with validation preview · storefront (SSR, no prices public) · access request popup + OTP · approve/reject with expiry · price gating · admin notifications (in-panel + WhatsApp) · basic dashboard.
+**Phase 1 — MVP (~5–7 weeks of build)**
+Admin auth + 2FA · categories & products CRUD with photos · **phone camera batch capture (F-A10a)** · spreadsheet grid with inline edit + autosave · **mobile card editor (F-U14)** · CSV import with validation preview · storefront (SSR, no prices public) · **PWA install + push notifications** · **bottom-sheet access request form + OTP** · approve/reject with expiry · price gating with **PriceGate reveal animation** · core motion system (page transitions, skeletons, optimistic UI) · admin notifications (push + in-panel + WhatsApp) · basic dashboard.
 
 **Phase 2**
-Bulk image upload by SKU · undo/redo & fill-down polish · sub-categories · customer analytics & most-viewed · watermarked PDF price list · daily digest · scrape-detection auto-throttle · trash/restore UI.
+Bulk image upload by SKU · rapid cataloging mode (F-A10b) · **approval swipe deck** · **offline edit queue + background sync** · undo/redo & fill-down polish · sub-categories · customer analytics & most-viewed · watermarked PDF price list · daily digest · scrape-detection auto-throttle · trash/restore UI.
 
 **Phase 3 (ideas)**
 Per-customer price tiers (different prices for different buyers) · order/enquiry cart · staff sub-admin roles · customer-facing stock alerts · WhatsApp catalog sync.
