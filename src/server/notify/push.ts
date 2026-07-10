@@ -1,4 +1,5 @@
 import webpush from "web-push";
+import { prisma } from "@/server/db";
 
 /**
  * Web Push notifications for admins (new access requests, etc.).
@@ -7,10 +8,11 @@ import webpush from "web-push";
  * VAPID_SUBJECT (a mailto: or https: URL). When unset, sending is a no-op
  * (console.debug) so dev works without keys.
  *
- * Subscription persistence is behind the `PushStore` seam. The module ships
- * with an in-memory store so dev and unit tests work standalone; Phase 6
- * wires a Mongo-backed PushStore via `setPushStore()` (schema changes are
- * owned by that phase, not this module).
+ * Subscription persistence is behind the `PushStore` seam. The default store
+ * is now Mongo-backed (via `prisma.pushSubscription`) so subscriptions
+ * survive restarts and are shared across instances; the in-memory store is
+ * retained (`defaultInMemoryStore`) as an injectable fallback for isolated
+ * unit tests that must not touch the database.
  */
 
 export interface PushPayload {
@@ -27,6 +29,8 @@ export interface StoredPushSubscription {
     p256dh: string;
     auth: string;
   };
+  /** UA string of the subscribing browser, kept for diagnostics/pruning. */
+  userAgent?: string | null;
 }
 
 /** Persistence seam for push subscriptions. */
@@ -60,13 +64,53 @@ export const defaultInMemoryStore: PushStore = {
   },
 };
 
-/** Inject a persistent store (Phase 6: Mongo-backed implementation). */
+/**
+ * Mongo-backed PushStore over `prisma.pushSubscription`. The endpoint is the
+ * stable identity of a subscription (`@unique`), so `save` upserts on it —
+ * re-subscribing with the same endpoint refreshes the keys rather than
+ * duplicating rows. This is the default store used in dev and production.
+ */
+export const prismaPushStore: PushStore = {
+  async save(subscription) {
+    await prisma.pushSubscription.upsert({
+      where: { endpoint: subscription.endpoint },
+      create: {
+        endpoint: subscription.endpoint,
+        p256dh: subscription.keys.p256dh,
+        auth: subscription.keys.auth,
+        userAgent: subscription.userAgent ?? undefined,
+      },
+      update: {
+        p256dh: subscription.keys.p256dh,
+        auth: subscription.keys.auth,
+        userAgent: subscription.userAgent ?? undefined,
+      },
+    });
+  },
+  async remove(endpoint) {
+    await prisma.pushSubscription.deleteMany({ where: { endpoint } });
+  },
+  async list() {
+    const rows = await prisma.pushSubscription.findMany({
+      select: { endpoint: true, p256dh: true, auth: true },
+    });
+    return rows.map((row) => ({
+      endpoint: row.endpoint,
+      keys: { p256dh: row.p256dh, auth: row.auth },
+    }));
+  },
+};
+
+/**
+ * Inject a custom store (e.g. `defaultInMemoryStore` for a hermetic unit
+ * test). When no store is injected the Mongo-backed `prismaPushStore` is used.
+ */
 export function setPushStore(store: PushStore): void {
   globalForPush.__memorydealsPushStore = store;
 }
 
 function getStore(): PushStore {
-  return globalForPush.__memorydealsPushStore ?? defaultInMemoryStore;
+  return globalForPush.__memorydealsPushStore ?? prismaPushStore;
 }
 
 function vapidConfigured(): boolean {
