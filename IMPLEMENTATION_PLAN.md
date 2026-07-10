@@ -4,6 +4,32 @@
 
 ---
 
+## 0. Quality Bar (STANDING REQUIREMENT — applies to every phase & every future task)
+
+Every screen and interaction, admin and storefront, must satisfy ALL of the following. Treat this as acceptance criteria for any task that touches UI, and audit against it before calling a phase done.
+
+**Custom, never native.** No default browser UI anywhere: no native `<select>` dropdowns (use the custom Select), no `window.alert/confirm/prompt` (use ConfirmSheet / custom dialogs), no native tooltips-via-`title` only (use a custom Tooltip component). Every dropdown, popover, dialog, sheet, menu, date/expiry picker, and toast is our own component.
+
+**Every async state is designed.** For each data-loading surface: a **skeleton loader** (not a bare spinner) for initial load, a **custom spinner/loader** for in-flight actions, an **empty state** (illustrated), and an **error state** with a clear, human **error message** + retry. Never a blank screen, never an unhandled throw reaching the user. Inline **warnings** where an action is destructive or data is stale.
+
+**Motion & feel.** Consistent motion tokens (spring, 150–300 ms), `prefers-reduced-motion` respected everywhere, smooth momentum scrolling, tasteful entrance/stagger, optimistic UI with rollback, satisfying micro-interactions (animated checkmarks, press states, count-up price reveal). 60 fps on mid-range phones.
+
+**Graphics & iconography.** Lucide icons used consistently (every action/nav item has an icon), illustrated empty states, product/category imagery with blur-up placeholders, no broken-image boxes.
+
+**Tooltips.** A custom Tooltip on every icon-only button and every truncated/abbreviated value.
+
+**Responsiveness.** Mobile-first at 360 px, then scale up. Touch targets ≥ 44 px, thumb-zone primary actions, safe-area insets. Bottom sheets on mobile / dialogs on desktop. Tables degrade to cards. No horizontal overflow.
+
+**PWA.** Both surfaces installable (manifest, icons, splash), offline-tolerant where it matters, admin push notifications, standalone display.
+
+**Data plumbing.** Pagination (or virtualized/infinite scroll) on every list that can grow. Usable, persistent filters + search on every catalog/customer/request list. A working **sign-out** on both surfaces. A **data download/export** feature (catalog export, price-list) reachable from the UI.
+
+**Typography & theme.** One type scale (tabular numerals for money/counts), consistent font family/weights, semantic color tokens only (no hardcoded hex), coherent light (storefront) / dark (admin) themes, sufficient contrast (WCAG AA).
+
+**Correctness & scale.** Corner cases handled (empty catalog, 10k products, expired mid-session, revoked mid-request, network failure, duplicate submit, concurrent edit). No N+1 queries on hot paths; indexed queries; no obvious bugs. Secure by default (price gate intact, admin-guarded mutations, rate limits, no secrets in client).
+
+Enforcement: a recurring **quality-audit workflow** (parallel auditors, one per dimension above) runs read-only and produces a findings list; findings are fixed before the phase gate closes. See §11.
+
 ## 1. Guiding Principles
 
 1. **Security is a data-layer property, not a UI property.** Price never crosses the server boundary unless the viewer is verified. This is enforced in ONE place (the viewer-aware data access layer, §5) and covered by invariant tests that fail the build if violated.
@@ -162,8 +188,8 @@ Built in Phase 1, consumed by everything after. **No component ships colors/spac
 **Workflow shape:** 4 parallel page-agents (worktrees) → integration → design-review at 3 breakpoints ∥ **security re-attack panel** (anon/pending/expired price extraction vs the ISR cache specifically) ∥ perf agent (Lighthouse ≥ 90 perf / ≥ 95 a11y on throttled 4G).
 **Gate:** design + security + performance panels all green.
 
-### Phase 8 — PWA & motion polish
-**Goal:** "feels like a native app" — the PRD §5A promise, finished.
+### Phase 8 — Comprehensive quality, polish & PWA (the §0 Quality Bar, enforced)
+**Goal:** meet the §0 Quality Bar across every existing surface, then the "feels like a native app" PRD §5A promise. This phase runs the quality-audit workflow (§11), fixes every finding, and adds anything missing from §0: custom replacements for any native browser UI, skeleton/spinner/empty/error states everywhere, tooltips on icon-only controls, pagination + persistent filters on every growable list, sign-out on both surfaces, data export reachable in the UI, typography/theme consistency, and full responsiveness. THEN the PWA/motion work below.
 **Build:** Serwist service worker (precache shells, runtime cache, offline fallback); manifests × 2 (admin/storefront identities), icons, splash; install prompts; **offline admin queue** (IndexedDB outbox for edits + photos, background sync, sync-status pill); View Transitions wiring (card→detail shared element); pull-to-refresh; scroll restoration; condensing sticky headers; haptic-style micro-feedback; page-level stagger polish; `prefers-reduced-motion` audit; quick-review pass of every screen against motion tokens.
 **Workflow shape:** SW/offline agent ∥ motion-polish agents per surface → **device-matrix verify** (Playwright: iOS Safari, Android Chrome profiles × offline/online × install mode) → 60 fps trace audit on key interactions.
 **Gate:** installable on both platforms; airplane-mode admin edit syncs on reconnect; zero motion jank in traces.
