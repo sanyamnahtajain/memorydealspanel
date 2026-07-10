@@ -127,6 +127,10 @@ export function ColumnMapper({
                 onValueChange={(value) =>
                   setField(field.key, value === UNMAPPED ? null : value)
                 }
+                items={[
+                  { value: UNMAPPED, label: "— Not mapped —" },
+                  ...headers.map((h) => ({ value: h, label: h })),
+                ]}
               >
                 <SelectTrigger
                   className="w-[46%] min-w-[9rem]"

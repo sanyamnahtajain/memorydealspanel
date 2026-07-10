@@ -273,6 +273,7 @@ export function ProductEditorForm({
             <Select
               value={state.categoryId || null}
               onValueChange={(value) => set("categoryId", (value as string) ?? "")}
+              items={categoryOptions}
             >
               <SelectTrigger id="category" className="w-full">
                 <SelectValue placeholder="Select a category" />
@@ -366,6 +367,7 @@ export function ProductEditorForm({
                 onValueChange={(value) =>
                   set("stockStatus", value as StockStatus)
                 }
+                items={STOCK_OPTIONS}
               >
                 <SelectTrigger id="stock" className="w-full">
                   <SelectValue />

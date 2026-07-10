@@ -129,6 +129,7 @@ export function ProductFilters({ categories }: ProductFiltersProps) {
       <Select
         value={currentCategory}
         onValueChange={(value) => setParam("category", value as string)}
+        items={categoryOptions}
       >
         <SelectTrigger className="w-full sm:w-48" aria-label="Filter by category">
           <SelectValue />
@@ -145,6 +146,7 @@ export function ProductFilters({ categories }: ProductFiltersProps) {
       <Select
         value={currentStatus}
         onValueChange={(value) => setParam("status", value as string)}
+        items={STATUS_OPTIONS}
       >
         <SelectTrigger className="w-full sm:w-36" aria-label="Filter by status">
           <SelectValue />
@@ -163,6 +165,7 @@ export function ProductFilters({ categories }: ProductFiltersProps) {
         onValueChange={(value) =>
           setParam("sort", value as string, "newest")
         }
+        items={SORT_OPTIONS}
       >
         <SelectTrigger className="w-full sm:w-44" aria-label="Sort products">
           <SelectValue />

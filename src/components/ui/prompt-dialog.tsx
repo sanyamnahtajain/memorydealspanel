@@ -149,6 +149,7 @@ function PromptForm({
       <Select
         value={value}
         onValueChange={(next) => applyValue((next as string | null) ?? "")}
+        items={(options ?? []).map((o) => ({ value: o.value, label: o.label }))}
         disabled={loading}
       >
         <SelectTrigger

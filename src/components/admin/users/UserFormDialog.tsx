@@ -81,6 +81,15 @@ function FormBody({
   const passwordId = React.useId();
   const roleLabelId = React.useId();
 
+  // value→label map so the Select trigger shows the role NAME (not its id).
+  const roleItems = React.useMemo(
+    () => [
+      { value: NO_ROLE, label: "No role (no access)" },
+      ...roleOptions.map((r) => ({ value: r.id, label: r.name })),
+    ],
+    [roleOptions],
+  );
+
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (saving) return;
@@ -207,6 +216,7 @@ function FormBody({
         <Select
           value={roleId}
           onValueChange={(next) => setRoleId((next as string | null) ?? NO_ROLE)}
+          items={roleItems}
           disabled={saving}
         >
           <SelectTrigger aria-labelledby={roleLabelId} className="w-full">
