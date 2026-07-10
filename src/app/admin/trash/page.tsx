@@ -4,8 +4,9 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/server/db";
 import { resolveViewer } from "@/server/auth/viewer";
 import { isAdmin } from "@/server/types/viewer";
+import { PAGE_SIZES } from "@/lib/constants";
 import { AdminShell } from "@/components/shell/AdminShell";
-import { EmptyState, PageHeader } from "@/components/common";
+import { EmptyState, PageHeader, Pager } from "@/components/common";
 import { TrashList, TRASH_RETENTION_DAYS } from "@/components/admin/trash";
 import type { TrashedProduct } from "@/components/admin/trash";
 
@@ -19,6 +20,9 @@ export const dynamic = "force-dynamic";
 
 const RETENTION_MS = TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
+/** Trashed products per page. */
+const TRASH_PAGE_SIZE = PAGE_SIZES.admin;
+
 /**
  * Admin trash (server component).
  *
@@ -27,25 +31,41 @@ const RETENTION_MS = TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000;
  * non-admins are redirected to the admin login. Products are oldest-deletion
  * first so the ones closest to permanent purge surface at the top.
  */
-export default async function AdminTrashPage() {
+export default async function AdminTrashPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
   const viewer = await resolveViewer();
   if (!isAdmin(viewer)) {
     redirect("/admin/login");
   }
 
-  const rows = await prisma.product.findMany({
-    where: { deletedAt: { not: null } },
-    orderBy: { deletedAt: "asc" },
-    select: {
-      id: true,
-      name: true,
-      sku: true,
-      brand: true,
-      deletedAt: true,
-      images: true,
-      category: { select: { name: true } },
-    },
-  });
+  const { page: pageParam } = await searchParams;
+  const parsedPage = Number(pageParam ?? "1");
+  const page = Number.isFinite(parsedPage) && parsedPage > 0 ? Math.trunc(parsedPage) : 1;
+
+  const where = { deletedAt: { not: null } } as const;
+  const [rows, total] = await Promise.all([
+    prisma.product.findMany({
+      where,
+      orderBy: { deletedAt: "asc" },
+      skip: (page - 1) * TRASH_PAGE_SIZE,
+      take: TRASH_PAGE_SIZE,
+      select: {
+        id: true,
+        name: true,
+        sku: true,
+        brand: true,
+        deletedAt: true,
+        images: true,
+        category: { select: { name: true } },
+      },
+    }),
+    prisma.product.count({ where }),
+  ]);
+
+  const pageCount = Math.max(1, Math.ceil(total / TRASH_PAGE_SIZE));
 
   const products: TrashedProduct[] = rows.map((row) => {
     // deletedAt is guaranteed non-null by the where clause, but narrow safely.
@@ -81,7 +101,15 @@ export default async function AdminTrashPage() {
             description="Deleted products will appear here with a 30-day window to restore them."
           />
         ) : (
-          <TrashList products={products} now={now} />
+          <>
+            <TrashList products={products} now={now} />
+            <Pager
+              page={page}
+              pageCount={pageCount}
+              total={total}
+              pageSize={TRASH_PAGE_SIZE}
+            />
+          </>
         )}
       </div>
     </AdminShell>

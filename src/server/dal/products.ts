@@ -204,6 +204,78 @@ export async function listByCategoryForViewer(
 }
 
 // ---------------------------------------------------------------------------
+// searchForViewer — text search pushed down to the database.
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the case-insensitive OR filter for a search over PUBLIC fields only
+ * (name / sku / brand / tags). Never touches money, so it is safe for every
+ * viewer. Empty / whitespace queries yield an empty filter (no OR).
+ */
+function searchWhere(query: string): Prisma.ProductWhereInput {
+  const q = query.trim();
+  if (q.length === 0) return VISIBLE_WHERE;
+  const terms = q.split(/\s+/).filter(Boolean);
+  // AND across terms, each term matching any public field (OR across fields).
+  const and: Prisma.ProductWhereInput[] = terms.map((term) => ({
+    OR: [
+      { name: { contains: term, mode: "insensitive" } },
+      { sku: { contains: term, mode: "insensitive" } },
+      { brand: { contains: term, mode: "insensitive" } },
+      { tags: { has: term } },
+    ],
+  }));
+  return { ...VISIBLE_WHERE, AND: and };
+}
+
+export function searchForViewer(
+  viewer: import("@/server/types/viewer").AdminViewer,
+  query: string,
+  options?: ListForViewerOptions,
+): Promise<PricedProduct[]>;
+export function searchForViewer(
+  viewer: import("@/server/types/viewer").AnonViewer,
+  query: string,
+  options?: ListForViewerOptions,
+): Promise<PublicProduct[]>;
+export function searchForViewer(
+  viewer: ViewerContext,
+  query: string,
+  options?: ListForViewerOptions,
+): Promise<(PublicProduct | PricedProduct)[]>;
+export async function searchForViewer(
+  viewer: ViewerContext,
+  query: string,
+  options?: ListForViewerOptions,
+): Promise<(PublicProduct | PricedProduct)[]> {
+  const { skip, take } = resolvePaging(options);
+  const where = searchWhere(query);
+  if (canSeePrices(viewer)) {
+    const rows = await prisma.product.findMany({
+      where,
+      select: PRICED_SELECT,
+      orderBy: STOREFRONT_ORDER,
+      skip,
+      take,
+    });
+    return rows.map(toPricedProduct);
+  }
+  const rows = await prisma.product.findMany({
+    where,
+    select: PUBLIC_FIELDS,
+    orderBy: STOREFRONT_ORDER,
+    skip,
+    take,
+  });
+  return rows.map(toPublicProduct);
+}
+
+/** Count products matching a search query (for pagination / result counts). */
+export async function countSearchForViewer(query: string): Promise<number> {
+  return prisma.product.count({ where: searchWhere(query) });
+}
+
+// ---------------------------------------------------------------------------
 // listForAdminGrid — admin-only, always priced, includes soft-deleted &
 // inactive rows for the DealSheet management view.
 // ---------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 import * as React from "react";
 import { MinusIcon, TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { AnimatedNumber } from "@/components/motion/primitives";
 import { SkeletonStat } from "./Skeletons";
 
 interface StatCardProps {
@@ -62,7 +63,11 @@ export function StatCard({
         ) : null}
       </div>
       <p className="mt-2 font-tabular text-2xl font-semibold tracking-tight text-foreground">
-        {value}
+        {typeof value === "number" ? (
+          <AnimatedNumber value={value} />
+        ) : (
+          value
+        )}
       </p>
       {direction !== null ? (
         <p className="mt-1.5 flex items-center gap-1 text-xs">

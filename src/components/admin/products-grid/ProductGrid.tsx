@@ -21,7 +21,7 @@ import { toast } from "sonner";
 
 import { DealSheet, MobileCardEditor } from "@/components/grid";
 import type { OnSave } from "@/components/grid/types";
-import { useIsMobile } from "@/components/common";
+import { EmptyState, useIsMobile } from "@/components/common";
 import type { CategoryDTO } from "@/server/dal/categories";
 import { saveProductField } from "@/server/actions/products";
 
@@ -73,6 +73,16 @@ export function ProductGrid({ rows, categories }: ProductGridProps) {
     },
     [router],
   );
+
+  if (rows.length === 0) {
+    return (
+      <EmptyState
+        illustration="empty-box"
+        title="No products yet"
+        description="Products you add will appear here, ready to price and publish."
+      />
+    );
+  }
 
   const gridProps = {
     gridId: GRID_ID,

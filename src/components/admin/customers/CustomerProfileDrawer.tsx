@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { usePromptDialog } from "@/components/ui/prompt-dialog";
 import { StatusChip, type StatusChipVariant } from "@/components/common";
 import { ConfirmSheet } from "@/components/common";
 import {
@@ -75,6 +76,7 @@ export function CustomerProfileDrawer({
   onOpenChange: (open: boolean) => void;
 }) {
   const router = useRouter();
+  const { prompt, element: promptElement } = usePromptDialog();
   const [busy, setBusy] = React.useState(false);
   // Initialised directly from props: the parent keys this component by
   // customer id, so a different customer remounts it with fresh state (no
@@ -159,8 +161,16 @@ export function CustomerProfileDrawer({
     run("Customer unblocked", () => setCustomerStatusAction(c.id, "REJECTED"));
 
   async function resetPassword() {
-    const pw = window.prompt("Set a new password (min 8 chars):");
-    if (!pw) return;
+    const pw = await prompt({
+      title: "Reset password",
+      description: `Set a new password for ${c.businessName}.`,
+      kind: "password",
+      placeholder: "New password",
+      confirmLabel: "Reset password",
+      validate: (value) =>
+        value.trim().length < 8 ? "Use at least 8 characters." : null,
+    });
+    if (pw === null) return;
     await run("Password reset", () =>
       resetCustomerPasswordAction({ customerId: c.id, password: pw }),
     );
@@ -323,6 +333,7 @@ export function CustomerProfileDrawer({
           </section>
         </div>
       </SheetContent>
+      {promptElement}
     </Sheet>
   );
 }

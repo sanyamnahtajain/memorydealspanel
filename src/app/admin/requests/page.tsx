@@ -1,9 +1,12 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
+import type { Prisma } from "@prisma/client";
+
 import { prisma } from "@/server/db";
 import { getViewer } from "@/server/auth/viewer";
 import { isAdmin } from "@/server/types/viewer";
+import { PAGE_SIZES } from "@/lib/constants";
 import { AdminShell } from "@/components/shell/AdminShell";
 import { PageHeader } from "@/components/common";
 import {
@@ -20,8 +23,12 @@ export const metadata: Metadata = {
 // Admin review surface — always live so the queue reflects the latest state.
 export const dynamic = "force-dynamic";
 
-/** How many decided requests to show in the history tab. */
-const DECIDED_LIMIT = 50;
+/** Decided requests shown per page in the history tab. */
+const DECIDED_PAGE_SIZE = PAGE_SIZES.admin;
+
+/** URL param carrying the decided-tab page (kept separate from any future
+ * pending-tab paging so switching tabs never clobbers the other's page). */
+const DECIDED_PAGE_PARAM = "dpage";
 
 /**
  * Admin access-requests queue (server component).
@@ -32,13 +39,31 @@ const DECIDED_LIMIT = 50;
  * carries its customer's contact details so the client surface never needs a
  * second round-trip.
  */
-export default async function AdminRequestsPage() {
+export default async function AdminRequestsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const viewer = await getViewer();
   if (!isAdmin(viewer)) {
     redirect("/admin/login");
   }
 
-  const [pendingRows, decidedRows] = await Promise.all([
+  const params = await searchParams;
+  const rawDecidedPage = params[DECIDED_PAGE_PARAM];
+  const decidedPageParam = Number(
+    (Array.isArray(rawDecidedPage) ? rawDecidedPage[0] : rawDecidedPage) ?? "1",
+  );
+  const decidedPage =
+    Number.isFinite(decidedPageParam) && decidedPageParam > 0
+      ? Math.trunc(decidedPageParam)
+      : 1;
+
+  const decidedWhere: Prisma.AccessRequestWhereInput = {
+    status: { in: ["APPROVED", "REJECTED"] },
+  };
+
+  const [pendingRows, decidedRows, decidedTotal] = await Promise.all([
     prisma.accessRequest.findMany({
       where: { status: "PENDING" },
       orderBy: { createdAt: "asc" },
@@ -58,9 +83,10 @@ export default async function AdminRequestsPage() {
       },
     }),
     prisma.accessRequest.findMany({
-      where: { status: { in: ["APPROVED", "REJECTED"] } },
+      where: decidedWhere,
       orderBy: [{ decidedAt: "desc" }, { createdAt: "desc" }],
-      take: DECIDED_LIMIT,
+      skip: (decidedPage - 1) * DECIDED_PAGE_SIZE,
+      take: DECIDED_PAGE_SIZE,
       select: {
         id: true,
         status: true,
@@ -78,7 +104,10 @@ export default async function AdminRequestsPage() {
         },
       },
     }),
+    prisma.accessRequest.count({ where: decidedWhere }),
   ]);
+
+  const decidedPageCount = Math.max(1, Math.ceil(decidedTotal / DECIDED_PAGE_SIZE));
 
   const pending: PendingRequest[] = pendingRows.map((row) => ({
     id: row.id,
@@ -121,7 +150,15 @@ export default async function AdminRequestsPage() {
               : "No requests are waiting for review."
           }
         />
-        <RequestsTabs pending={pending} decided={decided} />
+        <RequestsTabs
+          pending={pending}
+          decided={decided}
+          decidedPage={decidedPage}
+          decidedPageCount={decidedPageCount}
+          decidedTotal={decidedTotal}
+          decidedPageSize={DECIDED_PAGE_SIZE}
+          decidedPageParam={DECIDED_PAGE_PARAM}
+        />
       </div>
     </AdminShell>
   );

@@ -14,7 +14,9 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet"
+import { Tooltip } from "@/components/ui/tooltip"
 import { ThemeToggle } from "@/components/theme/ThemeToggle"
+import { SignOutButton } from "@/components/admin/SignOutButton"
 import { THEME_STORAGE_KEY } from "@/components/theme/theme-script"
 import { useTheme } from "@/components/theme/ThemeProvider"
 import { TabBadge } from "@/components/shell/TabBadge"
@@ -163,7 +165,8 @@ export function AdminShell({
           ))}
         </nav>
 
-        <div className="border-t border-sidebar-border p-3">
+        <div className="flex flex-col gap-1 border-t border-sidebar-border p-3">
+          <SignOutButton variant="sidebar" collapsed={collapsed} />
           <button
             type="button"
             onClick={toggleCollapsed}
@@ -198,21 +201,29 @@ export function AdminShell({
               {title}
             </h1>
             <ThemeToggle variant="compact" className="ml-auto" />
-            <button
-              type="button"
-              onClick={onNotificationsClick}
-              aria-label={
+            <Tooltip
+              content={
                 notificationCount && notificationCount > 0
-                  ? `Notifications (${notificationCount} unread)`
+                  ? `${notificationCount} unread notification${notificationCount === 1 ? "" : "s"}`
                   : "Notifications"
               }
-              className="inline-flex size-11 shrink-0 items-center justify-center rounded-full text-foreground/70 outline-none transition-[background-color,color,transform] duration-150 hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-90"
             >
-              <span className="relative flex items-center justify-center">
-                <Bell className="size-5" aria-hidden />
-                <TabBadge count={notificationCount} label="unread notifications" />
-              </span>
-            </button>
+              <button
+                type="button"
+                onClick={onNotificationsClick}
+                aria-label={
+                  notificationCount && notificationCount > 0
+                    ? `Notifications (${notificationCount} unread)`
+                    : "Notifications"
+                }
+                className="inline-flex size-11 shrink-0 items-center justify-center rounded-full text-foreground/70 outline-none transition-[background-color,color,transform] duration-150 hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-90"
+              >
+                <span className="relative flex items-center justify-center">
+                  <Bell className="size-5" aria-hidden />
+                  <TabBadge count={notificationCount} label="unread notifications" />
+                </span>
+              </button>
+            </Tooltip>
           </div>
         </header>
 
@@ -309,6 +320,12 @@ export function AdminShell({
                       )
                     })}
                   </ul>
+                  <div className="mt-2 border-t border-border px-4 pt-2">
+                    <SignOutButton
+                      variant="sheet"
+                      onSignedOut={() => setMoreOpen(false)}
+                    />
+                  </div>
                 </SheetContent>
               </Sheet>
             </li>

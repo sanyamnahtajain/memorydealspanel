@@ -98,11 +98,11 @@ const OPERATION_META: Record<
 > = {
   create: {
     label: "New",
-    className: "bg-emerald-500/12 text-emerald-600 dark:text-emerald-400",
+    className: "bg-success/12 text-success",
   },
   update: {
     label: "Update",
-    className: "bg-sky-500/12 text-sky-600 dark:text-sky-400",
+    className: "bg-primary/12 text-primary",
   },
   invalid: {
     label: "Error",

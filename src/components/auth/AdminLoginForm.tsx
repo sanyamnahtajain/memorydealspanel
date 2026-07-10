@@ -108,18 +108,18 @@ export function AdminLoginForm({
       noValidate
       onSubmit={handleSubmit}
       className={cn(
-        "w-full space-y-5 rounded-2xl border border-white/10 bg-neutral-950/60 p-6 text-neutral-100 shadow-2xl backdrop-blur supports-backdrop-filter:bg-neutral-950/40 sm:p-7",
+        "w-full space-y-5 rounded-2xl border border-border bg-card/60 p-6 text-foreground shadow-2xl backdrop-blur supports-backdrop-filter:bg-card/40 sm:p-7",
         className,
       )}
     >
       <header className="space-y-1.5">
-        <div className="flex size-10 items-center justify-center rounded-xl bg-white/5 ring-1 ring-white/10">
+        <div className="flex size-10 items-center justify-center rounded-xl bg-foreground/5 ring-1 ring-border">
           <ShieldCheck className="size-5 text-primary" aria-hidden />
         </div>
         <h1 className="font-heading text-lg font-semibold tracking-tight">
           {inTotp ? "Two-factor authentication" : "Admin sign in"}
         </h1>
-        <p className="text-sm text-neutral-400">
+        <p className="text-sm text-muted-foreground">
           {inTotp
             ? "Enter the 6-digit code from your authenticator app."
             : "Restricted area. Staff credentials required."}
@@ -139,7 +139,7 @@ export function AdminLoginForm({
       {!inTotp ? (
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="admin-email" className="text-neutral-300">
+            <Label htmlFor="admin-email" className="text-foreground/80">
               Email
             </Label>
             <Input
@@ -153,11 +153,11 @@ export function AdminLoginForm({
               disabled={pending}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@memorydeals.test"
-              className="border-white/15 bg-white/5 text-neutral-100 placeholder:text-neutral-500"
+              className="border-input bg-foreground/5 text-foreground placeholder:text-muted-foreground"
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="admin-password" className="text-neutral-300">
+            <Label htmlFor="admin-password" className="text-foreground/80">
               Password
             </Label>
             <Input
@@ -170,13 +170,13 @@ export function AdminLoginForm({
               disabled={pending}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
-              className="border-white/15 bg-white/5 text-neutral-100 placeholder:text-neutral-500"
+              className="border-input bg-foreground/5 text-foreground placeholder:text-muted-foreground"
             />
           </div>
         </div>
       ) : (
         <div className="space-y-1.5">
-          <Label htmlFor="admin-totp" className="text-neutral-300">
+          <Label htmlFor="admin-totp" className="text-foreground/80">
             Authentication code
           </Label>
           <Input
@@ -193,7 +193,7 @@ export function AdminLoginForm({
             disabled={pending}
             onChange={(e) => setTotp(e.target.value.replace(/\D/g, ""))}
             placeholder="123456"
-            className="border-white/15 bg-white/5 text-center font-tabular text-lg tracking-[0.4em] text-neutral-100 placeholder:tracking-normal placeholder:text-neutral-500"
+            className="border-input bg-foreground/5 text-center font-tabular text-lg tracking-[0.4em] text-foreground placeholder:tracking-normal placeholder:text-muted-foreground"
           />
           <button
             type="button"
@@ -203,7 +203,7 @@ export function AdminLoginForm({
               setTotp("");
               setError(null);
             }}
-            className="text-xs text-neutral-400 underline-offset-4 hover:text-neutral-200 hover:underline disabled:opacity-50"
+            className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline disabled:opacity-50"
           >
             Use a different account
           </button>

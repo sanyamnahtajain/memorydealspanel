@@ -435,17 +435,29 @@ export async function expireDueGrants(
     return { expired: 0, customerIds: [] };
   }
 
-  const expiredIds: string[] = [];
-  for (const customerId of candidateIds) {
-    // Only expire if there is genuinely no live grant left for them.
-    const live = await findLiveGrant(customerId, now);
-    if (live) continue;
-    await prisma.customer.update({
-      where: { id: customerId },
-      data: { status: "EXPIRED" },
-    });
-    expiredIds.push(customerId);
+  // Fetch, in ONE query, every LIVE grant (unrevoked, unexpired) belonging to
+  // any candidate. A candidate is expired iff they have no such grant. This
+  // replaces the per-candidate `findLiveGrant` loop (the N+1) with a single
+  // read + an in-memory set difference — same semantics as before.
+  const liveGrants = await prisma.accessGrant.findMany({
+    where: {
+      customerId: { in: candidateIds },
+      revokedAt: null,
+      OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+    },
+    select: { customerId: true },
+  });
+  const stillLive = new Set(liveGrants.map((g) => g.customerId));
+
+  const expiredIds = candidateIds.filter((id) => !stillLive.has(id));
+  if (expiredIds.length === 0) {
+    return { expired: 0, customerIds: [] };
   }
+
+  await prisma.customer.updateMany({
+    where: { id: { in: expiredIds } },
+    data: { status: "EXPIRED" },
+  });
 
   return { expired: expiredIds.length, customerIds: expiredIds };
 }

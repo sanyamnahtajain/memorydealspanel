@@ -15,6 +15,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tooltip } from "@/components/ui/tooltip";
 import { StatusChip } from "@/components/common";
 
 interface RowCategory {
@@ -189,23 +190,24 @@ export function CategoryRow({
             </button>
           </div>
         ) : (
-          <button
-            type="button"
-            onDoubleClick={startEditing}
-            className={cn(
-              "group flex w-fit max-w-full items-center gap-1.5 rounded text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-              isRoot
-                ? "font-heading text-sm font-semibold"
-                : "text-sm font-medium",
-            )}
-            title="Double-click to rename"
-          >
-            <span className="truncate text-foreground">{category.name}</span>
-            <PencilIcon
-              className="size-3 shrink-0 text-muted-foreground/0 transition-colors group-hover:text-muted-foreground group-focus-visible:text-muted-foreground"
-              aria-hidden
-            />
-          </button>
+          <Tooltip content="Double-click to rename">
+            <button
+              type="button"
+              onDoubleClick={startEditing}
+              className={cn(
+                "group flex w-fit max-w-full items-center gap-1.5 rounded text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+                isRoot
+                  ? "font-heading text-sm font-semibold"
+                  : "text-sm font-medium",
+              )}
+            >
+              <span className="truncate text-foreground">{category.name}</span>
+              <PencilIcon
+                className="size-3 shrink-0 text-muted-foreground/0 transition-colors group-hover:text-muted-foreground group-focus-visible:text-muted-foreground"
+                aria-hidden
+              />
+            </button>
+          </Tooltip>
         )}
         {!editing ? summary : null}
       </div>

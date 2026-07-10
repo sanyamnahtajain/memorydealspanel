@@ -13,6 +13,7 @@ import {
 } from "@/components/storefront/ProductCardGrid";
 import { SearchLauncher } from "@/components/storefront/SearchLauncher";
 import { renderPriceSlot } from "@/components/storefront/priceSlot";
+import { loadMoreSearchProducts } from "./actions";
 
 export const metadata: Metadata = {
   title: "Search — MemoryDeals",
@@ -38,14 +39,26 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   const [categories, viewer] = await Promise.all([listActive(), getViewer()]);
   const categoryChips = categories.map((c) => ({ name: c.name, slug: c.slug }));
 
-  const { items: products, query } = rawQuery
+  const {
+    items: products,
+    query,
+    total,
+  } = rawQuery
     ? await searchCatalog(rawQuery)
-    : { items: [], query: "" };
+    : { items: [], query: "", total: 0 };
 
   const items: ProductCardItem[] = products.map((product) => ({
     product,
     priceSlot: renderPriceSlot(product, viewer),
   }));
+
+  // Bind the query to the load-more action; the client grid passes only the
+  // next page number. Price slots stay server-rendered.
+  const boundQuery = query;
+  async function loadMore(nextPage: number): Promise<ProductCardItem[]> {
+    "use server";
+    return loadMoreSearchProducts(boundQuery, nextPage);
+  }
 
   return (
     <StorefrontShell>
@@ -71,13 +84,15 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
       ) : (
         <div>
           <p className="mb-4 text-sm text-muted-foreground">
-            {items.length}{" "}
-            {items.length === 1 ? "result" : "results"} for{" "}
+            {total.toLocaleString("en-IN")}{" "}
+            {total === 1 ? "result" : "results"} for{" "}
             <span className="font-medium text-foreground">“{query}”</span>
           </p>
           <ProductCardGrid
             initialItems={items}
-            pageSize={PAGE_SIZES.max}
+            loadMore={loadMore}
+            pageSize={PAGE_SIZES.storefront}
+            initialPage={1}
             emptyTitle={`No results for “${query}”`}
             emptyDescription="Try a different keyword, or browse by category."
           />

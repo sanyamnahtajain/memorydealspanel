@@ -6,6 +6,7 @@ import { Bell, BellOff, BellRing, Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Tooltip } from "@/components/ui/tooltip";
 
 /**
  * PushToggle — an admin control that opts this browser in/out of Web Push
@@ -228,18 +229,19 @@ export function PushToggle({
           ? "Push notifications aren't configured on the server."
           : "Notifications are blocked. Enable them in your browser settings.";
     return (
-      <Button
-        type="button"
-        variant="outline"
-        size={compact ? "icon" : "sm"}
-        disabled
-        title={hint}
-        aria-label={hint}
-        className={cn("text-muted-foreground", className)}
-      >
-        <BellOff aria-hidden />
-        {compact ? null : <span>Unavailable</span>}
-      </Button>
+      <Tooltip content={hint}>
+        <Button
+          type="button"
+          variant="outline"
+          size={compact ? "icon" : "sm"}
+          disabled
+          aria-label={hint}
+          className={cn("text-muted-foreground", className)}
+        >
+          <BellOff aria-hidden />
+          {compact ? null : <span>Unavailable</span>}
+        </Button>
+      </Tooltip>
     );
   }
 
@@ -248,33 +250,38 @@ export function PushToggle({
   const subscribed = state === "subscribed";
 
   return (
-    <Button
-      type="button"
-      variant={subscribed ? "secondary" : "outline"}
-      size={compact ? "icon" : "sm"}
-      disabled={busy}
-      onClick={subscribed ? disable : enable}
-      aria-pressed={subscribed}
-      aria-label={
-        subscribed
-          ? "Disable notifications on this device"
-          : "Enable notifications on this device"
-      }
-      title={
+    <Tooltip
+      content={
         subscribed
           ? "Notifications are on for this device"
           : "Enable notifications for this device"
       }
-      className={className}
     >
-      {busy ? (
-        <Loader2 className="animate-spin" aria-hidden />
-      ) : subscribed ? (
-        <BellRing aria-hidden />
-      ) : (
-        <Bell aria-hidden />
-      )}
-      {compact ? null : <span>{subscribed ? "Notifications on" : "Enable notifications"}</span>}
-    </Button>
+      <Button
+        type="button"
+        variant={subscribed ? "secondary" : "outline"}
+        size={compact ? "icon" : "sm"}
+        disabled={busy}
+        onClick={subscribed ? disable : enable}
+        aria-pressed={subscribed}
+        aria-label={
+          subscribed
+            ? "Disable notifications on this device"
+            : "Enable notifications on this device"
+        }
+        className={className}
+      >
+        {busy ? (
+          <Loader2 className="animate-spin" aria-hidden />
+        ) : subscribed ? (
+          <BellRing aria-hidden />
+        ) : (
+          <Bell aria-hidden />
+        )}
+        {compact ? null : (
+          <span>{subscribed ? "Notifications on" : "Enable notifications"}</span>
+        )}
+      </Button>
+    </Tooltip>
   );
 }

@@ -15,6 +15,7 @@ import {
 } from "@/components/storefront/ProductCardGrid";
 import { CategoryFilters } from "@/components/storefront/CategoryFilters";
 import { renderPriceSlot } from "@/components/storefront/priceSlot";
+import { loadMoreCategoryProducts } from "./actions";
 
 /**
  * Category listing.
@@ -75,7 +76,8 @@ export default async function CategoryPage({
 
   const viewer = await getViewer();
   const products = await listByCategoryForViewer(viewer, category.id, {
-    take: PAGE_SIZES.max,
+    page: 1,
+    take: PAGE_SIZES.storefront,
   });
 
   const brands = Array.from(
@@ -89,6 +91,14 @@ export default async function CategoryPage({
     product,
     priceSlot: renderPriceSlot(product, viewer),
   }));
+
+  // Bind the category id to the load-more action so the client grid only needs
+  // to pass the next page number. Price slots stay server-rendered.
+  const categoryId = category.id;
+  async function loadMore(nextPage: number): Promise<ProductCardItem[]> {
+    "use server";
+    return loadMoreCategoryProducts(categoryId, nextPage);
+  }
 
   return (
     <StorefrontShell>
@@ -104,9 +114,6 @@ export default async function CategoryPage({
           <h1 className="mt-2 font-heading text-2xl font-bold tracking-tight text-foreground md:text-3xl">
             {category.name}
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {products.length} {products.length === 1 ? "product" : "products"}
-          </p>
         </div>
       </FadeUp>
 
@@ -118,7 +125,9 @@ export default async function CategoryPage({
 
       <ProductCardGrid
         initialItems={items}
-        pageSize={PAGE_SIZES.max}
+        loadMore={loadMore}
+        pageSize={PAGE_SIZES.storefront}
+        initialPage={1}
         filterBrands={selectedBrands}
         emptyTitle="Nothing in this category yet"
         emptyDescription="We're adding stock here soon — check back shortly."

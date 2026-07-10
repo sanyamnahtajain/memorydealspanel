@@ -26,6 +26,7 @@ import {
 import type { ProductImage } from "@prisma/client";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Tooltip } from "@/components/ui/tooltip";
 import { ConfirmSheet } from "@/components/common/ConfirmSheet";
 import { toast } from "sonner";
 import {
@@ -62,6 +63,12 @@ export function PhotoStrip({
   const [busyUrl, setBusyUrl] = React.useState<string | null>(null);
   const [dragUrl, setDragUrl] = React.useState<string | null>(null);
   const [overUrl, setOverUrl] = React.useState<string | null>(null);
+  // URL pending removal — drives a single controlled ConfirmSheet so each
+  // tile's trigger stays a plain Tooltip-wrapped Button (Base UI merges the
+  // dialog-trigger props onto a DOM button, not onto our Tooltip wrapper).
+  const [pendingRemoveUrl, setPendingRemoveUrl] = React.useState<string | null>(
+    null,
+  );
 
   const handleSetPrimary = React.useCallback(
     async (url: string) => {
@@ -135,6 +142,7 @@ export function PhotoStrip({
   }
 
   return (
+    <>
     <ul
       className={cn(
         "flex snap-x gap-3 overflow-x-auto pb-2",
@@ -207,47 +215,58 @@ export function PhotoStrip({
               {/* Action overlay */}
               <div className="absolute inset-x-0 bottom-0 flex items-center justify-end gap-1 bg-gradient-to-t from-background/80 to-transparent p-1 opacity-0 transition-opacity group-hover/tile:opacity-100 focus-within:opacity-100">
                 {!image.isPrimary ? (
-                  <Button
-                    type="button"
-                    size="icon-sm"
-                    variant="secondary"
-                    disabled={isBusy}
-                    onClick={() => handleSetPrimary(image.url)}
-                    aria-label="Set as primary image"
-                    title="Set as primary"
-                  >
-                    {isBusy ? (
-                      <Loader2Icon className="animate-spin" />
-                    ) : (
-                      <StarIcon />
-                    )}
-                  </Button>
-                ) : null}
-
-                <ConfirmSheet
-                  title="Remove this image?"
-                  description="It will be detached from the product. This cannot be undone."
-                  destructive
-                  confirmLabel="Remove"
-                  onConfirm={() => handleRemove(image.url)}
-                  trigger={
+                  <Tooltip content="Set as primary">
                     <Button
                       type="button"
                       size="icon-sm"
-                      variant="destructive"
-                      aria-label="Remove image"
-                      title="Remove image"
+                      variant="secondary"
+                      disabled={isBusy}
+                      onClick={() => handleSetPrimary(image.url)}
+                      aria-label="Set as primary image"
                     >
-                      <Trash2Icon />
+                      {isBusy ? (
+                        <Loader2Icon className="animate-spin" />
+                      ) : (
+                        <StarIcon />
+                      )}
                     </Button>
-                  }
-                />
+                  </Tooltip>
+                ) : null}
+
+                <Tooltip content="Remove image">
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="destructive"
+                    aria-label="Remove image"
+                    onClick={() => setPendingRemoveUrl(image.url)}
+                  >
+                    <Trash2Icon />
+                  </Button>
+                </Tooltip>
               </div>
             </motion.li>
           );
         })}
       </AnimatePresence>
     </ul>
+
+      <ConfirmSheet
+        title="Remove this image?"
+        description="It will be detached from the product. This cannot be undone."
+        destructive
+        confirmLabel="Remove"
+        open={pendingRemoveUrl !== null}
+        onOpenChange={(next) => {
+          if (!next) setPendingRemoveUrl(null);
+        }}
+        onConfirm={async () => {
+          if (pendingRemoveUrl === null) return;
+          await handleRemove(pendingRemoveUrl);
+          setPendingRemoveUrl(null);
+        }}
+      />
+    </>
   );
 }
 

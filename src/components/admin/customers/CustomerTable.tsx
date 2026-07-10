@@ -4,12 +4,12 @@ import * as React from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
 import { toast } from "sonner";
-import { Users, Search } from "lucide-react";
+import { Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table } from "@/components/ui/table";
-import { StatusChip, type StatusChipVariant, EmptyState } from "@/components/common";
+import { StatusChip, type StatusChipVariant, EmptyState, Pager } from "@/components/common";
 import { useIsMobile } from "@/components/common";
 import {
   ExpiryDial,
@@ -56,11 +56,23 @@ export function CustomerTable({
   counts,
   activeStatus,
   search,
+  page,
+  pageCount,
+  total,
+  pageSize,
 }: {
   rows: CustomerRowData[];
   counts: Record<CustomerStatus, number>;
   activeStatus: CustomerStatus | null;
   search: string;
+  /** 1-based current page (from ?page=). */
+  page: number;
+  /** Total pages for the active filter/search. */
+  pageCount: number;
+  /** Total rows matching the active filter/search. */
+  total: number;
+  /** Page size used for the range summary. */
+  pageSize: number;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -256,6 +268,15 @@ export function CustomerTable({
           </Table>
         </div>
       )}
+
+      {rows.length > 0 ? (
+        <Pager
+          page={page}
+          pageCount={pageCount}
+          total={total}
+          pageSize={pageSize}
+        />
+      ) : null}
 
       {/* Floating bulk-action bar */}
       <AnimatePresence>

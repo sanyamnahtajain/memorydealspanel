@@ -37,6 +37,8 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip } from "@/components/ui/tooltip";
+import { usePromptDialog } from "@/components/ui/prompt-dialog";
 
 import type { CellCoord, ColumnDef, GridRow, OnSave, SaveStatus } from "./types";
 import { isColumnEditable } from "./types";
@@ -113,6 +115,7 @@ export function DealSheet<Row extends GridRow = GridRow>({
   const [searchOpen, setSearchOpen] = React.useState(false);
   const scrollRef = React.useRef<HTMLDivElement | null>(null);
   const [scrollEl, setScrollEl] = React.useState<HTMLElement | null>(null);
+  const { prompt, element: promptElement } = usePromptDialog();
 
   const { viewRows, viewColumns } = ctrl;
 
@@ -373,28 +376,50 @@ export function DealSheet<Row extends GridRow = GridRow>({
         count={ctrl.selectedRowIds.length}
         onClear={ctrl.selection.clear}
         actions={standardBulkActions({
-          onAdjustPrice: () => {
+          onAdjustPrice: async () => {
             const col = firstOfType(viewColumns, "currency");
             if (!col) return;
-            const input = window.prompt("Adjust price by percent (e.g. 10 or -5):");
+            const input = await prompt({
+              title: "Adjust price",
+              description: "Change every selected price by a percentage.",
+              label: "Percent change",
+              kind: "number",
+              placeholder: "e.g. 10 or -5",
+              validate: (v) =>
+                v.trim() === "" || !Number.isFinite(Number(v))
+                  ? "Enter a number, e.g. 10 or -5."
+                  : null,
+            });
             if (input === null) return;
             const percent = Number(input);
             if (!Number.isFinite(percent)) return;
             ctrl.bulkAdjustPrice(col.key, { percent });
           },
-          onAddTag: () => {
+          onAddTag: async () => {
             const col = firstOfType(viewColumns, "multi-tag");
             if (!col) return;
-            const tag = window.prompt("Tag to add:");
+            const tag = await prompt({
+              title: "Add tag",
+              label: "Tag to add",
+              kind: "text",
+              placeholder: "Tag name",
+              validate: (v) => (v.trim() === "" ? "Enter a tag." : null),
+            });
             if (!tag) return;
             ctrl.bulkAddTag(col.key, tag);
           },
-          onSetStatus: () => {
+          onSetStatus: async () => {
             const col = firstOfType(viewColumns, "select");
             if (!col || !col.options?.length) return;
-            const value = window.prompt(
-              `Set ${col.header} to (${col.options.map((o) => o.value).join(", ")}):`,
-            );
+            const value = await prompt({
+              title: `Set ${col.header}`,
+              label: col.header,
+              kind: "select",
+              options: col.options.map((o) => ({
+                value: o.value,
+                label: o.label,
+              })),
+            });
             if (!value) return;
             const match = col.options.find(
               (o) => o.value === value || o.label === value,
@@ -404,6 +429,8 @@ export function DealSheet<Row extends GridRow = GridRow>({
           onDelete: ctrl.bulkDelete,
         })}
       />
+
+      {promptElement}
     </div>
   );
 }
@@ -429,32 +456,46 @@ function GridToolbar<Row extends GridRow>({
 }: ToolbarProps<Row>) {
   const [viewsOpen, setViewsOpen] = React.useState(false);
   const [hideOpen, setHideOpen] = React.useState(false);
+  const { prompt, element: promptElement } = usePromptDialog();
+
+  const onSaveView = React.useCallback(async () => {
+    const name = await prompt({
+      title: "Save view",
+      label: "View name",
+      kind: "text",
+      placeholder: "e.g. Active deals",
+      validate: (v) => (v.trim() === "" ? "Enter a name." : null),
+    });
+    if (name) ctrl.saveCurrentView(name);
+  }, [prompt, ctrl]);
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-border bg-muted/30 px-3 py-2">
       <div className="flex items-center gap-1">
-        <Button
-          type="button"
-          size="icon-sm"
-          variant="ghost"
-          aria-label="Undo"
-          title={ctrl.undoLabel ? `Undo: ${ctrl.undoLabel}` : "Undo"}
-          disabled={!ctrl.canUndo}
-          onClick={ctrl.undo}
-        >
-          <Undo2 />
-        </Button>
-        <Button
-          type="button"
-          size="icon-sm"
-          variant="ghost"
-          aria-label="Redo"
-          title={ctrl.redoLabel ? `Redo: ${ctrl.redoLabel}` : "Redo"}
-          disabled={!ctrl.canRedo}
-          onClick={ctrl.redo}
-        >
-          <Redo2 />
-        </Button>
+        <Tooltip content={ctrl.undoLabel ? `Undo: ${ctrl.undoLabel}` : "Undo"}>
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            aria-label={ctrl.undoLabel ? `Undo: ${ctrl.undoLabel}` : "Undo"}
+            disabled={!ctrl.canUndo}
+            onClick={ctrl.undo}
+          >
+            <Undo2 />
+          </Button>
+        </Tooltip>
+        <Tooltip content={ctrl.redoLabel ? `Redo: ${ctrl.redoLabel}` : "Redo"}>
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            aria-label={ctrl.redoLabel ? `Redo: ${ctrl.redoLabel}` : "Redo"}
+            disabled={!ctrl.canRedo}
+            onClick={ctrl.redo}
+          >
+            <Redo2 />
+          </Button>
+        </Tooltip>
       </div>
 
       <span className="h-5 w-px bg-border" aria-hidden />
@@ -488,6 +529,7 @@ function GridToolbar<Row extends GridRow>({
         {viewsOpen ? (
           <ViewsMenu
             ctrl={ctrl}
+            onSaveView={onSaveView}
             onClose={() => setViewsOpen(false)}
           />
         ) : null}
@@ -513,15 +555,19 @@ function GridToolbar<Row extends GridRow>({
         <SaveStatusSummary ctrl={ctrl} />
         <GridDensityToggle density={density} onChange={onDensity} />
       </div>
+
+      {promptElement}
     </div>
   );
 }
 
 function ViewsMenu<Row extends GridRow>({
   ctrl,
+  onSaveView,
   onClose,
 }: {
   ctrl: ReturnType<typeof useGridController<Row>>;
+  onSaveView: () => void;
   onClose: () => void;
 }) {
   const ref = useDismiss<HTMLDivElement>(onClose);
@@ -534,9 +580,8 @@ function ViewsMenu<Row extends GridRow>({
         type="button"
         className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
         onClick={() => {
-          const name = window.prompt("Name this view:");
-          if (name) ctrl.saveCurrentView(name);
           onClose();
+          onSaveView();
         }}
       >
         <Plus className="size-3.5" />
@@ -644,7 +689,7 @@ function SaveStatusSummary<Row extends GridRow>({
   }
   return (
     <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-      <CheckCircle2 className="size-3.5 text-emerald-500" />
+      <CheckCircle2 className="size-3.5 text-success" />
       All changes saved
     </span>
   );
@@ -862,7 +907,7 @@ function GridCell<Row extends GridRow>({
         "relative shrink-0 overflow-hidden border-r border-b border-border/70 text-sm",
         pinned && "sticky z-10 bg-card shadow-[1px_0_0_0_var(--border)]",
         isSelected && !isEditing && "bg-primary/5",
-        isSearchMatch && "ring-1 ring-inset ring-amber-400/70",
+        isSearchMatch && "ring-1 ring-inset ring-warning/70",
       )}
     >
       {isEditing && Editor ? (
@@ -899,7 +944,7 @@ const STATUS_META: Record<
 > = {
   idle: null,
   saving: { label: "Saving", className: "text-muted-foreground" },
-  saved: { label: "Saved", className: "text-emerald-600" },
+  saved: { label: "Saved", className: "text-success" },
   error: { label: "Retry", className: "text-destructive" },
 };
 
@@ -916,24 +961,24 @@ function RowStatusPill({
   return (
     <div className="pointer-events-none sticky right-1 z-10 ml-auto flex items-center gap-1 self-center pr-1">
       {status.conflict ? (
-        <span
-          className="pointer-events-auto inline-flex items-center gap-1 rounded-full border border-amber-400/60 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700"
-          title="This row changed elsewhere while you were editing"
-        >
-          <GitBranchPlus className="size-3" />
-          Conflict
-        </span>
+        <Tooltip content="This row changed elsewhere while you were editing">
+          <span className="pointer-events-auto inline-flex items-center gap-1 rounded-full border border-warning/60 bg-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-warning">
+            <GitBranchPlus className="size-3" />
+            Conflict
+          </span>
+        </Tooltip>
       ) : null}
       {status.status === "error" ? (
-        <button
-          type="button"
-          onClick={onRetry}
-          className="pointer-events-auto inline-flex items-center gap-1 rounded-full border border-destructive/40 bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive"
-          title={status.error ?? "Save failed — click to retry"}
-        >
-          <AlertTriangle className="size-3" />
-          Retry
-        </button>
+        <Tooltip content={status.error ?? "Save failed — click to retry"}>
+          <button
+            type="button"
+            onClick={onRetry}
+            className="pointer-events-auto inline-flex items-center gap-1 rounded-full border border-destructive/40 bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive"
+          >
+            <AlertTriangle className="size-3" />
+            Retry
+          </button>
+        </Tooltip>
       ) : status.status === "saving" ? (
         <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
           <Loader2 className="size-3 animate-spin" />

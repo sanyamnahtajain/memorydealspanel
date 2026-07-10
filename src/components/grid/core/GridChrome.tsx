@@ -28,6 +28,7 @@ import {
   Rows3,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Tooltip } from "@/components/ui/tooltip";
 import { springs } from "@/components/motion/tokens";
 import type { ColumnDef, GridRow, SortSpec } from "../types";
 import type { GridDensity } from "./useVirtualRows";
@@ -88,21 +89,22 @@ function DensityButton({
   children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      aria-label={label}
-      aria-pressed={active}
-      title={label}
-      onClick={onClick}
-      className={cn(
-        "inline-flex size-6 items-center justify-center rounded-md transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-        active
-          ? "bg-primary text-primary-foreground"
-          : "text-muted-foreground hover:bg-muted hover:text-foreground",
-      )}
-    >
-      {children}
-    </button>
+    <Tooltip content={label}>
+      <button
+        type="button"
+        aria-label={label}
+        aria-pressed={active}
+        onClick={onClick}
+        className={cn(
+          "inline-flex size-6 items-center justify-center rounded-md transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+          active
+            ? "bg-primary text-primary-foreground"
+            : "text-muted-foreground hover:bg-muted hover:text-foreground",
+        )}
+      >
+        {children}
+      </button>
+    </Tooltip>
   );
 }
 
@@ -169,17 +171,18 @@ export function GridGutterHeader({
   className?: string;
 }) {
   return (
-    <button
-      type="button"
-      aria-label="Select all"
-      title="Select all"
-      onClick={onSelectAll}
-      style={{ width, height }}
-      className={cn(
-        "sticky left-0 top-0 z-30 shrink-0 border-r border-b border-border bg-muted/60 text-muted-foreground transition-colors hover:bg-muted",
-        className,
-      )}
-    />
+    <Tooltip content="Select all">
+      <button
+        type="button"
+        aria-label="Select all"
+        onClick={onSelectAll}
+        style={{ width, height }}
+        className={cn(
+          "sticky left-0 top-0 z-30 shrink-0 border-r border-b border-border bg-muted/60 text-muted-foreground transition-colors hover:bg-muted",
+          className,
+        )}
+      />
+    </Tooltip>
   );
 }
 
@@ -385,37 +388,42 @@ function GridHeaderCell<Row extends GridRow>({
           aria-hidden
           className="size-3 shrink-0 cursor-grab text-muted-foreground/40 opacity-0 transition-opacity group-hover/header:opacity-100"
         />
-        <button
-          type="button"
-          onClick={(e) => {
-            // Plain click sorts; modifier-click selects the whole column.
-            if (e.altKey) {
-              onSelectColumn?.(col.key, {
-                additive: e.metaKey || e.ctrlKey,
-                range: e.shiftKey,
-              });
-            } else {
-              onSort?.(col.key, e.shiftKey);
-            }
-          }}
-          title={`${col.header} — click to sort, Alt+click to select column`}
-          className="flex min-w-0 flex-1 items-center gap-1 truncate text-xs font-semibold text-foreground outline-none"
+        <Tooltip
+          content={`${col.header} — click to sort, Alt+click to select column`}
         >
-          <span className="truncate">{col.header}</span>
-          <SortGlyph dir={sort?.dir} />
-        </button>
-        <button
-          type="button"
-          aria-label={pinned ? "Unpin column" : "Pin column left"}
-          title={pinned ? "Unpin column" : "Pin column left"}
-          onClick={() => onTogglePin?.(col.key)}
-          className={cn(
-            "inline-flex size-4 items-center justify-center rounded text-muted-foreground/50 transition-opacity hover:text-foreground",
-            pinned ? "opacity-100 text-primary" : "opacity-0 group-hover/header:opacity-100",
-          )}
-        >
-          {pinned ? <PinOff className="size-3" /> : <Pin className="size-3" />}
-        </button>
+          <button
+            type="button"
+            aria-label={`${col.header} — click to sort, Alt+click to select column`}
+            onClick={(e) => {
+              // Plain click sorts; modifier-click selects the whole column.
+              if (e.altKey) {
+                onSelectColumn?.(col.key, {
+                  additive: e.metaKey || e.ctrlKey,
+                  range: e.shiftKey,
+                });
+              } else {
+                onSort?.(col.key, e.shiftKey);
+              }
+            }}
+            className="flex min-w-0 flex-1 items-center gap-1 truncate text-xs font-semibold text-foreground outline-none"
+          >
+            <span className="truncate">{col.header}</span>
+            <SortGlyph dir={sort?.dir} />
+          </button>
+        </Tooltip>
+        <Tooltip content={pinned ? "Unpin column" : "Pin column left"}>
+          <button
+            type="button"
+            aria-label={pinned ? "Unpin column" : "Pin column left"}
+            onClick={() => onTogglePin?.(col.key)}
+            className={cn(
+              "inline-flex size-4 items-center justify-center rounded text-muted-foreground/50 transition-opacity hover:text-foreground",
+              pinned ? "opacity-100 text-primary" : "opacity-0 group-hover/header:opacity-100",
+            )}
+          >
+            {pinned ? <PinOff className="size-3" /> : <Pin className="size-3" />}
+          </button>
+        </Tooltip>
       </div>
 
       <div className="px-1.5 pb-1">

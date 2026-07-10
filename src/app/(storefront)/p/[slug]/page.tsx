@@ -15,6 +15,7 @@ import { FadeUp } from "@/components/motion/primitives";
 import { ProductGallery } from "@/components/storefront/ProductGallery";
 import { SpecTable } from "@/components/storefront/SpecTable";
 import { EnquireButton } from "@/components/storefront/EnquireButton";
+import { recordProductView } from "@/server/services/pageviews";
 import { ProductPriceArea } from "./ProductPriceArea";
 
 /**
@@ -93,6 +94,15 @@ export default async function ProductDetailPage({ params }: PageParams) {
 
   const showPrices = canSeePrices(viewer);
   const customerStatus = isCustomer(viewer) ? viewer.status : undefined;
+
+  // Record the view for the dashboard's "Most viewed" aggregation. This is
+  // best-effort analytics: `recordProductView` never throws, we do NOT await
+  // it into the render path, and it reads nothing gated — so it can neither
+  // block the page nor alter price-gate behaviour.
+  void recordProductView(
+    product.id,
+    isCustomer(viewer) ? viewer.customerId : null,
+  );
   const primaryImage =
     product.images.find((img) => img.isPrimary) ?? product.images[0] ?? null;
 

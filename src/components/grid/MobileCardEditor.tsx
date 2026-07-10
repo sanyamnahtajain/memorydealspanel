@@ -28,6 +28,8 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tooltip } from "@/components/ui/tooltip";
+import { usePromptDialog } from "@/components/ui/prompt-dialog";
 
 import type { CellCoord, ColumnDef, GridRow, SaveStatus } from "./types";
 import { isColumnEditable } from "./types";
@@ -65,6 +67,7 @@ export function MobileCardEditor<Row extends GridRow = GridRow>({
   const [multiSelect, setMultiSelect] = React.useState(false);
   const [checked, setChecked] = React.useState<Set<string>>(new Set());
   const [searchOpen, setSearchOpen] = React.useState(false);
+  const { prompt, element: promptElement } = usePromptDialog();
 
   const { viewRows, viewColumns, groups } = ctrl;
 
@@ -223,28 +226,50 @@ export function MobileCardEditor<Row extends GridRow = GridRow>({
         count={multiSelect ? checkedIds.length : 0}
         onClear={exitMultiSelect}
         actions={standardBulkActions({
-          onAdjustPrice: () => {
+          onAdjustPrice: async () => {
             const col = viewColumns.find((c) => c.type === "currency");
             if (!col) return;
-            const input = window.prompt("Adjust price by percent:");
+            const input = await prompt({
+              title: "Adjust price",
+              description: "Change every selected price by a percentage.",
+              label: "Percent change",
+              kind: "number",
+              placeholder: "e.g. 10 or -5",
+              validate: (v) =>
+                v.trim() === "" || !Number.isFinite(Number(v))
+                  ? "Enter a number, e.g. 10 or -5."
+                  : null,
+            });
             if (input === null) return;
             const percent = Number(input);
             if (Number.isFinite(percent)) {
               ctrl.bulkAdjustPrice(col.key, { percent }, checkedIds);
             }
           },
-          onAddTag: () => {
+          onAddTag: async () => {
             const col = viewColumns.find((c) => c.type === "multi-tag");
             if (!col) return;
-            const tag = window.prompt("Tag to add:");
+            const tag = await prompt({
+              title: "Add tag",
+              label: "Tag to add",
+              kind: "text",
+              placeholder: "Tag name",
+              validate: (v) => (v.trim() === "" ? "Enter a tag." : null),
+            });
             if (tag) ctrl.bulkAddTag(col.key, tag, checkedIds);
           },
-          onSetStatus: () => {
+          onSetStatus: async () => {
             const col = viewColumns.find((c) => c.type === "select");
             if (!col?.options?.length) return;
-            const value = window.prompt(
-              `Set ${col.header} (${col.options.map((o) => o.value).join(", ")}):`,
-            );
+            const value = await prompt({
+              title: `Set ${col.header}`,
+              label: col.header,
+              kind: "select",
+              options: col.options.map((o) => ({
+                value: o.value,
+                label: o.label,
+              })),
+            });
             if (value) {
               const match = col.options.find(
                 (o) => o.value === value || o.label === value,
@@ -258,6 +283,8 @@ export function MobileCardEditor<Row extends GridRow = GridRow>({
           },
         })}
       />
+
+      {promptElement}
     </div>
   );
 }
@@ -460,7 +487,7 @@ function MobileSaveStatus<Row extends GridRow>({
     );
   return (
     <span className="inline-flex items-center gap-1 pr-1 text-xs text-muted-foreground">
-      <CheckCircle2 className="size-3.5 text-emerald-500" />
+      <CheckCircle2 className="size-3.5 text-success" />
       Saved
     </span>
   );
@@ -476,23 +503,26 @@ function CardStatus({
   return (
     <div className="flex shrink-0 items-center gap-1">
       {status.conflict ? (
-        <span
-          className="inline-flex items-center gap-0.5 rounded-full border border-amber-400/60 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700"
-          title="Changed elsewhere"
-        >
-          <GitBranchPlus className="size-3" />
-        </span>
+        <Tooltip content="Changed elsewhere">
+          <span
+            aria-label="Changed elsewhere"
+            className="inline-flex items-center gap-0.5 rounded-full border border-warning/60 bg-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-warning"
+          >
+            <GitBranchPlus className="size-3" />
+          </span>
+        </Tooltip>
       ) : null}
       {status.status === "error" ? (
-        <button
-          type="button"
-          onClick={onRetry}
-          className="inline-flex items-center gap-0.5 rounded-full border border-destructive/40 bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive"
-          title={status.error ?? "Retry"}
-        >
-          <AlertTriangle className="size-3" />
-          Retry
-        </button>
+        <Tooltip content={status.error ?? "Retry"}>
+          <button
+            type="button"
+            onClick={onRetry}
+            className="inline-flex items-center gap-0.5 rounded-full border border-destructive/40 bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive"
+          >
+            <AlertTriangle className="size-3" />
+            Retry
+          </button>
+        </Tooltip>
       ) : status.status === "saving" ? (
         <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
       ) : null}

@@ -1,6 +1,9 @@
 "use server";
 
+import { getViewer } from "@/server/auth/viewer";
 import { searchCatalog } from "@/server/storefront/catalog";
+import { renderPriceSlot } from "@/components/storefront/priceSlot";
+import type { ProductCardItem } from "@/components/storefront/ProductCardGrid";
 
 /**
  * A minimal, PRICE-FREE search suggestion for the instant-search overlay.
@@ -39,4 +42,22 @@ export async function searchSuggestions(
       thumbUrl: primary ? (primary.thumbUrl ?? primary.url) : null,
     };
   });
+}
+
+/**
+ * Load one more page of full search results for the CURRENT viewer, projected
+ * through the price gate (`priceSlot` is server-rendered here, so no money
+ * leaks into the client for a gated viewer). Bound to the query on the server
+ * component; the client grid only passes the next page number.
+ */
+export async function loadMoreSearchProducts(
+  query: string,
+  nextPage: number,
+): Promise<ProductCardItem[]> {
+  const { items } = await searchCatalog(query, Math.max(1, Math.trunc(nextPage)));
+  const viewer = await getViewer();
+  return items.map((product) => ({
+    product,
+    priceSlot: renderPriceSlot(product, viewer),
+  }));
 }

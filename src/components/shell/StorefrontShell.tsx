@@ -7,6 +7,7 @@ import { CircleUserRound, Search } from "lucide-react"
 import { motion, useReducedMotion, type Transition } from "motion/react"
 
 import { cn } from "@/lib/utils"
+import { Tooltip } from "@/components/ui/tooltip"
 import { ThemeToggle } from "@/components/theme/ThemeToggle"
 import { TabBadge } from "@/components/shell/TabBadge"
 import {
@@ -218,16 +219,18 @@ function HeaderIconLink({
   children: React.ReactNode
 }) {
   return (
-    <Link
-      href={href}
-      aria-label={label}
-      aria-current={active ? "page" : undefined}
-      className={cn(
-        "inline-flex size-11 items-center justify-center rounded-full outline-none transition-[background-color,color,transform] duration-150 hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-90",
-        active ? "bg-muted text-foreground" : "text-foreground/70 hover:text-foreground"
-      )}
-    >
-      {children}
-    </Link>
+    <Tooltip content={label}>
+      <Link
+        href={href}
+        aria-label={label}
+        aria-current={active ? "page" : undefined}
+        className={cn(
+          "inline-flex size-11 items-center justify-center rounded-full outline-none transition-[background-color,color,transform] duration-150 hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-90",
+          active ? "bg-muted text-foreground" : "text-foreground/70 hover:text-foreground"
+        )}
+      >
+        {children}
+      </Link>
+    </Tooltip>
   )
 }

@@ -3,10 +3,12 @@ import { redirect } from "next/navigation";
 
 import { getViewer } from "@/server/auth/viewer";
 import { isAdmin } from "@/server/types/viewer";
+import { PAGE_SIZES } from "@/lib/constants";
 import { AdminShell } from "@/components/shell/AdminShell";
 import { PageHeader } from "@/components/common";
 import {
   listCustomers,
+  countCustomers,
   customerStatusCounts,
   type CustomerListItem,
 } from "@/server/services/customers";
@@ -61,10 +63,13 @@ function toRow(c: CustomerListItem): CustomerRowData {
   };
 }
 
+/** Customers per page in the admin table. */
+const CUSTOMERS_PAGE_SIZE = PAGE_SIZES.admin;
+
 export default async function AdminCustomersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; q?: string }>;
+  searchParams: Promise<{ status?: string; q?: string; page?: string }>;
 }) {
   const viewer = await getViewer();
   if (!isAdmin(viewer)) {
@@ -74,14 +79,24 @@ export default async function AdminCustomersPage({
   const params = await searchParams;
   const status = parseStatus(params.status);
   const search = params.q?.trim() || undefined;
+  const parsedPage = Number(params.page ?? "1");
+  const page =
+    Number.isFinite(parsedPage) && parsedPage > 0 ? Math.trunc(parsedPage) : 1;
 
-  const [customers, counts] = await Promise.all([
-    listCustomers({ status, search }),
+  const [customers, filteredTotal, counts] = await Promise.all([
+    listCustomers({
+      status,
+      search,
+      take: CUSTOMERS_PAGE_SIZE,
+      skip: (page - 1) * CUSTOMERS_PAGE_SIZE,
+    }),
+    countCustomers({ status, search }),
     customerStatusCounts(),
   ]);
 
   const rows = customers.map(toRow);
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  const pageCount = Math.max(1, Math.ceil(filteredTotal / CUSTOMERS_PAGE_SIZE));
 
   return (
     <AdminShell title="Customers">
@@ -95,6 +110,10 @@ export default async function AdminCustomersPage({
           counts={counts}
           activeStatus={status ?? null}
           search={search ?? ""}
+          page={page}
+          pageCount={pageCount}
+          total={filteredTotal}
+          pageSize={CUSTOMERS_PAGE_SIZE}
         />
       </div>
     </AdminShell>

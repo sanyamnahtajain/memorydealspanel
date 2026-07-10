@@ -13,8 +13,9 @@ import {
   type ProductSort,
 } from "@/server/actions/product-list-schema";
 import { entityStatusSchema } from "@/lib/schemas/shared";
+import { PAGE_SIZES } from "@/lib/constants";
 import { AdminShell } from "@/components/shell/AdminShell";
-import { PageHeader, PricePill, StatusChip, EmptyState } from "@/components/common";
+import { PageHeader, PricePill, StatusChip, EmptyState, Pager } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -96,6 +97,9 @@ export default async function AdminProductsPage({
 
   const products = listResult.ok ? listResult.products : [];
   const total = listResult.ok ? listResult.total : 0;
+  const currentPage = listResult.ok ? listResult.page : 1;
+  const pageCount = listResult.ok ? listResult.pageCount : 1;
+  const listPageSize = listInput.take ?? PAGE_SIZES.admin;
   const hadError = !listResult.ok;
 
   const hasActiveFilters =
@@ -161,6 +165,7 @@ export default async function AdminProductsPage({
             }
           />
         ) : (
+          <div className="space-y-4">
           <div className="overflow-hidden rounded-xl border border-border">
             <Table>
               <TableHeader>
@@ -241,6 +246,13 @@ export default async function AdminProductsPage({
                 })}
               </TableBody>
             </Table>
+          </div>
+            <Pager
+              page={currentPage}
+              pageCount={pageCount}
+              total={total}
+              pageSize={listPageSize}
+            />
           </div>
         )}
       </div>

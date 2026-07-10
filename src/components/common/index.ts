@@ -7,6 +7,12 @@ export { StatCard } from "./StatCard";
 export { StatusChip, type StatusChipVariant } from "./StatusChip";
 export { PricePill, formatPaise } from "./PricePill";
 export { EmptyState, type EmptyStateIllustration } from "./EmptyState";
+export {
+  Pager,
+  LoadMoreButton,
+  type PagerProps,
+  type LoadMoreButtonProps,
+} from "./Pager";
 export { ConfirmSheet } from "./ConfirmSheet";
 export { useIsMobile, MOBILE_BREAKPOINT } from "./use-is-mobile";
 export {

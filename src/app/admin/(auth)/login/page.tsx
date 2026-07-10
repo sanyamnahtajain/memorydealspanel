@@ -15,7 +15,7 @@ export const metadata: Metadata = {
  */
 export default function AdminLoginPage() {
   return (
-    <main className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-neutral-950 px-4 py-12 text-neutral-100">
+    <main className="dark relative flex min-h-dvh items-center justify-center overflow-hidden bg-background px-4 py-12 text-foreground">
       {/* Ambient brand glow */}
       <div
         aria-hidden

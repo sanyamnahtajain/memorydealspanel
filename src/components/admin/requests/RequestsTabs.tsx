@@ -4,7 +4,7 @@ import * as React from "react";
 import { MapPinIcon, PhoneIcon, ReceiptIcon, UserIcon } from "lucide-react";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { EmptyState, StatusChip } from "@/components/common";
+import { EmptyState, StatusChip, Pager } from "@/components/common";
 import {
   ApprovalSwipeDeck,
   type PendingRequest,
@@ -31,6 +31,16 @@ export interface DecidedRequest {
 export interface RequestsTabsProps {
   pending: PendingRequest[];
   decided: DecidedRequest[];
+  /** 1-based current page of the decided history. */
+  decidedPage: number;
+  /** Total pages of decided history. */
+  decidedPageCount: number;
+  /** Total decided requests. */
+  decidedTotal: number;
+  /** Page size used for the decided range summary. */
+  decidedPageSize: number;
+  /** URL param name that drives the decided-tab pagination. */
+  decidedPageParam: string;
 }
 
 const dateFormatter = new Intl.DateTimeFormat("en-IN", {
@@ -45,9 +55,20 @@ const dateFormatter = new Intl.DateTimeFormat("en-IN", {
  * "Decided". Kept client-side so switching tabs is instant and the deck's
  * optimistic state survives tab changes.
  */
-export function RequestsTabs({ pending, decided }: RequestsTabsProps) {
+export function RequestsTabs({
+  pending,
+  decided,
+  decidedPage,
+  decidedPageCount,
+  decidedTotal,
+  decidedPageSize,
+  decidedPageParam,
+}: RequestsTabsProps) {
+  // When the URL carries a decided-tab page (>1), the admin was browsing the
+  // history — open that tab so navigation lands where they expect.
+  const initialTab = decidedPage > 1 ? "decided" : "pending";
   return (
-    <Tabs defaultValue="pending" className="w-full">
+    <Tabs defaultValue={initialTab} className="w-full">
       <TabsList>
         <TabsTrigger value="pending">
           Pending
@@ -64,8 +85,17 @@ export function RequestsTabs({ pending, decided }: RequestsTabsProps) {
         <ApprovalSwipeDeck requests={pending} />
       </TabsContent>
 
-      <TabsContent value="decided" className="mt-6">
+      <TabsContent value="decided" className="mt-6 space-y-4">
         <DecidedList requests={decided} />
+        {decidedTotal > 0 ? (
+          <Pager
+            page={decidedPage}
+            pageCount={decidedPageCount}
+            total={decidedTotal}
+            pageSize={decidedPageSize}
+            paramName={decidedPageParam}
+          />
+        ) : null}
       </TabsContent>
     </Tabs>
   );
