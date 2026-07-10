@@ -317,6 +317,24 @@ Built in Phase 1, consumed by everything after. **No component ships colors/spac
 **Scale:** MongoDB text index + the existing hot-path indexes; facet counts via cached aggregation (short revalidate/Redis); debounced autocomplete over cached distinct values; results paginated; targets 10k+ SKUs smoothly.
 **Gate:** filter by brand/category/spec as anon (no price anywhere); approved viewer can filter & sort by price band (server-side, correct); combined facets + counts + URL sharing work; barcode/SKU/brand/category/collection flows reachable; search is typo-tolerant and paginated; price-gate invariant passes across search/facets; typecheck+lint+vitest green.
 
+### Phase 7.8 — Wishlist / saved products (retailer)
+**Goal:** let a retailer save products to come back to — a persistent, cross-device wishlist. This is the "favorites/heart" feature referenced in 7.6, specified as a first-class, DB-backed capability. Distinct from the **enquiry list** (7.6): wishlist = "track / want later", enquiry list = "products + quantities I intend to order". A wishlist item can be **moved/added to the enquiry list** in one tap.
+
+**Data model (schema + migration — done by the driver):**
+- `WishlistItem { id, customerId, productId, variantId?, note?, createdAt }` with `@@unique([customerId, productId, variantId])` (idempotent add) and `@@index([customerId, createdAt])`. Cascades on customer/product delete. (Single default list for v1; a `Wishlist { name }` grouping for **multiple named lists** — "Diwali", "Monthly restock" — is a clean follow-on, mirroring the enquiry-list design.)
+
+**Flows:**
+- **Add/remove** via a heart toggle on product cards, list/table rows, quick-view, and product detail — optimistic UI, animated fill, toast. Works in every view mode.
+- **Header badge** with saved-count; **bottom-tab** entry on mobile.
+- **Wishlist page** in the account area — saved products rendered with the Phase 7.6 view-mode switcher (grid/list/table), sortable, with per-item actions: remove, **add to enquiry** (with qty stepper respecting MOQ), add note, quick-view. Bulk "add all to enquiry". Rich empty state ("Nothing saved yet → browse the catalog"), skeleton while loading.
+- **Alerts (ties to notifications):** optional "notify me" on a wishlisted item for **back-in-stock** and (approved) **price-drop** — pushed via the existing Web Push / in-app notifications.
+- **Move between lists** (when named lists land) and **share a wishlist** (read-only link) as a follow-on.
+
+**Auth & access:** requires a logged-in customer (any status may save; guests get a "log in / request access" prompt). Prices on the wishlist obey the gate — shown only when approved, else the PriceGate chip. The list is strictly **per-customer (IDOR-protected)** — a customer can only read/mutate their own items; server actions assert ownership.
+
+**Quality/§0:** custom components throughout (no native anything), loading/empty/error states, tooltips on the heart, motion on add/remove, responsive, paginated if large, tabular price display.
+**Gate:** save/remove persists across devices (DB-backed) and reflects instantly (optimistic); wishlist respects the price gate (no price for non-approved); a customer cannot access another's wishlist (ownership test); add-to-enquiry from wishlist works; typecheck+lint+vitest green.
+
 ### Phase 8.7 — Audit & session logs (admin observability)
 **Goal:** full accountability — which admin did what, and when/where they were signed in. (`AuditLog` + `writeAudit` already record mutations; this adds capture depth + the viewing UI.)
 - **Capture:** ensure every admin mutation writes an audit entry (actorType, actorId, actorName snapshot, action, entity, entityId, before/after diff, at). Add **IP + userAgent** to `Session` and to admin-login audit; record `lastLoginAt`. Consider a lightweight read-audit for sensitive views (who exported the catalog, who viewed a customer).
