@@ -60,6 +60,9 @@ A mobile-accessories wholesaler receives daily price enquiries from many retail 
 - F-A13. Search, filter (category, status, brand, price range) and sort in product list.
 
 ### 4.4 Bulk Operations (core differentiator — "Excel/Airtable experience")
+
+> Implemented by the custom **DealSheet** component suite — full spec in §5A.4a (F-G1–F-G22).
+
 - F-A14. **Spreadsheet grid view** of all products: inline cell editing, keyboard navigation (arrows, Tab, Enter), copy-paste from Excel/Google Sheets, fill-down, multi-cell selection.
 - F-A15. **Autosave** on cell blur with visible per-row save indicator (saving… / saved ✓ / error ↻ retry). No explicit "Save" button needed.
 - F-A16. **Undo/redo** within the editing session.
@@ -169,6 +172,50 @@ Both the admin panel and the storefront must feel like a **native app on the pho
 - F-U16. **Expiry dial** (admin): setting access duration via a radial/slider control with live preview of the expiry date, plus quick-pick chips (7/30/90 days).
 - F-U17. **Smart search overlay** (storefront): full-screen search with recent searches, category chips, instant results as you type, and highlighted matches.
 
+### 5A.4a Custom data grid suite — "DealSheet" (the Excel-like editing system)
+
+A family of custom components built on headless primitives (TanStack Table + TanStack Virtual) so every behavior below is fully ours to control — no licensed grid, no fighting a vendor theme. This component suite implements F-A14–F-A19.
+
+**Core grid — `<DealSheet />`**
+- F-G1. **Virtualized rows and columns**: 10,000+ products scroll at 60 fps; only visible cells render.
+- F-G2. **Excel keyboard model**: arrows move the active cell; `Tab`/`Shift+Tab` horizontal; `Enter` commits + moves down; `F2` or double-click / start-typing to edit; `Esc` cancels; `Ctrl+A` select all; `Ctrl+Z`/`Ctrl+Shift+Z` undo/redo; `Delete` clears cells.
+- F-G3. **Selection model**: single cell, rectangular range (shift+click / shift+arrows / drag), full row(s) via checkbox or row-number gutter, full column via header — with animated selection outline.
+- F-G4. **Copy/paste interop with Excel & Google Sheets**: `Ctrl+C` copies TSV; `Ctrl+V` pastes a multi-row/column block from a real spreadsheet, mapped by column position, with a confirm step when the paste extends beyond the current selection ("Paste will fill 40 rows — continue?").
+- F-G5. **Fill operations**: fill-down handle (drag the corner of a selection, Excel-style), `Ctrl+D` fill-down, smart series for numbers (₹100, ₹110 → continues +10).
+- F-G6. **Typed cells** — each column has a cell type with its own editor and renderer:
+  - `text`, `number`, `currency` (₹ formatted, right-aligned), `percent`
+  - `select` (category, stock status — searchable dropdown, colored chips)
+  - `multi-tag` (tags — token chips with autocomplete)
+  - `image` (thumbnail strip; tap opens the image manager / batch camera capture)
+  - `toggle` (Active/Inactive — animated switch directly in the cell)
+  - `computed/readonly` (e.g. margin % from price vs MRP — shown, never editable)
+- F-G7. **Per-cell validation (Zod)**: invalid value → red cell corner + tooltip with the exact error; the cell keeps the draft until fixed or reverted — input is never silently dropped.
+- F-G8. **Autosave engine**: edits queue per row and debounce-flush to the server; per-row status pill (`saving… / saved ✓ / failed ↻`); failed rows retry with backoff and never block further editing; optimistic UI with rollback on hard failure.
+- F-G9. **Undo/redo stack** spanning cell edits, paste blocks, fill-downs, and bulk actions — undoing a 40-row paste is one `Ctrl+Z`.
+- F-G10. **Conflict safety**: if a row changed on the server since load (e.g. edited from the phone), show a non-blocking merge chip on that row instead of overwriting.
+
+**Grid chrome & productivity**
+- F-G11. **Column management**: resize (drag), reorder (drag), pin left, hide/show; layout persisted per user.
+- F-G12. **Header filters + sort**: type-ahead filter per column, multi-column sort, active-filter chip bar with one-tap clear.
+- F-G13. **Saved views**: named filter/sort/column combinations ("Out of stock", "Power banks — price check") switchable from a tab strip above the grid.
+- F-G14. **Floating bulk-action bar**: selecting rows slides up a bar with count + actions (Set category, Set status, Adjust price ±% / ±₹, Add tag, Delete) — each action animates across the affected rows.
+- F-G15. **Quick row add**: ghost row at the bottom — start typing to create a product inline without leaving the grid.
+- F-G16. **Search-in-grid** (`Ctrl+F` scoped to the grid): highlights matches and jumps between them.
+- F-G17. **Group by category** view: collapsible category sections with per-group counts; drag a row between groups to recategorize.
+- F-G18. **Density toggle** (compact / comfortable) and sticky first column (product name + thumbnail) during horizontal scroll.
+
+**Derived components (same engine, reused)**
+- F-G19. **`<ImportPreviewGrid />`**: the CSV/XLSX bulk-upload preview (F-A19) is the same grid in review mode — per-cell error highlighting, editable in place so errors are fixed *before* committing the import, error-only filter toggle, create-vs-update row badges.
+- F-G20. **`<MobileCardEditor />`** (F-U14): the grid's row model rendered as editable cards on phones — same autosave engine, same validation, same undo — desktop and mobile never diverge in behavior.
+- F-G21. **`<CustomerSheet />`**: customers managed with the same grid system (columns: business, phone, status, expiry — with the Expiry dial as the cell editor); bulk approve / extend / revoke from the bulk-action bar.
+- F-G22. **`<TrashGrid />`**: soft-deleted products in review mode with restore action and days-remaining countdown.
+
+**Definition of done (acceptance criteria)**
+- Paste 200 rows × 8 columns from Excel → all cells land correctly, invalid ones flagged, in < 2 s.
+- An edit is autosaved within 1.5 s of leaving the cell, the indicator confirms it, and it survives a page refresh.
+- 5,000-row catalog scrolls, filters, and sorts with no dropped frames on a mid-range laptop.
+- Every mouse action has a keyboard equivalent.
+
 ### 5A.5 Responsive design rules
 - F-U18. Mobile-first breakpoints; every screen designed for 360 px width first, then scaled up. Desktop admin gets the full spreadsheet grid; mobile admin gets the card editor (F-U14) — same data, adapted UI, never a shrunken desktop page.
 - F-U19. Touch targets ≥ 44 px, thumb-zone placement for primary actions (bottom third of screen), safe-area insets (notches) respected.
@@ -205,7 +252,7 @@ Prices must be unobtainable without an approved, unexpired session:
 | **Animations / motion** | **Motion (Framer Motion)** + **View Transitions API** | Spring physics, gestures (swipe deck, bottom sheets), shared-element page transitions, layout animations |
 | **PWA / offline / push** | **Serwist** (service worker for Next.js) + Web Push API + Background Sync | Installable app, offline edit queue, push notifications for access requests |
 | **Camera capture** | `getUserMedia` / `<input capture>` + custom batch-capture component + **browser-image-compression** | Multi-shot product photography from the phone with client-side compression before upload |
-| **Spreadsheet grid (bulk edit)** | **AG Grid** (Community) or **Glide Data Grid** + TanStack Query | Proven Excel-like UX: inline edit, keyboard nav, copy-paste, fill-down — don't build this from scratch |
+| **Spreadsheet grid (bulk edit)** | **Custom "DealSheet" suite** (§5A.4a) built on **TanStack Table + TanStack Virtual** + TanStack Query | Headless primitives give full control over the Excel keyboard model, typed cells, autosave engine, and mobile card mode — one engine reused for products, import preview, customers, and trash |
 | **File/Image storage** | **Cloudflare R2** (S3-compatible) + image resizing (next/image or Cloudflare Images) | Cheap egress, CDN-backed, thumbnails |
 | **CSV/XLSX import-export** | **SheetJS (xlsx)** + **Zod** row validation | Robust parsing + per-cell validation for the foolproof preview screen |
 | **Cache / rate limiting** | **Redis (Upstash)** | Rate limits, OTP counters, session throttling |
@@ -247,10 +294,10 @@ PageView      id, customerId?, productId, at   (for analytics & scrape detection
 ## 10. Release Plan
 
 **Phase 1 — MVP (~5–7 weeks of build)**
-Admin auth + 2FA · categories & products CRUD with photos · **phone camera batch capture (F-A10a)** · spreadsheet grid with inline edit + autosave · **mobile card editor (F-U14)** · CSV import with validation preview · storefront (SSR, no prices public) · **PWA install + push notifications** · **bottom-sheet access request form + OTP** · approve/reject with expiry · price gating with **PriceGate reveal animation** · core motion system (page transitions, skeletons, optimistic UI) · admin notifications (push + in-panel + WhatsApp) · basic dashboard.
+Admin auth + 2FA · categories & products CRUD with photos · **phone camera batch capture (F-A10a)** · **DealSheet core** (virtualized grid, Excel keyboard model, typed cells, copy-paste, validation, autosave — F-G1–F-G8) · **mobile card editor (F-G20/F-U14)** · CSV import with validation preview (**ImportPreviewGrid**, F-G19) · storefront (SSR, no prices public) · **PWA install + push notifications** · **bottom-sheet access request form + OTP** · approve/reject with expiry · price gating with **PriceGate reveal animation** · core motion system (page transitions, skeletons, optimistic UI) · admin notifications (push + in-panel + WhatsApp) · basic dashboard.
 
 **Phase 2**
-Bulk image upload by SKU · rapid cataloging mode (F-A10b) · **approval swipe deck** · **offline edit queue + background sync** · undo/redo & fill-down polish · sub-categories · customer analytics & most-viewed · watermarked PDF price list · daily digest · scrape-detection auto-throttle · trash/restore UI.
+Bulk image upload by SKU · rapid cataloging mode (F-A10b) · **approval swipe deck** · **offline edit queue + background sync** · **DealSheet productivity layer** (undo/redo, fill-down, saved views, group-by-category, search-in-grid, quick row add — F-G9–F-G18) · **CustomerSheet + TrashGrid** (F-G21/F-G22) · sub-categories · customer analytics & most-viewed · watermarked PDF price list · daily digest · scrape-detection auto-throttle · trash/restore UI.
 
 **Phase 3 (ideas)**
 Per-customer price tiers (different prices for different buyers) · order/enquiry cart · staff sub-admin roles · customer-facing stock alerts · WhatsApp catalog sync.
