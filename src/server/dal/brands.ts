@@ -123,6 +123,47 @@ export interface ListByBrandOptions {
   page?: number;
   /** Page size; clamped to [1, PAGE_SIZES.max]. Defaults to storefront size. */
   take?: number;
+  /** Restrict to a single category (for the brand → category → products drill-down). */
+  categoryId?: string;
+}
+
+/** A category the brand has products in, with the (price-free) product count. */
+export interface BrandCategory {
+  id: string;
+  name: string;
+  slug: string;
+  image: string | null;
+  count: number;
+}
+
+/**
+ * Categories that have ≥1 visible (ACTIVE, non-deleted) product for this brand,
+ * each with the product count. Carries NO pricing — counts and category
+ * metadata are public — so it is safe on any surface. Ordered by the category's
+ * own sortOrder then name.
+ */
+export async function listBrandCategories(
+  brandId: string,
+): Promise<BrandCategory[]> {
+  const grouped = await prisma.product.groupBy({
+    by: ["categoryId"],
+    where: { ...VISIBLE_WHERE, brandId },
+    _count: { _all: true },
+  });
+  if (grouped.length === 0) return [];
+  const counts = new Map(grouped.map((g) => [g.categoryId, g._count._all]));
+  const cats = await prisma.category.findMany({
+    where: { id: { in: grouped.map((g) => g.categoryId) }, status: "ACTIVE" },
+    select: { id: true, name: true, slug: true, image: true },
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+  });
+  return cats.map((c) => ({
+    id: c.id,
+    name: c.name,
+    slug: c.slug,
+    image: c.image,
+    count: counts.get(c.id) ?? 0,
+  }));
 }
 
 function resolvePaging(options: ListByBrandOptions | undefined): {
@@ -163,7 +204,11 @@ export async function listByBrandForViewer(
   options?: ListByBrandOptions,
 ): Promise<(PublicProduct | PricedProduct)[]> {
   const { skip, take } = resolvePaging(options);
-  const where = { ...VISIBLE_WHERE, brandId } satisfies Prisma.ProductWhereInput;
+  const where = {
+    ...VISIBLE_WHERE,
+    brandId,
+    ...(options?.categoryId ? { categoryId: options.categoryId } : {}),
+  } satisfies Prisma.ProductWhereInput;
   if (canSeePrices(viewer)) {
     const rows = await prisma.product.findMany({
       where,
