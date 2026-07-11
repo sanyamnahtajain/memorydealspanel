@@ -11,6 +11,7 @@ import {
 } from "@/components/preferences/prefs-script";
 import { PWARegister } from "@/components/pwa/PWARegister";
 import { InstallPrompt } from "@/components/pwa/InstallPrompt";
+import { ScrollToTop } from "@/components/common/ScrollToTop";
 import { siteBaseUrl } from "./seo-site-url";
 import "./globals.css";
 
@@ -92,6 +93,7 @@ export default async function RootLayout({
       <body className="min-h-full flex flex-col">
         <ThemeProvider>
           <PreferencesProvider initialDensity={initialDensity}>
+            <ScrollToTop />
             {children}
             {/* PWA_REGISTER_SLOT */}
             <PWARegister />

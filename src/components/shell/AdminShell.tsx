@@ -207,8 +207,12 @@ export function AdminShell({
           </div>
         </header>
 
-        {/* Scroll-contained content area */}
-        <main className="flex-1 overflow-y-auto overscroll-contain">
+        {/* Scroll-contained content area. Tagged so ScrollToTop resets it on
+            route change (Next only resets the window, not nested scrollers). */}
+        <main
+          data-scroll-container
+          className="flex-1 overflow-y-auto overscroll-contain"
+        >
           <div className="mx-auto w-full max-w-7xl px-4 pt-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:px-6 md:pt-6 md:pb-8">
             {children}
           </div>
