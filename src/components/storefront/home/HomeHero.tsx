@@ -73,28 +73,37 @@ export function HomeHero({ suggestions = [] }: { suggestions?: string[] }) {
           </div>
 
           {/* ——— Right: "prices unlock on approval" visual ——— */}
-          <div className="hidden md:block" aria-hidden>
-            <div className="relative mx-auto max-w-xs">
-              <div className="rotate-3 rounded-2xl border border-border bg-background p-4 shadow-lg">
-                <div className="flex aspect-square items-center justify-center rounded-xl bg-muted">
-                  <Logo size={92} />
-                </div>
-                <div className="mt-3 h-3 w-3/4 rounded-full bg-muted" />
-                <div className="mt-2 flex items-center justify-between">
-                  <div className="h-2.5 w-16 rounded-full bg-muted" />
-                  <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary">
-                    <LockKeyhole className="size-3" />
-                    See price
+          <div className="relative hidden md:block" aria-hidden>
+            <div className="relative mx-auto w-full max-w-sm">
+              {/* Catalogue product card (locked/gated state) */}
+              <div className="rounded-3xl border border-border bg-card p-3 shadow-xl">
+                <div className="relative flex aspect-[5/4] items-center justify-center overflow-hidden rounded-2xl bg-linear-to-br from-primary/15 via-muted to-accent/30">
+                  <span className="absolute top-3 left-3 rounded-full bg-background/80 px-2.5 py-1 text-[11px] font-medium text-muted-foreground backdrop-blur">
+                    Power Banks
                   </span>
+                  <Logo size={88} chip className="shadow-md" />
+                </div>
+                <div className="px-1.5 pt-4 pb-1">
+                  <div className="h-2.5 w-2/3 rounded-full bg-muted" />
+                  <div className="mt-2 h-2 w-2/5 rounded-full bg-muted/70" />
+                  <div className="mt-4 flex items-center justify-between">
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-semibold text-muted-foreground">
+                      <LockKeyhole className="size-3.5 text-primary" />
+                      See price
+                    </span>
+                    <span className="text-[11px] font-medium text-muted-foreground">
+                      MOQ 10
+                    </span>
+                  </div>
                 </div>
               </div>
-              <div className="absolute -bottom-5 -left-6 -rotate-6 rounded-2xl border border-border bg-background p-4 shadow-xl">
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-xs font-medium text-muted-foreground">
-                    Approved
-                  </span>
-                  <BadgeCheck className="size-4 text-primary" />
-                </div>
+
+              {/* Unlocked price chip — the "after approval" payoff */}
+              <div className="absolute -right-4 -bottom-6 rounded-2xl border border-primary/30 bg-background p-4 shadow-2xl ring-1 ring-primary/10">
+                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-primary">
+                  <BadgeCheck className="size-4" />
+                  Approved
+                </span>
                 <p className="mt-1 font-heading text-2xl font-bold tabular-nums text-foreground">
                   ₹499
                   <span className="ml-1 align-middle text-[11px] font-medium text-muted-foreground">

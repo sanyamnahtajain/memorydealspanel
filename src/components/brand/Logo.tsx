@@ -9,8 +9,10 @@ interface LogoProps {
   /** Show the "The Memory Deals" wordmark beside the mark. */
   withWordmark?: boolean;
   /**
-   * Render the mark on a white rounded chip so the dark-blue logo stays legible
-   * on dark surfaces (e.g. the admin top bar).
+   * Force the white rounded chip in BOTH themes (e.g. a light admin top bar).
+   * Even without it, the mark auto-gets the chip in dark mode — the source PNG
+   * is a dark-blue/red lockup on transparency, so it would otherwise vanish on
+   * any dark surface (header, footer, hero).
    */
   chip?: boolean;
   className?: string;
@@ -31,8 +33,13 @@ export function Logo({
   const mark = (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center justify-center",
-        chip && "rounded-lg bg-white p-1 ring-1 ring-black/5",
+        "inline-flex shrink-0 items-center justify-center rounded-lg",
+        // Explicit chip → white backing in both themes. Otherwise the mark
+        // stays bare in light mode (dark logo reads fine on light surfaces)
+        // and auto-chips in dark mode so it never disappears.
+        chip
+          ? "bg-white p-1 ring-1 ring-black/5"
+          : "dark:bg-white dark:p-1 dark:ring-1 dark:ring-black/5",
         className,
       )}
     >
