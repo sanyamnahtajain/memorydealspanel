@@ -15,3 +15,7 @@ export { RelatedRail } from "./RelatedRail";
 export type { RelatedRailProps, RelatedRailItem } from "./RelatedRail";
 export { StickyMobileBar } from "./StickyMobileBar";
 export type { StickyMobileBarProps } from "./StickyMobileBar";
+export { VariantSelector } from "./VariantSelector";
+export type { VariantSelectorProps } from "./VariantSelector";
+export { VariantProductView } from "./VariantProductView";
+export type { VariantProductViewProps } from "./VariantProductView";

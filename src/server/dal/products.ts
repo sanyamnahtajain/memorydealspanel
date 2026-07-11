@@ -56,6 +56,59 @@ const PRICED_SELECT = {
   mrp: true,
 } satisfies Prisma.ProductSelect;
 
+// ---------------------------------------------------------------------------
+// Variant projections — only fetched on the DETAIL path (getBySlugForViewer).
+// Listing/grid reads deliberately DO NOT join variants: they show the
+// denormalized `Product.price` ("from" price, already gated) so sort/paging is
+// unchanged and no variant price is ever selected into a list payload.
+// ---------------------------------------------------------------------------
+
+/** Only ACTIVE variants are shown on the storefront, ordered deterministically. */
+const VARIANT_WHERE = { status: "ACTIVE" } satisfies Prisma.ProductVariantWhereInput;
+const VARIANT_ORDER: Prisma.ProductVariantOrderByWithRelationInput[] = [
+  { isDefault: "desc" },
+  { sortOrder: "asc" },
+  { id: "asc" },
+];
+
+/**
+ * Variant fields shared by both projections — everything EXCEPT money. For a
+ * gated viewer this is the ONLY variant select used, so no variant price/mrp
+ * ever travels into Node. `optionTypes` is a scalar on Product (public).
+ */
+const PUBLIC_VARIANT_SELECT = {
+  id: true,
+  sku: true,
+  optionValues: true,
+  stockStatus: true,
+  isDefault: true,
+  sortOrder: true,
+  images: true,
+} satisfies Prisma.ProductVariantSelect;
+
+/** Variant projection WITH money — only for price-authorised viewers. */
+const PRICED_VARIANT_SELECT = {
+  ...PUBLIC_VARIANT_SELECT,
+  price: true,
+  mrp: true,
+} satisfies Prisma.ProductVariantSelect;
+
+/** Detail-path select for gated viewers: product public fields + gated variants. */
+const PUBLIC_DETAIL_SELECT = {
+  ...PUBLIC_FIELDS,
+  hasVariants: true,
+  optionTypes: true,
+  variants: { where: VARIANT_WHERE, orderBy: VARIANT_ORDER, select: PUBLIC_VARIANT_SELECT },
+} satisfies Prisma.ProductSelect;
+
+/** Detail-path select for priced viewers: product money + variant money. */
+const PRICED_DETAIL_SELECT = {
+  ...PRICED_SELECT,
+  hasVariants: true,
+  optionTypes: true,
+  variants: { where: VARIANT_WHERE, orderBy: VARIANT_ORDER, select: PRICED_VARIANT_SELECT },
+} satisfies Prisma.ProductSelect;
+
 /** Only active, non-soft-deleted products are visible on the storefront. */
 const VISIBLE_WHERE = {
   status: "ACTIVE",
@@ -149,13 +202,13 @@ export async function getBySlugForViewer(
   if (canSeePrices(viewer)) {
     const row = await prisma.product.findFirst({
       where: { ...VISIBLE_WHERE, slug },
-      select: PRICED_SELECT,
+      select: PRICED_DETAIL_SELECT,
     });
     return row ? toPricedProduct(row) : null;
   }
   const row = await prisma.product.findFirst({
     where: { ...VISIBLE_WHERE, slug },
-    select: PUBLIC_FIELDS,
+    select: PUBLIC_DETAIL_SELECT,
   });
   return row ? toPublicProduct(row) : null;
 }

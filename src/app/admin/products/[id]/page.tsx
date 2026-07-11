@@ -16,6 +16,11 @@ import {
   type EditorProduct,
 } from "@/components/admin/products/ProductEditorForm";
 import {
+  parseOptionTypes,
+  toEditorVariants,
+  type PersistedVariant,
+} from "@/components/admin/products/variants";
+import {
   AuditLogPreview,
   AuditLogPreviewSkeleton,
 } from "@/components/admin/audit/AuditLogPreview";
@@ -46,6 +51,25 @@ const EDIT_SELECT = {
   mrp: true,
   createdAt: true,
   updatedAt: true,
+  // Variants (opt-in). `optionTypes`/`variants` are absent/empty for the
+  // vast majority of products, so this is a no-op for non-variant catalog.
+  hasVariants: true,
+  optionTypes: true,
+  variants: {
+    select: {
+      id: true,
+      sku: true,
+      optionValues: true,
+      price: true,
+      mrp: true,
+      moq: true,
+      stockStatus: true,
+      status: true,
+      isDefault: true,
+      sortOrder: true,
+      images: true,
+    },
+  },
 } as const;
 
 /**
@@ -95,6 +119,12 @@ export default async function EditProductPage({
     tags: priced.tags,
     images: priced.images,
     specs: priced.specs,
+    // Variant editor state. `toEditorVariants` sorts + guarantees one default;
+    // `parseOptionTypes` defensively parses the embedded Json axis defs. Both
+    // are empty for a non-variant product, so the editor renders unchanged.
+    hasVariants: row.hasVariants,
+    optionTypes: parseOptionTypes(row.optionTypes),
+    variants: toEditorVariants(row.variants as PersistedVariant[]),
   };
 
   return (

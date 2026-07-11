@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { isPaise } from "@/lib/money";
 import {
   ANON_VIEWER,
@@ -245,6 +245,163 @@ describe("brand master on the public payload", () => {
         expect("price" in p.brandRef).toBe(false);
       }
     }
+  });
+});
+
+describe("variant products price gate (getBySlugForViewer)", () => {
+  // A dedicated, self-contained variant fixture so the assertions don't depend
+  // on the seed carrying variant products. Created before, torn down after.
+  const SLUG = "zzz-variant-gate-test-powerbank";
+  const SKU = "ZZZ-VAR-PB-PARENT";
+  const VARIANT_SKUS = ["ZZZ-VAR-PB-10K-BLK", "ZZZ-VAR-PB-20K-BLK"] as const;
+  let productId: string;
+
+  beforeAll(async () => {
+    const category = await prisma.category.findFirst({ select: { id: true } });
+    if (!category) throw new Error("seed missing: no category");
+
+    const product = await prisma.product.create({
+      data: {
+        categoryId: category.id,
+        name: "ZZZ Variant Gate Test Power Bank",
+        slug: SLUG,
+        sku: SKU,
+        // Denormalized "from" price = min active variant price (₹999.00).
+        price: 99900,
+        stockStatus: "IN_STOCK",
+        status: "ACTIVE",
+        // Mongo distinguishes an absent field from null; the storefront filter
+        // is `deletedAt: null`, so we must set it explicitly (the seed does too).
+        deletedAt: null,
+        hasVariants: true,
+        optionTypes: [
+          { name: "Capacity", values: ["10000mAh", "20000mAh"] },
+          { name: "Color", values: ["Black"] },
+        ],
+        variants: {
+          create: [
+            {
+              sku: VARIANT_SKUS[0],
+              optionValues: { Capacity: "10000mAh", Color: "Black" },
+              price: 99900,
+              mrp: 129900,
+              stockStatus: "IN_STOCK",
+              status: "ACTIVE",
+              isDefault: true,
+              sortOrder: 0,
+            },
+            {
+              sku: VARIANT_SKUS[1],
+              optionValues: { Capacity: "20000mAh", Color: "Black" },
+              price: 149900,
+              mrp: 199900,
+              stockStatus: "LOW",
+              status: "ACTIVE",
+              isDefault: false,
+              sortOrder: 1,
+            },
+          ],
+        },
+      },
+      select: { id: true },
+    });
+    productId = product.id;
+  });
+
+  afterAll(async () => {
+    if (productId) {
+      await prisma.productVariant.deleteMany({ where: { productId } });
+      await prisma.product.delete({ where: { id: productId } });
+    }
+  });
+
+  it("anon: variants present but structurally carry NO price anywhere", async () => {
+    const anon = await getBySlugForViewer(ANON_VIEWER, SLUG);
+    expect(anon).not.toBeNull();
+
+    // Product-level gate intact.
+    expect("price" in anon!).toBe(false);
+    expect("mrp" in anon!).toBe(false);
+
+    // Variant axes are PUBLIC (needed to render the selector) and present.
+    expect(anon!.hasVariants).toBe(true);
+    expect(anon!.optionTypes).toEqual([
+      { name: "Capacity", values: ["10000mAh", "20000mAh"] },
+      { name: "Color", values: ["Black"] },
+    ]);
+
+    // Variants come back gated — one row per active variant.
+    expect(anon!.variants).toHaveLength(2);
+    for (const v of anon!.variants) {
+      // The invariant: NO price key exists on any variant (not undefined —
+      // structurally absent), and no money key anywhere on the variant.
+      expect("price" in v).toBe(false);
+      expect("mrp" in v).toBe(false);
+      expect("marginPct" in v).toBe(false);
+      // Public variant fields still present.
+      expect(typeof v.sku).toBe("string");
+      expect(typeof v.stockStatus).toBe("string");
+      expect(v.optionValues).toBeTypeOf("object");
+    }
+
+    // Belt-and-braces: serialize the whole payload and assert no variant price
+    // amount (999.00 / 1499.00 paise) leaked through any nested field.
+    const serialized = JSON.stringify(anon);
+    expect(serialized).not.toContain("99900");
+    expect(serialized).not.toContain("149900");
+
+    // Default variant is first (isDefault desc, then sortOrder).
+    expect(anon!.variants[0].isDefault).toBe(true);
+  });
+
+  it("approved: variants carry integer-paise price + margin, from-price synced", async () => {
+    const approved = await getBySlugForViewer(APPROVED_VIEWER, SLUG);
+    expect(approved).not.toBeNull();
+
+    // Product-level "from" price is the min active variant price.
+    expect("price" in approved!).toBe(true);
+    expect((approved as { price: number }).price).toBe(99900);
+
+    expect(approved!.variants).toHaveLength(2);
+    for (const v of approved!.variants) {
+      const priced = v as typeof v & { price: number };
+      expect("price" in priced).toBe(true);
+      expect(isPaise(priced.price)).toBe(true);
+      expect(priced.price).toBeGreaterThan(0);
+    }
+    // Margin derived where mrp > price.
+    const withMrp = approved!.variants.find(
+      (v) => "mrp" in v && v.mrp !== null,
+    );
+    expect(withMrp).toBeDefined();
+    expect(
+      (withMrp as unknown as { marginPct: number | null }).marginPct,
+    ).not.toBeNull();
+  });
+
+  it("pending: same gate — variants present with NO price key", async () => {
+    const pending = await getBySlugForViewer(DENIED_VIEWERS[0][1], SLUG);
+    expect(pending).not.toBeNull();
+    expect("price" in pending!).toBe(false);
+    expect(pending!.variants).toHaveLength(2);
+    for (const v of pending!.variants) {
+      expect("price" in v).toBe(false);
+      expect("mrp" in v).toBe(false);
+    }
+  });
+});
+
+describe("non-variant products are unchanged (backward-compat)", () => {
+  it("carries hasVariants=false and empty variants/optionTypes", async () => {
+    const slug = await firstActiveSlug();
+    const anon = await getBySlugForViewer(ANON_VIEWER, slug);
+    expect(anon).not.toBeNull();
+    // The seed catalog is non-variant; the detail read must default cleanly.
+    expect(anon!.hasVariants).toBe(false);
+    expect(anon!.variants).toEqual([]);
+    expect(anon!.optionTypes).toEqual([]);
+    // And still no price for anon.
+    expect("price" in anon!).toBe(false);
   });
 });
 

@@ -80,6 +80,9 @@ const publicProduct: PublicProduct = {
   images: [],
   createdAt: new Date("2026-01-01T00:00:00Z"),
   updatedAt: new Date("2026-01-01T00:00:00Z"),
+  hasVariants: false,
+  optionTypes: [],
+  variants: [],
 };
 
 const pricedProduct: PricedProduct = {
@@ -88,6 +91,7 @@ const pricedProduct: PricedProduct = {
   price: 129900, // ₹1,299.00
   mrp: 159900,
   marginPct: 19,
+  variants: [],
 };
 
 /** Any rupee amount or bare price digit that must NOT appear when gated. */

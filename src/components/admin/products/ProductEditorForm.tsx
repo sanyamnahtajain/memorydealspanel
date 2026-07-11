@@ -39,6 +39,13 @@ import {
 } from "./SpecEditor";
 import { TagEditor } from "./TagEditor";
 import { ProductImagesField } from "./ProductImagesField";
+import { VariantsSection } from "./variants";
+import { unwiredVariantsActions } from "./variants/actions";
+import type {
+  EditorVariant,
+  OptionType,
+  VariantsActions,
+} from "./variants";
 
 /** Minimal category shape the editor needs for its select. */
 export interface EditorCategory {
@@ -65,7 +72,14 @@ export type EditorProduct = Pick<
   | "tags"
   | "images"
   | "specs"
->;
+> & {
+  /** Whether variants are enabled (Product.hasVariants). Defaults to false. */
+  hasVariants?: boolean;
+  /** The product's option axes (Product.optionTypes), when it has variants. */
+  optionTypes?: OptionType[];
+  /** The product's variant rows mapped for the editor. */
+  variants?: EditorVariant[];
+};
 
 export interface ProductEditorFormProps {
   categories: EditorCategory[];
@@ -77,6 +91,13 @@ export interface ProductEditorFormProps {
   brands: BrandOption[];
   /** Present when editing; omit for a create form. */
   product?: EditorProduct;
+  /**
+   * Server mutations for variants, injected so the editor stays decoupled from
+   * the server half. INTEGRATOR: wire `saveProductVariantsAction` here (see
+   * components/admin/products/variants/actions.ts). Defaults to a no-op that
+   * shows a "not connected" toast, so the UI never crashes if left unwired.
+   */
+  variantsActions?: VariantsActions;
 }
 
 const STOCK_OPTIONS: { value: StockStatus; label: string }[] = [
@@ -151,6 +172,7 @@ export function ProductEditorForm({
   categories,
   brands,
   product,
+  variantsActions = unwiredVariantsActions,
 }: ProductEditorFormProps) {
   const router = useRouter();
   const isEdit = Boolean(product);
@@ -160,6 +182,24 @@ export function ProductEditorForm({
   const [pending, setPending] = React.useState(false);
   const [fieldError, setFieldError] = React.useState<string | null>(null);
 
+  // Variant state is mirrored up from VariantsSection so this form can swap its
+  // base-price field to a read-only "From ₹X" display when variants are on. The
+  // section itself owns the axes/rows and persists them via its own action.
+  const [variantState, setVariantState] = React.useState<{
+    hasVariants: boolean;
+    fromPrice: number | null;
+  }>(() => ({
+    hasVariants: product?.hasVariants ?? false,
+    fromPrice: product?.price ?? null,
+  }));
+  const onVariantStateChange = React.useCallback(
+    (next: { hasVariants: boolean; fromPrice: number | null }) => {
+      setVariantState(next);
+    },
+    [],
+  );
+  const hasVariants = variantState.hasVariants;
+
   const set = React.useCallback(
     <K extends keyof FormState>(key: K, value: FormState[K]) => {
       setState((prev) => ({ ...prev, [key]: value }));
@@ -167,9 +207,17 @@ export function ProductEditorForm({
     [],
   );
 
-  const pricePaise = parseRupees(state.priceInput);
+  const typedPricePaise = parseRupees(state.priceInput);
   const mrpPaise = state.mrpInput.trim() === "" ? null : parseRupees(state.mrpInput);
-  const marginPct = deriveMarginPct(pricePaise, mrpPaise);
+  const marginPct = deriveMarginPct(typedPricePaise, mrpPaise);
+
+  // For a variant product the base Product.price is the denormalized "FROM"
+  // (= min active variant price) so listing/sort stay correct; the field is
+  // read-only and reflects the matrix. When no variant is priced yet we fall
+  // back to the typed value so the required base price is never empty.
+  const pricePaise = hasVariants
+    ? (variantState.fromPrice ?? typedPricePaise)
+    : typedPricePaise;
 
   // Categories sorted parents-first for a readable select; sub-categories
   // indented under context (single flat list keeps the Base UI select simple).
@@ -186,7 +234,11 @@ export function ProductEditorForm({
     setFieldError(null);
 
     if (pricePaise == null) {
-      setFieldError("Enter a valid price.");
+      setFieldError(
+        hasVariants
+          ? "Add a priced variant, or set a base price before saving."
+          : "Enter a valid price.",
+      );
       return;
     }
     if (state.mrpInput.trim() !== "" && mrpPaise == null) {
@@ -315,27 +367,42 @@ export function ProductEditorForm({
       </FadeUp>
 
       <FadeUp delay={0.04}>
-        <Section title="Pricing" description="Amounts in ₹ — stored as paise.">
+        <Section
+          title="Pricing"
+          description={
+            hasVariants
+              ? "Priced per variant below. The base price is the lowest variant price."
+              : "Amounts in ₹ — stored as paise."
+          }
+        >
           <div className="grid gap-4 sm:grid-cols-3">
-            <Field label="Price" htmlFor="price" required>
-              <RupeeInput
-                id="price"
-                value={state.priceInput}
-                onChange={(value) => set("priceInput", value)}
-                required
-              />
-            </Field>
-            <Field
-              label="MRP"
-              htmlFor="mrp"
-              hint={marginPct != null ? `${marginPct}% off` : undefined}
-            >
-              <RupeeInput
-                id="mrp"
-                value={state.mrpInput}
-                onChange={(value) => set("mrpInput", value)}
-              />
-            </Field>
+            {hasVariants ? (
+              <Field label="Price (from)" htmlFor="price">
+                <FromPriceDisplay fromPrice={variantState.fromPrice} />
+              </Field>
+            ) : (
+              <Field label="Price" htmlFor="price" required>
+                <RupeeInput
+                  id="price"
+                  value={state.priceInput}
+                  onChange={(value) => set("priceInput", value)}
+                  required
+                />
+              </Field>
+            )}
+            {hasVariants ? null : (
+              <Field
+                label="MRP"
+                htmlFor="mrp"
+                hint={marginPct != null ? `${marginPct}% off` : undefined}
+              >
+                <RupeeInput
+                  id="mrp"
+                  value={state.mrpInput}
+                  onChange={(value) => set("mrpInput", value)}
+                />
+              </Field>
+            )}
             <Field label="Min. order qty" htmlFor="moq">
               <Input
                 id="moq"
@@ -350,7 +417,7 @@ export function ProductEditorForm({
             </Field>
           </div>
 
-          {pricePaise != null ? (
+          {!hasVariants && pricePaise != null ? (
             <p className="text-xs text-muted-foreground">
               Stored as{" "}
               <span className="font-tabular text-foreground">
@@ -367,6 +434,24 @@ export function ProductEditorForm({
               ) : null}
             </p>
           ) : null}
+        </Section>
+      </FadeUp>
+
+      <FadeUp delay={0.06}>
+        <Section
+          title="Variants"
+          description="Sell this product in multiple options, each with its own price and stock."
+        >
+          <VariantsSection
+            productId={product?.id}
+            initialHasVariants={product?.hasVariants ?? false}
+            initialOptionTypes={product?.optionTypes ?? []}
+            initialVariants={product?.variants ?? []}
+            baseSku={state.sku}
+            actions={variantsActions}
+            onStateChange={onVariantStateChange}
+            disabled={pending}
+          />
         </Section>
       </FadeUp>
 
@@ -584,3 +669,26 @@ const RupeeInput = React.forwardRef<
     </div>
   );
 });
+
+/**
+ * Read-only base-price display for variant products. Shows the derived "FROM"
+ * price (= lowest active variant price) instead of an editable field, since the
+ * price then lives per-variant in the matrix below.
+ */
+function FromPriceDisplay({ fromPrice }: { fromPrice: number | null }) {
+  return (
+    <div
+      aria-live="polite"
+      className="flex h-8 items-center rounded-lg border border-dashed border-input bg-muted/30 px-2.5 font-tabular text-sm text-foreground"
+    >
+      {fromPrice != null ? (
+        <>
+          <span className="text-muted-foreground">From&nbsp;</span>
+          {formatPaise(fromPrice)}
+        </>
+      ) : (
+        <span className="text-muted-foreground">Set from variants</span>
+      )}
+    </div>
+  );
+}

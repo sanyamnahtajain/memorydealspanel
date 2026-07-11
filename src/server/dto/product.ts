@@ -1,5 +1,13 @@
 import type { Prisma, ProductImage } from "@prisma/client";
 import type { EntityStatus, StockStatus } from "@/lib/schemas/shared";
+import {
+  toPublicVariant,
+  toPricedVariant,
+  type PublicVariant,
+  type PricedVariant,
+  type PublicVariantSource,
+  type PricedVariantSource,
+} from "./variant";
 
 /**
  * Product DTOs — the serialization half of the price gate.
@@ -37,6 +45,17 @@ export interface PublicProductBrand {
 }
 
 /**
+ * One axis of variation (embedded on `Product.optionTypes`), e.g.
+ * `{ name: "Capacity", values: ["10000mAh", "20000mAh"] }`. Carries NO price —
+ * it is PUBLIC and describes the shape of the variant selector for every
+ * viewer. `null` / absent when the product has no variants.
+ */
+export interface ProductOptionType {
+  name: string;
+  values: string[];
+}
+
+/**
  * A product without any pricing information. This is the DEFAULT return
  * shape of the DAL — prices are opt-in and gated.
  */
@@ -59,6 +78,22 @@ export interface PublicProduct {
   images: PublicProductImage[];
   createdAt: Date;
   updatedAt: Date;
+  /**
+   * Whether this product is split into purchasable variants. When `false`
+   * (the default and the vast majority of the catalog) the product behaves
+   * EXACTLY as before: `variants` is `[]` and `optionTypes` is `[]`.
+   */
+  hasVariants: boolean;
+  /**
+   * Embedded axis definitions for the variant selector (PUBLIC — no price).
+   * Empty when `hasVariants` is false.
+   */
+  optionTypes: ProductOptionType[];
+  /**
+   * The product's variants, price-gated to the PUBLIC shape (no money).
+   * Empty when `hasVariants` is false.
+   */
+  variants: PublicVariant[];
 }
 
 /**
@@ -73,6 +108,8 @@ export interface PricedProduct extends PublicProduct {
   mrp: number | null;
   /** Whole-number discount margin percentage vs. mrp, when mrp is set. */
   marginPct: number | null;
+  /** Variants carrying their own gated price/mrp/margin. Empty when none. */
+  variants: PricedVariant[];
 }
 
 /**
@@ -103,15 +140,30 @@ export interface PublicSource {
   updatedAt: Date;
   price?: number;
   mrp?: number | null;
+  /** Absent / false for the non-variant majority of the catalog. */
+  hasVariants?: boolean;
+  /** Embedded axis definitions; null/absent when there are no variants. */
+  optionTypes?: Prisma.JsonValue;
+  /**
+   * The joined variant rows. For gated viewers these are PUBLIC-projected
+   * (no price columns selected); for priced viewers they include money.
+   */
+  variants?: PublicVariantSource[];
 }
 
 /** The fields the priced mapper additionally requires. */
 export interface PricedSource extends PublicSource {
   price: number;
   mrp?: number | null;
+  /** Priced viewers get variant rows including the money columns. */
+  variants?: PricedVariantSource[];
 }
 
-function toPublicImages(images: ProductImage[]): PublicProductImage[] {
+/**
+ * Public projection of product images (identical shape, explicit copy).
+ * Exported so the variant mapper can reuse it (variant images share the shape).
+ */
+export function toPublicImages(images: ProductImage[]): PublicProductImage[] {
   return images.map((image) => ({
     url: image.url,
     thumbUrl: image.thumbUrl ?? null,
@@ -121,9 +173,32 @@ function toPublicImages(images: ProductImage[]): PublicProductImage[] {
 }
 
 /**
+ * Coerces the free-form `optionTypes` JSON to a clean `ProductOptionType[]`,
+ * dropping malformed entries defensively. Returns `[]` for null / non-array /
+ * missing input, so a non-variant product always yields an empty axis list.
+ */
+function toOptionTypes(raw: Prisma.JsonValue | undefined): ProductOptionType[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ProductOptionType[] = [];
+  for (const entry of raw) {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+      continue;
+    }
+    const obj = entry as Record<string, unknown>;
+    if (typeof obj.name !== "string" || !Array.isArray(obj.values)) continue;
+    const values = obj.values.filter(
+      (v): v is string => typeof v === "string",
+    );
+    out.push({ name: obj.name, values });
+  }
+  return out;
+}
+
+/**
  * Maps a Prisma product row to a `PublicProduct`, copying an explicit
  * allow-list of fields. Price fields are NEVER read here, so even a full
- * row cannot leak money through this mapper.
+ * row cannot leak money through this mapper — including on nested variants,
+ * which are mapped through the PUBLIC variant mapper (no money read).
  */
 export function toPublicProduct(row: PublicSource): PublicProduct {
   return {
@@ -145,6 +220,9 @@ export function toPublicProduct(row: PublicSource): PublicProduct {
     images: toPublicImages(row.images ?? []),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    hasVariants: row.hasVariants ?? false,
+    optionTypes: toOptionTypes(row.optionTypes),
+    variants: (row.variants ?? []).map(toPublicVariant),
   };
 }
 
@@ -168,5 +246,7 @@ export function toPricedProduct(row: PricedSource): PricedProduct {
     price,
     mrp,
     marginPct: deriveMarginPct(price, mrp),
+    // Priced viewers get the money-carrying variant projection.
+    variants: (row.variants ?? []).map(toPricedVariant),
   };
 }

@@ -30,6 +30,7 @@ import {
   type RelatedRailItem,
   StickyMobileBar,
   buildWhatsAppEnquiryLink,
+  VariantProductView,
 } from "@/components/storefront/product";
 import { ProductPriceArea } from "./ProductPriceArea";
 
@@ -174,6 +175,73 @@ export default async function ProductDetailPage({ params }: PageParams) {
     sku: product.sku,
   });
 
+  // A product opts into variants per-row. When it does, a client coordinator
+  // (VariantProductView) owns the gallery + selector so picking a variant
+  // updates the gated price, stock, images, and enquiry CTA together. When it
+  // doesn't (the catalog default), the static server hero renders exactly as
+  // before. The header/footer JSX is shared across both paths.
+  const showVariantHero =
+    product.hasVariants && product.variants.length > 0;
+
+  const heroHeader = (
+    <header className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        {product.brandRef ? (
+          <BrandBadge
+            name={product.brandRef.name}
+            slug={product.brandRef.slug}
+            size="md"
+          />
+        ) : product.brand ? (
+          <span className="text-sm font-medium tracking-wide text-muted-foreground uppercase">
+            {product.brand}
+          </span>
+        ) : null}
+        <StatusChip
+          variant={STOCK_CHIP[product.stockStatus]}
+          label={STOCK_LABEL[product.stockStatus]}
+        />
+      </div>
+      <div className="flex items-start justify-between gap-3">
+        <h1 className="font-heading text-2xl font-semibold tracking-tight sm:text-3xl">
+          {product.name}
+        </h1>
+        {/* Save to wishlist — carries no price; prompts login for anon. */}
+        <HeartButton
+          productId={product.id}
+          initialSaved={initialSaved}
+          size="default"
+          className="-mr-1 shrink-0"
+        />
+      </div>
+      {/* For a variant product the per-variant SKU shows in the selector. */}
+      {showVariantHero ? null : (
+        <p className="text-xs text-muted-foreground">SKU: {product.sku}</p>
+      )}
+    </header>
+  );
+
+  const heroFooter = (
+    <>
+      {product.moq ? (
+        <p className="text-sm text-muted-foreground">
+          Minimum order quantity:{" "}
+          <span className="font-medium text-foreground">
+            {product.moq} units
+          </span>
+        </p>
+      ) : null}
+
+      {product.description ? (
+        <p className="text-sm leading-relaxed text-foreground/80">
+          {product.description}
+        </p>
+      ) : null}
+
+      <SpecSection specs={product.specs} />
+    </>
+  );
+
   // JSON-LD: deliberately OMITS `offers`/`price` — the price gate applies to
   // structured data too. Only price-free descriptive fields are emitted.
   const jsonLd = {
@@ -198,84 +266,53 @@ export default async function ProductDetailPage({ params }: PageParams) {
       <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:py-8">
         <ProductBreadcrumb productName={product.name} category={category} />
 
-        <div className="mt-4 grid gap-8 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
-          <FadeUp>
-            <div className="lg:sticky lg:top-20">
-              <ProductGallery
-                images={product.images}
-                productName={product.name}
-                productId={product.id}
-              />
-            </div>
-          </FadeUp>
-
-          <FadeUp delay={0.05}>
-            <div className="flex flex-col gap-5">
-              <header className="space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  {product.brandRef ? (
-                    <BrandBadge
-                      name={product.brandRef.name}
-                      slug={product.brandRef.slug}
-                      size="md"
-                    />
-                  ) : product.brand ? (
-                    <span className="text-sm font-medium tracking-wide text-muted-foreground uppercase">
-                      {product.brand}
-                    </span>
-                  ) : null}
-                  <StatusChip
-                    variant={STOCK_CHIP[product.stockStatus]}
-                    label={STOCK_LABEL[product.stockStatus]}
-                  />
-                </div>
-                <div className="flex items-start justify-between gap-3">
-                  <h1 className="font-heading text-2xl font-semibold tracking-tight sm:text-3xl">
-                    {product.name}
-                  </h1>
-                  {/* Save to wishlist — carries no price; prompts login for anon. */}
-                  <HeartButton
-                    productId={product.id}
-                    initialSaved={initialSaved}
-                    size="default"
-                    className="-mr-1 shrink-0"
-                  />
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  SKU: {product.sku}
-                </p>
-              </header>
-
-              <ProductPriceArea
-                product={product as PublicProduct | PricedProduct}
-                showPrices={showPrices}
-                status={customerStatus}
-              />
-
-              {product.moq ? (
-                <p className="text-sm text-muted-foreground">
-                  Minimum order quantity:{" "}
-                  <span className="font-medium text-foreground">
-                    {product.moq} units
-                  </span>
-                </p>
-              ) : null}
-
-              {product.description ? (
-                <p className="text-sm leading-relaxed text-foreground/80">
-                  {product.description}
-                </p>
-              ) : null}
-
-              {/* Inline Enquire — hidden on mobile where the sticky bar owns it. */}
-              <div className="hidden md:block">
-                <WhatsAppEnquire productName={product.name} sku={product.sku} />
+        {showVariantHero ? (
+          <VariantProductView
+            productName={product.name}
+            productImages={product.images}
+            productId={product.id}
+            optionTypes={product.optionTypes}
+            variants={product.variants}
+            showPrices={showPrices}
+            status={customerStatus}
+            header={heroHeader}
+            footer={heroFooter}
+          />
+        ) : (
+          <div className="mt-4 grid gap-8 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
+            <FadeUp>
+              <div className="lg:sticky lg:top-20">
+                <ProductGallery
+                  images={product.images}
+                  productName={product.name}
+                  productId={product.id}
+                />
               </div>
+            </FadeUp>
 
-              <SpecSection specs={product.specs} />
-            </div>
-          </FadeUp>
-        </div>
+            <FadeUp delay={0.05}>
+              <div className="flex flex-col gap-5">
+                {heroHeader}
+
+                <ProductPriceArea
+                  product={product as PublicProduct | PricedProduct}
+                  showPrices={showPrices}
+                  status={customerStatus}
+                />
+
+                {/* Inline Enquire — hidden on mobile where the sticky bar owns it. */}
+                <div className="hidden md:block">
+                  <WhatsAppEnquire
+                    productName={product.name}
+                    sku={product.sku}
+                  />
+                </div>
+
+                {heroFooter}
+              </div>
+            </FadeUp>
+          </div>
+        )}
 
         {related.length > 0 ? (
           <FadeUp delay={0.1}>
@@ -333,6 +370,12 @@ function toPublicShape(p: PublicProduct | PricedProduct): PublicProduct {
     images: p.images,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
+    // The related rail renders cards off the denormalized "from" price only —
+    // it never needs variant rows, so we drop them here (also keeps the client
+    // payload lean). Non-variant products already carry empty axes.
+    hasVariants: p.hasVariants,
+    optionTypes: p.optionTypes,
+    variants: [],
   };
 }
 
