@@ -363,6 +363,22 @@ Built in Phase 1, consumed by everything after. **No component ships colors/spac
 - **Analytics/most-viewed/PageView:** optional per-variant view tracking.
 **Gate:** anon sees no variant price; a product with 3 variants edits/imports/renders correctly; single-variant products unchanged; price gate invariant passes for variants; typecheck+lint+vitest green. **Sequencing:** land before final launch if variants are needed at go-live; otherwise a fast-follow — flagged as a large phase either way.
 
+### Phase 11.1 — Variant photos (per-variant image galleries)
+**Goal:** each variant can carry its **own photos** (e.g. the Black case vs the Blue case, the 10000mAh vs 20000mAh power bank), so selecting a variant on the storefront swaps the gallery to that variant's images. Colour/finish variants are the obvious win — the retailer sees the exact SKU they're ordering.
+
+**Already in place (do NOT re-migrate):** the schema already supports this — `ProductVariant.images ProductImage[]` (the same embedded `ProductImage` type — `{ url, thumbUrl?, sortOrder, isPrimary }` — used by `Product.images`), stored on R2 exactly like product images. So this is an **admin-upload + storefront-gallery-swap** feature on top of Phase 11, **not** a data-model change.
+
+**Build/do:**
+- **Admin editor (per variant):** in the variant editor/matrix, each variant row gets its own image manager reusing the **existing product image pipeline** (Phase 3): client-side compress → R2 presigned upload → thumbnail, drag-reorder, set primary, delete, and the **camera capture** flow. Keep it lightweight — a compact per-variant gallery (e.g. a thumbnail strip that expands), not a full duplicate of the product editor. A variant with no own images **inherits/falls back** to the product's images (never a broken/empty gallery).
+- **Shared vs per-variant clarity:** the product-level gallery remains the default/hero set; per-variant images are an override shown when that variant is selected. Make the inheritance obvious in the UI ("Uses product photos" vs "3 variant photos").
+- **Storefront detail:** on variant selection, the gallery (and the card/quick-view thumbnail where a variant is pre-selected) **swaps to the selected variant's images**, falling back to product images when the variant has none. Preserve the active image index sensibly; respect reduced-motion on the swap; keep the zoom/lightbox behaviour. The **primary** variant image becomes the thumbnail wherever that variant is surfaced (e.g. default variant on the listing card).
+- **Import/export:** variant CSV rows accept image URL column(s) (mirroring the product image-URL import), validated + fetched/thumbnailed like product image import; export includes them.
+- **Cart / orders / wishlist:** line snapshots and cards use the selected variant's primary image when present (order snapshot already stores an image — point it at the variant image), so history shows the exact variant ordered.
+
+**Price gate:** images carry **no pricing** — they are public metadata and appear on both `PublicVariant` and `PricedVariant` (like product images today). No gate interaction; just don't accidentally drop them from the public projection.
+
+**Gate:** a colour-variant product shows distinct photos per colour on selection; a variant with no images cleanly inherits the product gallery (no empty state); upload/reorder/primary/delete + camera work per variant; variant image URLs import/export; order/wishlist/cart thumbnails reflect the chosen variant; single-variant products and products without variant photos render exactly as today; price-gate + variant invariants still green; typecheck+lint+vitest green. **Sequencing:** a fast-follow to Phase 11 (rides on the Phase 3 image pipeline + Phase 11 variant editor/DTO); no schema step needed.
+
 ### Cross-cutting — Autocomplete / auto-suggest (reduce typos everywhere)
 A single reusable **custom Combobox/Autocomplete** component (Base UI/own — NOT a native `<datalist>`), backed by "distinct value" server actions, applied wherever free text invites typos:
 - **Specification keys** (product editor SpecEditor) — suggest keys already used across products ("Wattage", "Cable Length", "Material", "Warranty", "Compatibility"…).
