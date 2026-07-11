@@ -67,11 +67,17 @@ export function StickyMobileBar({
 
   return (
     <>
-      {/* Spacer so the fixed bar never overlaps the last content on mobile. */}
-      <div aria-hidden className="h-20 md:hidden" />
+      {/* Spacer so the fixed bar never overlaps the last content on mobile.
+          The bar is lifted above the storefront tab nav, so this clears the
+          bar height + that offset. */}
+      <div aria-hidden className="h-[calc(8rem+env(safe-area-inset-bottom))] md:hidden" />
 
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 backdrop-blur md:hidden">
-        <div className="mx-auto flex w-full max-w-5xl items-stretch gap-3 px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+      {/* Sits ABOVE the storefront bottom tab nav (fixed bottom-0 z-40 md:hidden,
+          ~3.5rem tall); this bar is md:hidden too, so the nav is always present
+          beneath it. Without the offset the nav paints over this bar and the
+          See-price / Enquire actions are unreachable on phones. */}
+      <div className="fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-40 border-t border-border bg-background/95 backdrop-blur md:hidden">
+        <div className="mx-auto flex w-full max-w-5xl items-stretch gap-3 px-4 py-3">
           <div className="flex min-w-0 flex-1 flex-col justify-center">
             {showPrice ? (
               <>
