@@ -1,8 +1,13 @@
-# MemoryDeals Panel
+# The Memory Deals — Panel
 
 Gated B2B price catalog for mobile-accessories wholesale. Anyone can browse the catalog; **prices are visible only to admin-approved customers** with time-bound access. Includes an app-like admin panel (PWA) with spreadsheet-style bulk editing and phone-camera product photography.
 
-📄 Full product spec: [PRD.md](./PRD.md)
+📄 Product spec: [PRD.md](./PRD.md) · Build plan: [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) · Deploy: [DEPLOYMENT.md](./DEPLOYMENT.md)
+
+**Status:** feature-complete — production build passes, 557 tests green. Highlights:
+- Storefront: modern home, grid/compact/table view modes, faceted discovery (gated price-band), brand pages, wishlist, **cart + orders** (no payment, server-authoritative anti-cheat), product detail with variant selector, PWA, light/dark theme.
+- Admin: catalog (categories, **brands**, products, **variants**), DealSheet bulk grid, CSV import/export, camera capture, customers & access lifecycle, **RBAC** (users/roles), audit log + contextual previews, **session logs**, **dashboard charts**, settings.
+- Security: prices gated at the data layer (adversarially tested); orders server-authoritative; IDOR-protected; rate limits; TOTP admin; security headers.
 
 ## Stack
 
