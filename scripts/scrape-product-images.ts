@@ -51,6 +51,17 @@ const WORKER_INDEX = Math.min(
   Math.max(0, parseInt(process.env.WORKER_INDEX ?? "0", 10)),
 );
 const WORKER_TAG = WORKER_COUNT > 1 ? `[w${WORKER_INDEX}] ` : "";
+/**
+ * Deterministic shard for a product, from a stable key (slug). Unlike an index
+ * into a per-worker "pending" list (which differs by fetch timing), a hash maps
+ * each product to exactly ONE worker regardless of when the list was read — so
+ * parallel workers never overlap.
+ */
+function shardOf(key: string): number {
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+  return h % WORKER_COUNT;
+}
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 interface DdgResult { image: string; width: number; height: number }
@@ -126,8 +137,12 @@ async function main() {
     orderBy: { createdAt: "asc" },
   });
   const allPending = FORCE ? products : products.filter((p) => p.images.length === 0);
-  // Take this worker's shard of the pending list.
-  const pending = allPending.filter((_, i) => i % WORKER_COUNT === WORKER_INDEX);
+  // Take this worker's shard — hashed by slug so it's disjoint across workers
+  // even though each fetched `allPending` at a slightly different moment.
+  const pending =
+    WORKER_COUNT > 1
+      ? allPending.filter((p) => shardOf(p.slug) === WORKER_INDEX)
+      : allPending;
   log(`# run start — ${products.length} products, ${allPending.length} pending, this worker ${pending.length} (shard ${WORKER_INDEX + 1}/${WORKER_COUNT})`);
 
   let done = 0;
