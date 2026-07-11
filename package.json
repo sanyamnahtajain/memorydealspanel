@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && next build",
+    "postinstall": "prisma generate",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
@@ -14,6 +15,7 @@
     "ci": "npm run typecheck && npm run lint && npm run test:run",
     "db:push": "prisma db push",
     "seed": "tsx prisma/seed.ts",
+    "seed:prod": "tsx prisma/seed-prod.ts",
     "dev:db": "tsx scripts/dev-db.ts"
   },
   "dependencies": {
