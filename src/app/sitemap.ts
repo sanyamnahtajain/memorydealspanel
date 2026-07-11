@@ -18,20 +18,14 @@ import { siteBaseUrl } from "./seo-site-url";
  * fields, so no gated data can leak into the sitemap (which is served to
  * anonymous crawlers).
  */
-export const revalidate = 3600;
+// Generated on-demand at request time, never prerendered at build. A sitemap
+// must not couple the DEPLOY to the database — if Atlas is briefly unreachable
+// during `next build`, the build should still succeed. Crawlers hit this route
+// rarely, so the per-request DB read is negligible.
+export const dynamic = "force-dynamic";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = siteBaseUrl();
-
-  const [categories, products] = await Promise.all([
-    listActive(),
-    prisma.product.findMany({
-      where: { status: "ACTIVE", deletedAt: null },
-      // Explicit projection — NO price/mrp. Slug + timestamp only.
-      select: { slug: true, updatedAt: true },
-      orderBy: { updatedAt: "desc" },
-    }),
-  ]);
 
   const now = new Date();
 
@@ -49,6 +43,28 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.8,
     },
   ];
+
+  // Price-free reads (slugs + timestamps only). Wrapped so a transient DB
+  // outage degrades to the static routes instead of 500-ing the sitemap.
+  let categories: Awaited<ReturnType<typeof listActive>> = [];
+  let products: { slug: string; updatedAt: Date }[] = [];
+  try {
+    [categories, products] = await Promise.all([
+      listActive(),
+      prisma.product.findMany({
+        where: { status: "ACTIVE", deletedAt: null },
+        // Explicit projection — NO price/mrp. Slug + timestamp only.
+        select: { slug: true, updatedAt: true },
+        orderBy: { updatedAt: "desc" },
+      }),
+    ]);
+  } catch (error) {
+    console.error(
+      "[sitemap] DB read failed; serving static routes only:",
+      error,
+    );
+    return staticRoutes;
+  }
 
   const categoryRoutes: MetadataRoute.Sitemap = categories.map((category) => ({
     url: `${base}/c/${category.slug}`,
