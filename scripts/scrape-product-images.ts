@@ -10,7 +10,7 @@
  *   DATABASE_URL="mongodb+srv://.../memorydeals?..." LIMIT=3 npx tsx scripts/scrape-product-images.ts
  *   DATABASE_URL="..." npx tsx scripts/scrape-product-images.ts        # all remaining
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, appendFileSync } from "node:fs";
 import path from "node:path";
 import { PrismaClient } from "@prisma/client";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
@@ -95,6 +95,18 @@ const DESCRIPTOR: Record<string, string> = {
   "smart-watches": "smartwatch",
 };
 
+// Persistent progress log — every processed product is appended here with a
+// timestamp, so progress survives across runs and can be tailed live.
+const LOG_FILE = path.join(process.cwd(), "scripts", "scrape-product-images.progress.log");
+function log(msg: string) {
+  console.log(msg);
+  try {
+    appendFileSync(LOG_FILE, `${new Date().toISOString()} ${msg}\n`);
+  } catch {
+    /* logging is best-effort */
+  }
+}
+
 async function main() {
   if (!R2_PUBLIC_URL || !process.env.R2_ACCESS_KEY_ID) throw new Error("R2 not configured in .env");
 
@@ -103,14 +115,15 @@ async function main() {
     select: { id: true, name: true, slug: true, images: true, category: { select: { slug: true } } },
     orderBy: { createdAt: "asc" },
   });
+  const pending = FORCE ? products : products.filter((p) => p.images.length === 0);
+  log(`# run start — ${products.length} products, ${pending.length} to scrape (${products.length - pending.length} already imaged)`);
 
   let done = 0;
   let withImages = 0;
   let failed = 0;
 
-  for (const p of products) {
+  for (const p of pending) {
     if (done >= LIMIT) break;
-    if (!FORCE && p.images.length > 0) continue;
     done++;
 
     const descriptor = DESCRIPTOR[p.category.slug] ?? "";
@@ -131,21 +144,27 @@ async function main() {
       }
       const publicUrl = `${R2_PUBLIC_URL}/${key}`;
       uploaded.push({ url: publicUrl, thumbUrl: publicUrl, sortOrder: uploaded.length, isPrimary: uploaded.length === 0 });
+      // Persist to Atlas immediately after EACH image — don't wait for the rest,
+      // so R2 and the DB stay in lock-step and a crash never loses work.
+      try {
+        await prisma.product.update({ where: { id: p.id }, data: { images: uploaded } });
+      } catch {
+        /* keep going; the next image write will retry the array */
+      }
       await sleep(120);
     }
 
     if (uploaded.length > 0) {
-      await prisma.product.update({ where: { id: p.id }, data: { images: uploaded } });
       withImages++;
-      console.log(`✓ ${p.name} — ${uploaded.length} image(s)`);
+      log(`✓ ${done}/${pending.length} ${p.slug} — ${uploaded.length} image(s)`);
     } else {
       failed++;
-      console.log(`✗ ${p.name} — no usable image (query: "${query}", ${results.length} raw / ${candidates.length} big enough)`);
+      log(`✗ ${done}/${pending.length} ${p.slug} — no usable image (${results.length} raw / ${candidates.length} ok)`);
     }
     await sleep(700); // be polite to DDG
   }
 
-  console.log(`\nDone. Processed ${done}, imaged ${withImages}, failed ${failed}.`);
+  log(`# run done — processed ${done}, imaged ${withImages}, failed ${failed}`);
 }
 
 main().catch((e) => { console.error(e); process.exitCode = 1; }).finally(() => prisma.$disconnect());
