@@ -28,6 +28,10 @@ import { saveProductField } from "@/server/actions/products";
 
 import { buildProductColumns, type ProductRow } from "./productColumns";
 import { toUpdateInput } from "./adapters";
+import {
+  VARIANT_MANAGED_FIELDS,
+  VARIANT_MANAGED_MESSAGE,
+} from "./VariantCell";
 
 export interface ProductGridProps {
   /** Initial rows, already projected from `PricedProduct` on the server. */
@@ -51,14 +55,49 @@ export function ProductGrid({ rows, categories, brands }: ProductGridProps) {
   );
 
   /**
+   * Set of product ids that are variant-managed. The recompute owns their
+   * `price` / `mrp` / `stockStatus`, so those fields must never be persisted
+   * from the grid — for ANY edit path.
+   */
+  const variantRowIds = React.useMemo(() => {
+    const ids = new Set<string>();
+    for (const row of rows) if (row.hasVariants) ids.add(row.id);
+    return ids;
+  }, [rows]);
+
+  /**
    * Persist a single-cell (or bulk) edit via the audited server action.
    * Resolves on success; on a hard failure it toasts and REJECTS so the grid
    * reverts the optimistic write and offers Retry.
+   *
+   * INTEGRITY GUARD: for a variant product, strip the variant-managed fields
+   * (price / mrp / stockStatus) from the patch before it reaches the server —
+   * they are recomputed FROM values and editing them would corrupt the matrix.
+   * The column validators already block interactive edits inline, but paste /
+   * fill / bulk bypass `validate` in the engine, so this boundary is the
+   * airtight line of defence. If a patch is left with nothing else to save we
+   * no-op and toast the reason.
    */
   const onSave = React.useCallback<OnSave<ProductRow>>(
     async (rowId, patch) => {
-      const input = toUpdateInput(patch);
-      if (!input) return; // nothing persistable (e.g. a computed-only change)
+      let effectivePatch = patch;
+      if (variantRowIds.has(rowId)) {
+        const stripped: Partial<ProductRow> = { ...patch };
+        let removed = false;
+        for (const field of VARIANT_MANAGED_FIELDS) {
+          if (field in stripped) {
+            delete stripped[field];
+            removed = true;
+          }
+        }
+        if (removed) {
+          toast.info("Not saved", { description: VARIANT_MANAGED_MESSAGE });
+        }
+        effectivePatch = stripped;
+      }
+
+      const input = toUpdateInput(effectivePatch);
+      if (!input) return; // nothing persistable (computed-only / fully stripped)
 
       const result = await saveProductField(rowId, input);
       if (!result.ok) {
@@ -66,7 +105,7 @@ export function ProductGrid({ rows, categories, brands }: ProductGridProps) {
         throw new Error(result.error);
       }
     },
-    [],
+    [variantRowIds],
   );
 
   /** Image cell → open the full product editor where images are managed. */

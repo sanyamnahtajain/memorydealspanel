@@ -192,12 +192,19 @@ export function ImportWizard() {
   /* --------------------------- step 2 → 3: preview ----------------------- */
 
   const runPreview = React.useCallback(
-    async (rows: Record<string, string>[], mapping: ColumnMapping) => {
+    async (
+      rows: Record<string, string>[],
+      mapping: ColumnMapping,
+      headers: string[],
+    ) => {
       setBusy(true);
       try {
         const res = await previewImport({
           rows,
           mapping: mapping as Record<string, string>,
+          // Headers let the server infer variant option axes (Capacity, Color…)
+          // from any column not claimed by a canonical field.
+          headers,
         });
         if (!res.ok) {
           toast.error(res.error);
@@ -214,7 +221,7 @@ export function ImportWizard() {
 
   const goToPreview = React.useCallback(async () => {
     if (!upload) return;
-    const ok = await runPreview(upload.rows, upload.mapping);
+    const ok = await runPreview(upload.rows, upload.mapping, upload.headers);
     if (ok) setStep(3);
   }, [upload, runPreview]);
 
@@ -239,7 +246,7 @@ export function ImportWizard() {
 
       const nextUpload = { ...upload, rows: nextRows };
       setUpload(nextUpload);
-      void runPreview(nextRows, nextUpload.mapping);
+      void runPreview(nextRows, nextUpload.mapping, nextUpload.headers);
     },
     [upload, runPreview],
   );
@@ -253,6 +260,7 @@ export function ImportWizard() {
       const res = await commitImportAction({
         rows: upload.rows,
         mapping: upload.mapping as Record<string, string>,
+        headers: upload.headers,
       });
       if (!res.ok) {
         toast.error(res.error);
@@ -260,7 +268,10 @@ export function ImportWizard() {
       }
       setSummary(res);
       setStep(4);
-      const done = res.created + res.updated;
+      // Variant products count toward the "imported" total alongside singles.
+      const variantProducts =
+        res.variantProductsCreated + res.variantProductsUpdated;
+      const done = res.created + res.updated + variantProducts;
       toast.success(
         `Imported ${done} product${done === 1 ? "" : "s"}` +
           (res.skipped.length ? `, ${res.skipped.length} skipped.` : "."),
@@ -288,17 +299,23 @@ export function ImportWizard() {
   }, [summary]);
 
   const previewCounts = React.useMemo(() => {
-    if (!preview) return { creates: 0, updates: 0, invalid: 0 };
+    if (!preview) return { creates: 0, updates: 0, invalid: 0, variants: 0 };
     let creates = 0;
     let updates = 0;
     let invalid = 0;
+    let variants = 0;
     for (const r of preview) {
       if (r.operation === "create") creates++;
       else if (r.operation === "update") updates++;
+      else if (r.operation === "variant") variants++;
       else invalid++;
     }
-    return { creates, updates, invalid };
+    return { creates, updates, invalid, variants };
   }, [preview]);
+
+  /** Rows that will actually be written (single-product + variant rows). */
+  const committableCount =
+    previewCounts.creates + previewCounts.updates + previewCounts.variants;
 
   const missingRequired = upload
     ? upload.fields.some((f) => f.required && !upload.mapping[f.key])
@@ -422,13 +439,11 @@ export function ImportWizard() {
             <Button
               type="button"
               onClick={commit}
-              disabled={
-                busy || previewCounts.creates + previewCounts.updates === 0
-              }
+              disabled={busy || committableCount === 0}
             >
               {busy ? <Loader2Icon className="animate-spin" aria-hidden /> : null}
-              Import {previewCounts.creates + previewCounts.updates} row
-              {previewCounts.creates + previewCounts.updates === 1 ? "" : "s"}
+              Import {committableCount} row
+              {committableCount === 1 ? "" : "s"}
             </Button>
           </div>
           {previewCounts.invalid > 0 && (
@@ -457,6 +472,27 @@ export function ImportWizard() {
                 {summary.created} created · {summary.updated} updated ·{" "}
                 {summary.skipped.length} skipped
               </p>
+              {summary.variantProductsCreated +
+                summary.variantProductsUpdated >
+                0 && (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {summary.variantProductsCreated +
+                    summary.variantProductsUpdated}{" "}
+                  variant product
+                  {summary.variantProductsCreated +
+                    summary.variantProductsUpdated ===
+                  1
+                    ? ""
+                    : "s"}{" "}
+                  · {summary.variantsWritten} variant
+                  {summary.variantsWritten === 1 ? "" : "s"} written
+                </p>
+              )}
+              {summary.newBrands.length > 0 && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  New brands: {summary.newBrands.join(", ")}
+                </p>
+              )}
             </div>
           </div>
 

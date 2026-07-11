@@ -155,11 +155,26 @@ export async function uploadAndParse(
 const previewInputSchema = z.object({
   rows: z.array(z.record(z.string(), z.string())),
   mapping: z.record(z.string(), z.string()),
+  /**
+   * Original sheet headers (in order). Required to INFER variant option axes
+   * (any header not claimed by a canonical field becomes an option column).
+   * Optional for backward-compatible plain imports that never map `variantOf`.
+   */
+  headers: z.array(z.string()).optional(),
 });
 
 export interface PreviewResult {
   rows: PreviewRow[];
-  summary: { total: number; creates: number; updates: number; invalid: number };
+  summary: {
+    total: number;
+    creates: number;
+    updates: number;
+    invalid: number;
+    /** Variant PRODUCTS (parent groups) detected. */
+    variantProducts: number;
+    /** Variant ROWS across all groups. */
+    variantRows: number;
+  };
 }
 
 /**
@@ -176,7 +191,7 @@ export async function previewImport(
     assertAdmin(viewer);
     await assertPermission(viewer, PERMISSIONS.IMPORT_RUN);
 
-    const { rows, mapping } = previewInputSchema.parse(input);
+    const { rows, mapping, headers } = previewInputSchema.parse(input);
     const { existingSkus, categories } = await loadImportContext();
 
     const result = validateRows(
@@ -184,6 +199,7 @@ export async function previewImport(
       mapping as ColumnMapping,
       existingSkus,
       categories,
+      headers,
     );
     return { ok: true, rows: result.rows, summary: result.summary };
   });
@@ -196,6 +212,8 @@ export async function previewImport(
 const commitInputSchema = z.object({
   rows: z.array(z.record(z.string(), z.string())),
   mapping: z.record(z.string(), z.string()),
+  /** Original sheet headers — needed to infer variant option axes (see above). */
+  headers: z.array(z.string()).optional(),
 });
 
 export interface CommitSummary {
@@ -204,6 +222,14 @@ export interface CommitSummary {
   skipped: Array<{ rowNumber: number; sku: string; reason: string }>;
   /** base64 of a UTF-8 CSV of every skipped/failed row (empty ⇒ none). */
   errorsCsvBase64: string;
+  /** Variant PRODUCTS created (a new `variantOf` parent group). */
+  variantProductsCreated: number;
+  /** Variant PRODUCTS updated (parent already existed). */
+  variantProductsUpdated: number;
+  /** Total variant ROWS written across every committed group. */
+  variantsWritten: number;
+  /** Brand masters auto-created during this run (empty ⇒ none). */
+  newBrands: string[];
 }
 
 /**
@@ -220,17 +246,26 @@ export async function commitImportAction(
     assertAdmin(viewer);
     await assertPermission(viewer, PERMISSIONS.IMPORT_RUN);
 
-    const { rows, mapping } = commitInputSchema.parse(input);
+    const { rows, mapping, headers } = commitInputSchema.parse(input);
     const { existingSkus, categories } = await loadImportContext();
 
+    // Re-validate server-side WITH headers so variant grouping is re-derived
+    // from the live catalog — never trusting a stale client preview.
     const validated = validateRows(
       rows,
       mapping as ColumnMapping,
       existingSkus,
       categories,
+      headers,
     );
 
-    const result = await commitImport({ rows: validated.rows });
+    const result = await commitImport({
+      rows: validated.rows,
+      variantGroups: validated.variantGroups,
+    });
+
+    const variantProductsWritten =
+      result.variantProductsCreated + result.variantProductsUpdated;
 
     await writeAudit({
       actorType: ACTOR,
@@ -243,10 +278,18 @@ export async function commitImportAction(
         updated: result.updated,
         skipped: result.skipped.length,
         total: validated.summary.total,
+        variantProductsCreated: result.variantProductsCreated,
+        variantProductsUpdated: result.variantProductsUpdated,
+        variantsWritten: result.variantsWritten,
+        newBrands: result.newBrands,
       },
     });
 
-    if (result.created > 0 || result.updated > 0) {
+    if (
+      result.created > 0 ||
+      result.updated > 0 ||
+      variantProductsWritten > 0
+    ) {
       revalidatePath("/admin/products");
       revalidatePath("/", "layout");
     }
@@ -259,6 +302,10 @@ export async function commitImportAction(
       errorsCsvBase64: result.errorsCsv
         ? Buffer.from(result.errorsCsv, "utf-8").toString("base64")
         : "",
+      variantProductsCreated: result.variantProductsCreated,
+      variantProductsUpdated: result.variantProductsUpdated,
+      variantsWritten: result.variantsWritten,
+      newBrands: result.newBrands,
     };
   });
 }

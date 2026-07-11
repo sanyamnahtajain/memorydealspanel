@@ -33,6 +33,13 @@ import {
   isProductServiceError,
 } from "@/server/services/products";
 import type { CreateProductInput, UpdateProductInput } from "@/lib/schemas/product";
+import type { OptionTypesInput, OptionValues } from "@/lib/schemas/variant";
+import {
+  groupVariantRows,
+  type CoercedVariant,
+  type VariantColumnContext,
+  type VariantGroup,
+} from "@/server/services/import-variants";
 
 /* ------------------------------------------------------------------ */
 /* Column schema — the stable, canonical set of import fields          */
@@ -50,7 +57,8 @@ export type ImportField =
   | "stock"
   | "status"
   | "tags"
-  | "description";
+  | "description"
+  | "variantOf";
 
 export interface ImportColumn {
   /** Canonical field key. */
@@ -147,6 +155,26 @@ export const IMPORT_COLUMNS: readonly ImportColumn[] = [
     kind: "text",
     aliases: ["description", "desc", "details", "notes"],
   },
+  {
+    // OPTIONAL variant column. When a row carries a value here — the PARENT
+    // product's SKU — the row is treated as a VARIANT row (see import-variants).
+    // Rows sharing this value form one variant product; the option axes come
+    // from any extra (unmapped) columns like "Capacity"/"Color". A blank cell
+    // means the row is an ordinary single product and is imported as before.
+    key: "variantOf",
+    label: "Variant Of (parent SKU)",
+    required: false,
+    kind: "text",
+    aliases: [
+      "variantof",
+      "variantofparentsku",
+      "parent",
+      "parentsku",
+      "parentcode",
+      "belongsto",
+      "variantparent",
+    ],
+  },
 ] as const;
 
 const COLUMN_BY_KEY: Record<ImportField, ImportColumn> = Object.fromEntries(
@@ -183,8 +211,11 @@ export interface CellError {
   message: string;
 }
 
-/** Whether a valid row would create a new product or update an existing one. */
-export type RowOperation = "create" | "update" | "invalid";
+/**
+ * Whether a valid row would create a new product, update an existing one, or is
+ * a VARIANT row that will be committed as part of its parent group.
+ */
+export type RowOperation = "create" | "update" | "invalid" | "variant";
 
 /**
  * A single validated preview row. `values` holds *coerced, ready-to-commit*
@@ -202,8 +233,46 @@ export interface PreviewRow {
   values: CoercedRow;
   /** Per-cell errors (empty ⇒ row is committable). */
   errors: CellError[];
-  /** create / update / invalid. */
+  /** create / update / invalid / variant. */
   operation: RowOperation;
+  /**
+   * Present ONLY on variant rows (rows carrying a `variantOf` value). Carries
+   * the display context the preview grid uses to visualise variant grouping,
+   * plus the parent SKU that ties the row to its {@link VariantGroupSummary}.
+   */
+  variant?: PreviewVariantMeta;
+}
+
+/** Per-row variant display metadata (parent SKU + chosen option values). */
+export interface PreviewVariantMeta {
+  /** The parent product SKU this variant row belongs to (`variantOf` value). */
+  parentSku: string;
+  /** The chosen option values for this row, e.g. `{ Capacity: "16GB" }`. */
+  optionValues: OptionValues;
+  /** True when this is the FIRST row of its parent group (carries product fields). */
+  isGroupLead: boolean;
+}
+
+/**
+ * A validated variant GROUP, projected for the preview + commit layers. One per
+ * distinct `variantOf` parent SKU. `valid` is true only when every row in the
+ * group is error-free, so the whole product commits atomically or not at all.
+ */
+export interface VariantGroupSummary {
+  parentSku: string;
+  product: VariantGroup["product"];
+  optionTypes: OptionTypesInput;
+  variants: CoercedVariant[];
+  rowNumbers: number[];
+  variantCount: number;
+  valid: boolean;
+  /**
+   * Per-row errors for this group, keyed by 1-based source row number. A plain
+   * record (not a Map) so it serializes across the server-action boundary. Each
+   * entry lists the offending source header + message; the matching preview row
+   * also carries these (re-keyed to canonical fields) for cell highlighting.
+   */
+  errorsByRow: Record<number, Array<{ header: string; message: string }>>;
 }
 
 /** Coerced, commit-ready shape (paise money, resolved category, enums). */
@@ -229,7 +298,16 @@ export interface ValidateResult {
     creates: number;
     updates: number;
     invalid: number;
+    /** Number of variant PRODUCTS (parent groups) detected. */
+    variantProducts: number;
+    /** Number of variant ROWS across all groups. */
+    variantRows: number;
   };
+  /**
+   * Validated variant groups (one per parent SKU). Empty when the sheet has no
+   * `variantOf` column mapped — i.e. a plain single-product import.
+   */
+  variantGroups: VariantGroupSummary[];
 }
 
 export interface SkippedRow {
@@ -242,6 +320,12 @@ export interface CommitResult {
   created: number;
   updated: number;
   skipped: SkippedRow[];
+  /** Variant PRODUCTS created (a `variantOf` group whose parent was new). */
+  variantProductsCreated: number;
+  /** Variant PRODUCTS updated (parent already existed). */
+  variantProductsUpdated: number;
+  /** Total variant ROWS written across all committed groups. */
+  variantsWritten: number;
   /** CSV text of every skipped/failed row with its reason (may be empty). */
   errorsCsv: string;
   /**
@@ -458,6 +542,54 @@ function parseTags(value: string): string[] {
 }
 
 /* ------------------------------------------------------------------ */
+/* Variant column context                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Resolves the {@link VariantColumnContext} for variant grouping, or `null`
+ * when the sheet has no `variantOf` column mapped (⇒ plain single-product
+ * import, no variant handling at all).
+ *
+ * OPTION COLUMNS are inferred: every source header that is NOT consumed by any
+ * canonical field mapping and is NOT the `variantOf` column becomes an option
+ * axis (Capacity, Color, …), in sheet order. When `headers` is omitted we can't
+ * infer option columns, so variant handling is disabled.
+ */
+export function resolveVariantContext(
+  mapping: ColumnMapping,
+  headers: string[] | undefined,
+): VariantColumnContext | null {
+  const variantOf = mapping.variantOf;
+  if (!variantOf || !headers || headers.length === 0) return null;
+
+  // Every header claimed by a canonical field (including variantOf itself).
+  const mappedHeaders = new Set<string>();
+  for (const key of Object.keys(mapping) as ImportField[]) {
+    const header = mapping[key];
+    if (header) mappedHeaders.add(header);
+  }
+
+  const optionHeaders = headers.filter((h) => !mappedHeaders.has(h));
+
+  return {
+    variantOf,
+    // The variant's own SKU is read from the mapped `sku` column.
+    variantSku: mapping.sku,
+    name: mapping.name,
+    category: mapping.category,
+    brand: mapping.brand,
+    description: mapping.description,
+    tags: mapping.tags,
+    price: mapping.price,
+    mrp: mapping.mrp,
+    moq: mapping.moq,
+    stock: mapping.stock,
+    status: mapping.status,
+    optionHeaders,
+  };
+}
+
+/* ------------------------------------------------------------------ */
 /* 2. validateRows                                                     */
 /* ------------------------------------------------------------------ */
 
@@ -469,16 +601,26 @@ const SKU_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
  * create (new SKU) or update (SKU already in the catalog), and flags in-file
  * duplicate SKUs. Pure & synchronous — no DB access.
  *
+ * VARIANT ROWS: when `mapping.variantOf` is set AND `headers` is supplied, rows
+ * carrying a `variantOf` value are grouped into variant PRODUCTS and validated
+ * by the variant engine (import-variants). Such rows get `operation: "variant"`
+ * (or "invalid" when they have errors) and a `variant` meta block, and the
+ * grouped result is returned in `variantGroups`. Rows with an empty `variantOf`
+ * cell — and every row when no `variantOf` column is mapped — are validated as
+ * single products EXACTLY as before, so existing imports are unaffected.
+ *
  * @param rows          raw rows from parseWorkbook
  * @param mapping       field → source header (see autoMapColumns)
  * @param existingSkus  lowercase SKUs already in the catalog (for create/update)
  * @param categories    known categories (matched by name, case-insensitive)
+ * @param headers       original sheet headers (needed to infer option columns)
  */
 export function validateRows(
   rows: RawRow[],
   mapping: ColumnMapping,
   existingSkus: Iterable<string>,
   categories: CategoryRef[],
+  headers?: string[],
 ): ValidateResult {
   const existing = new Set(
     Array.from(existingSkus, (s) => s.trim().toLowerCase()),
@@ -487,11 +629,29 @@ export function validateRows(
     categories.map((c) => [c.name.trim().toLowerCase(), c]),
   );
 
+  /* ---- variant grouping (opt-in via a mapped `variantOf` column) ---- */
+  const variantCtx = resolveVariantContext(mapping, headers);
+  const variantResult = variantCtx
+    ? groupVariantRows(rows, variantCtx, categories)
+    : { variantRowIndices: new Set<number>(), groups: [] as VariantGroup[] };
+  const variantRowIndices = variantResult.variantRowIndices;
+
+  // Index groups by their canonical (lowercased) parent SKU for per-row lookup.
+  const groupByParent = new Map<string, VariantGroup>();
+  for (const g of variantResult.groups) {
+    groupByParent.set(g.parentSku.trim().toLowerCase(), g);
+  }
+
   // First pass: count SKU occurrences within the file for duplicate detection.
+  // Variant rows are excluded — their SKUs live in a separate namespace handled
+  // by the variant engine, so they must not clash with single-product dup logic.
   const skuCounts = new Map<string, number>();
   const skuHeader = mapping.sku;
   if (skuHeader) {
+    let idx = -1;
     for (const row of rows) {
+      idx += 1;
+      if (variantRowIndices.has(idx)) continue;
       const sku = (row[skuHeader] ?? "").trim().toLowerCase();
       if (sku) skuCounts.set(sku, (skuCounts.get(sku) ?? 0) + 1);
     }
@@ -501,9 +661,21 @@ export function validateRows(
   let creates = 0;
   let updates = 0;
   let invalid = 0;
+  let variantRowCount = 0;
 
   rows.forEach((row, index) => {
     const rowNumber = index + 2; // +1 header, +1 for 1-based
+
+    // ---- variant row: validated by the variant engine, not the single path ----
+    if (variantRowIndices.has(index)) {
+      variantRowCount += 1;
+      previews.push(
+        buildVariantPreviewRow(row, index, rowNumber, variantCtx!, groupByParent),
+      );
+      if (previews[previews.length - 1]!.operation === "invalid") invalid += 1;
+      return;
+    }
+
     const errors: CellError[] = [];
     const values: CoercedRow = {};
     const raw = {} as Record<ImportField, string>;
@@ -652,10 +824,142 @@ export function validateRows(
     });
   });
 
+  const variantGroups: VariantGroupSummary[] = variantResult.groups.map((g) => {
+    const errorsByRow: VariantGroupSummary["errorsByRow"] = {};
+    for (const [rowNumber, errs] of g.errorsByRow) {
+      errorsByRow[rowNumber] = errs.map((e) => ({
+        header: e.header,
+        message: e.message,
+      }));
+    }
+    return {
+      parentSku: g.parentSku,
+      product: g.product,
+      optionTypes: g.optionTypes,
+      variants: g.variants,
+      rowNumbers: g.rowNumbers,
+      variantCount: g.rowNumbers.length,
+      valid: g.valid,
+      errorsByRow,
+    };
+  });
+
   return {
     rows: previews,
-    summary: { total: previews.length, creates, updates, invalid },
+    summary: {
+      total: previews.length,
+      creates,
+      updates,
+      invalid,
+      variantProducts: variantGroups.length,
+      variantRows: variantRowCount,
+    },
+    variantGroups,
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* Variant preview row projection                                      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Projects a single variant row to a {@link PreviewRow}. The `raw` block reads
+ * the canonical fields (name/sku/price/…) so the grid renders familiar columns;
+ * the option values are folded into `variant.optionValues`. Errors come from
+ * the row's group (keyed by source header) and are re-keyed to canonical
+ * {@link ImportField}s where possible so the grid can highlight the right cell —
+ * option-column errors are surfaced against a synthetic field bucket.
+ */
+function buildVariantPreviewRow(
+  row: RawRow,
+  index: number,
+  rowNumber: number,
+  ctx: VariantColumnContext,
+  groupByParent: Map<string, VariantGroup>,
+): PreviewRow {
+  const raw = {} as Record<ImportField, string>;
+  for (const column of IMPORT_COLUMNS) {
+    const header = ctx[column.key as keyof VariantColumnContext];
+    raw[column.key] =
+      typeof header === "string" ? (row[header] ?? "").trim() : "";
+  }
+  // The variant's own SKU comes from the resolved variantSku header.
+  if (ctx.variantSku) raw.sku = (row[ctx.variantSku] ?? "").trim();
+  raw.variantOf = (row[ctx.variantOf] ?? "").trim();
+
+  const parentKey = raw.variantOf.toLowerCase();
+  const group = groupByParent.get(parentKey);
+
+  // Collect this row's errors from the group and re-key by import field.
+  const errors: CellError[] = [];
+  const optionValues: OptionValues = {};
+  let isGroupLead = false;
+  if (group) {
+    isGroupLead = group.rowNumbers[0] === rowNumber;
+    for (const v of group.variants) {
+      if (v.rowNumber === rowNumber) {
+        Object.assign(optionValues, v.optionValues);
+        break;
+      }
+    }
+    // If no coerced variant (row had errors), still surface the option cells.
+    if (Object.keys(optionValues).length === 0) {
+      for (const header of ctx.optionHeaders) {
+        const val = (row[header] ?? "").trim();
+        if (val) optionValues[header] = val;
+      }
+    }
+    const rowErrors = group.errorsByRow.get(rowNumber) ?? [];
+    for (const e of rowErrors) {
+      errors.push({ field: headerToField(ctx, e.header), message: e.message });
+    }
+  }
+
+  const operation: RowOperation = errors.length > 0 ? "invalid" : "variant";
+
+  return {
+    id: `import-${rowNumber}`,
+    rowNumber,
+    raw,
+    values: {},
+    errors,
+    operation,
+    variant: {
+      parentSku: raw.variantOf,
+      optionValues,
+      isGroupLead,
+    },
+  };
+}
+
+/**
+ * Maps a variant error's source header back to a canonical {@link ImportField}
+ * for cell highlighting. Option-column headers (which have no canonical field)
+ * fall back to `variantOf` so the error still attaches to a visible cell.
+ */
+function headerToField(
+  ctx: VariantColumnContext,
+  header: string,
+): ImportField {
+  const entries: Array<[ImportField, string | undefined]> = [
+    ["name", ctx.name],
+    ["category", ctx.category],
+    ["brand", ctx.brand],
+    ["description", ctx.description],
+    ["tags", ctx.tags],
+    ["price", ctx.price],
+    ["mrp", ctx.mrp],
+    ["moq", ctx.moq],
+    ["stock", ctx.stock],
+    ["status", ctx.status],
+    ["sku", ctx.variantSku],
+    ["variantOf", ctx.variantOf],
+  ];
+  for (const [field, h] of entries) {
+    if (h && h === header) return field;
+  }
+  // Option columns and anything else attach to the variantOf cell.
+  return "variantOf";
 }
 
 /* ------------------------------------------------------------------ */
@@ -756,12 +1060,21 @@ export function collectErrorEntries(
 /* ------------------------------------------------------------------ */
 
 /**
- * Builds an XLSX template workbook (as a Uint8Array) with the canonical header
- * row and a single illustrative example row, so users start from a correct
- * shape. Currency columns are shown in rupees.
+ * Builds an XLSX template workbook (as a Uint8Array).
+ *
+ * Sheet 1 "Products" — the canonical header row + one illustrative
+ * single-product example. This is the sheet the importer reads. The last
+ * column, "Variant Of (parent SKU)", is left blank for plain products.
+ *
+ * Sheet 2 "Variants example" — a READ-ONLY illustration (never parsed, since the
+ * importer only reads the first sheet) showing the variant format: a 2-axis
+ * (Capacity × Color) product where four rows share the same parent SKU and add
+ * "Capacity"/"Color" OPTION columns. It documents, in the file itself, how to
+ * split a product into variants.
  */
 export function buildTemplateWorkbook(): Uint8Array {
   const headers = IMPORT_COLUMNS.map((c) => c.label);
+  // Single-product example: trailing "" leaves the variantOf column blank.
   const example = [
     "Kingston Fury 16GB DDR4",
     "KF-FURY-16",
@@ -774,10 +1087,47 @@ export function buildTemplateWorkbook(): Uint8Array {
     "ACTIVE",
     "ddr4,gaming",
     "16GB 3200MHz desktop memory",
+    "", // Variant Of — blank ⇒ a plain single product
   ];
   const ws = XLSX.utils.aoa_to_sheet([headers, example]);
+
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Products");
+
+  // --- documentation sheet for the variant format ---
+  const variantHeaders = [
+    "Name",
+    "SKU",
+    "Brand",
+    "Category",
+    "Price (₹)",
+    "MRP (₹)",
+    "Stock status",
+    "Status",
+    "Variant Of (parent SKU)",
+    "Capacity",
+    "Color",
+  ];
+  // Four variants (2 capacities × 2 colors) of one product "PB-PRO". Every row
+  // carries the SAME parent SKU in "Variant Of"; product fields come from the
+  // first row; each row's own SKU/price/options define one variant.
+  const variantRows = [
+    ["Anker PowerBank Pro", "PBP-10K-BLK", "Anker", "Power Bank", "2,499", "2,999", "IN_STOCK", "ACTIVE", "PB-PRO", "10000mAh", "Black"],
+    ["", "PBP-10K-WHT", "", "", "2,499", "2,999", "IN_STOCK", "ACTIVE", "PB-PRO", "10000mAh", "White"],
+    ["", "PBP-20K-BLK", "", "", "3,499", "3,999", "LOW", "ACTIVE", "PB-PRO", "20000mAh", "Black"],
+    ["", "PBP-20K-WHT", "", "", "3,499", "3,999", "OUT_OF_STOCK", "ACTIVE", "PB-PRO", "20000mAh", "White"],
+  ];
+  const noteRow = [
+    "Tip: rows sharing the same \"Variant Of\" value become one variant product. Add any option columns (e.g. Capacity, Color) — the axes are inferred from them.",
+  ];
+  const variantWs = XLSX.utils.aoa_to_sheet([
+    variantHeaders,
+    ...variantRows,
+    [],
+    noteRow,
+  ]);
+  XLSX.utils.book_append_sheet(wb, variantWs, "Variants example");
+
   const out = XLSX.write(wb, { type: "array", bookType: "xlsx" });
   return new Uint8Array(out);
 }
@@ -789,6 +1139,14 @@ export function buildTemplateWorkbook(): Uint8Array {
 export interface CommitInput {
   /** The full set of preview rows (invalid rows are skipped automatically). */
   rows: PreviewRow[];
+  /**
+   * Validated variant groups from {@link validateRows} (empty for a plain
+   * single-product import). Each valid group is committed as ONE variant
+   * product through the audited variants service; invalid groups are skipped
+   * with their reasons. Variant preview rows in `rows` are NOT re-committed by
+   * the single-product loop — they belong to these groups.
+   */
+  variantGroups?: VariantGroupSummary[];
 }
 
 /**
@@ -802,7 +1160,10 @@ export interface CommitInput {
  * server, so we commit row-by-row with per-row error isolation rather than a
  * single `$transaction`. Each service call is itself atomic and audited.
  */
-export async function commitImport({ rows }: CommitInput): Promise<CommitResult> {
+export async function commitImport({
+  rows,
+  variantGroups = [],
+}: CommitInput): Promise<CommitResult> {
   let created = 0;
   let updated = 0;
   const skipped: SkippedRow[] = [];
@@ -820,6 +1181,23 @@ export async function commitImport({ rows }: CommitInput): Promise<CommitResult>
   const resolver = await createBrandResolver(rows);
 
   for (const row of rows) {
+    // Variant rows are committed via their group below, never here. Invalid
+    // variant rows already surface their errors through the group's `valid`
+    // flag, so we don't double-report them in the single-product skip list.
+    if (row.operation === "variant") continue;
+    if (row.operation === "invalid" && row.variant) {
+      // An invalid variant row: record its errors for the CSV but let the group
+      // handle the "skipped" summary, so per-row and per-product reporting align.
+      for (const err of row.errors) {
+        errorEntries.push({
+          rowNumber: row.rowNumber,
+          sku: row.raw.sku,
+          field: COLUMN_BY_KEY[err.field].label,
+          message: err.message,
+        });
+      }
+      continue;
+    }
     if (row.operation === "invalid" || row.errors.length > 0) {
       const reason =
         row.errors[0]?.message ?? "Row has validation errors.";
@@ -884,13 +1262,175 @@ export async function commitImport({ rows }: CommitInput): Promise<CommitResult>
     }
   }
 
+  // ---- variant groups: one audited variants-service call per parent ----
+  const variantOutcome = await commitVariantGroups(
+    variantGroups,
+    skipped,
+    errorEntries,
+  );
+
   return {
     created,
     updated,
     skipped,
+    variantProductsCreated: variantOutcome.created,
+    variantProductsUpdated: variantOutcome.updated,
+    variantsWritten: variantOutcome.variantsWritten,
     errorsCsv: errorEntries.length > 0 ? buildErrorCsv(errorEntries) : "",
     newBrands: resolver.newBrands,
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* Variant-group commit (audited variants service)                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Commits every VALID variant group as one variant product, through the audited
+ * variants service (`saveProductVariants`), which enforces the catalog
+ * invariants (global SKU uniqueness, no duplicate combos, recomputed FROM
+ * price). The parent product is created when its `variantOf` SKU is new, or
+ * looked up and reused when it already exists.
+ *
+ * Per-group error isolation mirrors the single-product loop: one bad group
+ * can't abort the batch. Invalid groups (any row with an error) are skipped
+ * with a reason. Category resolution / product creation reuses the same product
+ * service so slugs, brand links and audit entries stay consistent.
+ */
+async function commitVariantGroups(
+  groups: VariantGroupSummary[],
+  skipped: SkippedRow[],
+  errorEntries: Array<{
+    rowNumber: number;
+    sku: string;
+    field: string;
+    message: string;
+  }>,
+): Promise<{ created: number; updated: number; variantsWritten: number }> {
+  if (groups.length === 0) {
+    return { created: 0, updated: 0, variantsWritten: 0 };
+  }
+
+  const { saveProductVariants } = await import(
+    "@/server/services/variants"
+  );
+
+  let created = 0;
+  let updated = 0;
+  let variantsWritten = 0;
+
+  for (const group of groups) {
+    const leadRow = group.rowNumbers[0] ?? 0;
+
+    if (!group.valid) {
+      skipped.push({
+        rowNumber: leadRow,
+        sku: group.parentSku,
+        reason: `Variant product "${group.parentSku}" has row errors and was skipped.`,
+      });
+      continue;
+    }
+
+    try {
+      const parent = await resolveOrCreateVariantParent(group);
+      const result = await saveProductVariants(parent.id, {
+        hasVariants: true,
+        optionTypes: group.optionTypes,
+        variants: group.variants.map((v, i) => ({
+          id: null,
+          optionValues: v.optionValues,
+          sku: v.sku,
+          price: v.price,
+          mrp: v.mrp,
+          moq: v.moq,
+          stockStatus: v.stockStatus,
+          status: v.status,
+          isDefault: i === 0,
+          sortOrder: i,
+        })),
+      });
+      variantsWritten += result.variants.length;
+      if (parent.created) created++;
+      else updated++;
+    } catch (error) {
+      const reason =
+        error instanceof Error
+          ? error.message
+          : "Unexpected error while saving this variant product.";
+      skipped.push({ rowNumber: leadRow, sku: group.parentSku, reason });
+      errorEntries.push({
+        rowNumber: leadRow,
+        sku: group.parentSku,
+        field: "Variant Of (parent SKU)",
+        message: reason,
+      });
+      console.error(
+        `[import] variant product "${group.parentSku}" failed:`,
+        error,
+      );
+    }
+  }
+
+  return { created, updated, variantsWritten };
+}
+
+/**
+ * Resolves the parent product id for a variant group: reuses an existing
+ * product whose SKU matches `parentSku` (case-insensitive), else creates a new
+ * product from the group's product-level fields via the audited product
+ * service. Returns whether the parent was freshly created so the summary can
+ * distinguish created-vs-updated variant products.
+ */
+async function resolveOrCreateVariantParent(
+  group: VariantGroupSummary,
+): Promise<{ id: string; created: boolean }> {
+  const existingId = await resolveIdBySku(group.parentSku);
+  if (existingId) {
+    return { id: existingId, created: false };
+  }
+
+  // Create the parent from the group's product-level fields. A variant product
+  // needs a category + name + a base price; use the group's min variant price
+  // as the seed base price (recomputeFrom overwrites it right after).
+  const { prisma } = await import("@/server/db");
+  const categoryName = group.product.categoryName;
+  let categoryId: string | undefined;
+  if (categoryName) {
+    const cat = await prisma.category.findFirst({
+      where: { name: { equals: categoryName, mode: "insensitive" } },
+      select: { id: true },
+    });
+    categoryId = cat?.id;
+  }
+  if (!categoryId) {
+    throw new Error(
+      `Category "${categoryName ?? ""}" for variant product "${group.parentSku}" was not found.`,
+    );
+  }
+
+  const basePrice =
+    group.variants.length > 0
+      ? Math.min(...group.variants.map((v) => v.price))
+      : 0;
+  if (basePrice <= 0) {
+    throw new Error(
+      `Variant product "${group.parentSku}" has no valid variant price.`,
+    );
+  }
+
+  const product = await createProduct({
+    categoryId,
+    name: group.product.name ?? group.parentSku,
+    sku: group.parentSku,
+    brand: group.product.brand,
+    description: group.product.description,
+    price: basePrice,
+    stockStatus: "IN_STOCK",
+    status: "ACTIVE",
+    tags: group.product.tags ?? [],
+    images: [],
+  });
+  return { id: product.id, created: true };
 }
 
 /**

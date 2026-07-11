@@ -11,13 +11,13 @@
  * maps one-to-one, and money is already integer paise on both sides.
  */
 
-import type { PricedProduct } from "@/server/dto/product";
+import type { AdminGridProduct } from "@/server/dal/products";
 import type { UpdateProductInput } from "@/lib/schemas/product";
 import type { EntityStatus } from "@/lib/schemas/shared";
 import type { ProductRow } from "./productColumns";
 
 /** Project a priced product (admin grid read) into a grid row. */
-export function toProductRow(product: PricedProduct): ProductRow {
+export function toProductRow(product: AdminGridProduct): ProductRow {
   return {
     id: product.id,
     name: product.name,
@@ -33,6 +33,15 @@ export function toProductRow(product: PricedProduct): ProductRow {
     status: product.status,
     tags: product.tags,
     images: product.images.length,
+    // Variant-awareness: when true the grid renders price/mrp/stock read-only
+    // ("from ₹X · N variants") and refuses to persist edits to them, because
+    // those are recomputed FROM values owned by the variant matrix. Non-variant
+    // rows keep behaving exactly as before. `hasVariants` defaults false and
+    // `variants` is `[]` for the vast majority of the catalog.
+    hasVariants: product.hasVariants,
+    // Active-variant count from the grid read's `_count` (the grid never joins
+    // full variant rows, so `product.variants` is `[]` here).
+    variantCount: product.variantCount,
     updatedAt: product.updatedAt.getTime(),
   };
 }
