@@ -1,4 +1,13 @@
+import { saveProductVariantsAction } from "@/server/actions/variants";
 import type { SaveVariantsInput, VariantsActions, VariantsActionResult } from "./types";
+
+/**
+ * The wired variants actions — connects the editor's variants section to the
+ * real `saveProductVariantsAction` server mutation (batched save + reconcile).
+ */
+export const variantsActions: VariantsActions = {
+  save: (input) => saveProductVariantsAction(input),
+};
 
 /**
  * Integration seam between the variants editor UI and the server mutations.

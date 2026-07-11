@@ -795,3 +795,85 @@ export async function listVariants(productId: string): Promise<AdminVariant[]> {
   });
   return rows.map(toAdminVariant);
 }
+
+/** Input for the batched editor save (mirrors the editor's SaveVariantsInput). */
+export interface SaveProductVariantsInput {
+  hasVariants: boolean;
+  optionTypes: OptionTypesInput;
+  variants: {
+    id: string | null;
+    optionValues: OptionValues;
+    sku: string;
+    price: number;
+    mrp: number | null;
+    moq: number | null;
+    stockStatus: StockStatus;
+    status: EntityStatus;
+    isDefault: boolean;
+    sortOrder: number;
+  }[];
+}
+
+/**
+ * Persist the whole variants surface for a product in one call (the editor's
+ * "Save variants"): toggles hasVariants, sets the option axes, reconciles the
+ * variant rows (create new, update existing, delete removed), guarantees a
+ * default, and recomputes the product's "from" price. Returns the canonical
+ * rows so the editor can reconcile optimistic state.
+ */
+export async function saveProductVariants(
+  productId: string,
+  input: SaveProductVariantsInput,
+): Promise<{ variants: AdminVariant[]; fromPrice: number | null }> {
+  if (!input.hasVariants) {
+    await disableVariants(productId);
+    const p = await prisma.product.findUnique({
+      where: { id: productId },
+      select: { price: true },
+    });
+    return { variants: [], fromPrice: p?.price ?? null };
+  }
+
+  // Turn variants on without seeding a throwaway variant (we're about to
+  // reconcile the real set), then persist the option axes.
+  await prisma.product.update({
+    where: { id: productId },
+    data: { hasVariants: true },
+  });
+  await setOptionTypes(productId, input.optionTypes);
+
+  const existing = await listVariants(productId);
+  const kept = new Set<string>();
+  for (const d of input.variants) {
+    const fields = {
+      sku: d.sku,
+      optionValues: d.optionValues,
+      price: d.price,
+      mrp: d.mrp ?? undefined,
+      moq: d.moq ?? undefined,
+      stockStatus: d.stockStatus,
+      status: d.status,
+      isDefault: d.isDefault,
+      sortOrder: d.sortOrder,
+    };
+    const saved = d.id
+      ? await upsertVariant(productId, { ...fields, id: d.id })
+      : await upsertVariant(productId, fields as CreateVariantInput);
+    kept.add(saved.id);
+  }
+  for (const ex of existing) {
+    if (!kept.has(ex.id)) await deleteVariant(ex.id);
+  }
+
+  const after = await listVariants(productId);
+  if (after.length > 0 && !after.some((v) => v.isDefault)) {
+    await setDefaultVariant(after[0]!.id);
+  }
+
+  const finalVariants = await listVariants(productId);
+  const p = await prisma.product.findUnique({
+    where: { id: productId },
+    select: { price: true },
+  });
+  return { variants: finalVariants, fromPrice: p?.price ?? null };
+}

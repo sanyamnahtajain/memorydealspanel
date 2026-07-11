@@ -40,7 +40,7 @@ import {
 import { TagEditor } from "./TagEditor";
 import { ProductImagesField } from "./ProductImagesField";
 import { VariantsSection } from "./variants";
-import { unwiredVariantsActions } from "./variants/actions";
+import { variantsActions as wiredVariantsActions } from "./variants/actions";
 import type {
   EditorVariant,
   OptionType,
@@ -172,7 +172,7 @@ export function ProductEditorForm({
   categories,
   brands,
   product,
-  variantsActions = unwiredVariantsActions,
+  variantsActions = wiredVariantsActions,
 }: ProductEditorFormProps) {
   const router = useRouter();
   const isEdit = Boolean(product);

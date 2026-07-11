@@ -7,6 +7,11 @@ import { assertAdmin, isForbiddenError } from "@/server/dal/guard";
 import { assertPermission } from "@/server/auth/require-permission";
 import { PERMISSIONS } from "@/lib/permissions";
 import { writeAudit } from "@/server/security/audit";
+import type {
+  SaveVariantsInput,
+  VariantsActionResult,
+  EditorVariant,
+} from "@/components/admin/products/variants/types";
 import { entityStatusSchema, objectIdSchema } from "@/lib/schemas/shared";
 import {
   createVariantSchema,
@@ -17,6 +22,7 @@ import {
   type UpdateVariantInput,
 } from "@/lib/schemas/variant";
 import {
+  saveProductVariants,
   deleteVariant,
   disableVariants,
   enableVariants,
@@ -332,4 +338,75 @@ export async function setVariantStatusAction(
     revalidateProductViews(pid);
     return { ok: true, variant };
   });
+}
+
+/* ---------------------------------------------------------------- */
+/* Batched editor save (wires the product-editor variants section)  */
+/* ---------------------------------------------------------------- */
+
+/** Stable client key from a variant's option values. */
+function variantKey(optionValues: Record<string, string>): string {
+  return Object.keys(optionValues)
+    .sort()
+    .map((k) => `${k}=${optionValues[k]}`)
+    .join("&");
+}
+
+/**
+ * Persist the whole variants surface for a product in one call and echo the
+ * canonical rows back in the editor's shape. This is the action injected into
+ * ProductEditorForm's variants section (replaces the unwired placeholder).
+ */
+export async function saveProductVariantsAction(
+  input: SaveVariantsInput,
+): Promise<VariantsActionResult> {
+  try {
+    const viewer = await requireProductEditor();
+    const productId = objectIdSchema.parse(input.productId);
+
+    const { variants, fromPrice } = await saveProductVariants(productId, {
+      hasVariants: input.hasVariants,
+      optionTypes: input.optionTypes,
+      variants: input.variants,
+    });
+
+    await writeAudit({
+      actorType: ACTOR,
+      actorId: viewer.adminId,
+      action: "product.variants.save",
+      entity: "Product",
+      entityId: productId,
+      diff: { hasVariants: input.hasVariants, variantCount: variants.length },
+    });
+    revalidateProductViews(productId);
+
+    const editorVariants: EditorVariant[] = variants.map((v) => ({
+      id: v.id,
+      key: variantKey(v.optionValues),
+      optionValues: v.optionValues,
+      sku: v.sku,
+      price: v.price,
+      mrp: v.mrp,
+      moq: v.moq,
+      stockStatus: v.stockStatus,
+      status: v.status,
+      isDefault: v.isDefault,
+      sortOrder: v.sortOrder,
+      imageCount: v.images.length,
+    }));
+
+    return {
+      ok: true,
+      variants: editorVariants,
+      optionTypes: input.optionTypes,
+      fromPrice,
+    };
+  } catch (error) {
+    if (isForbiddenError(error)) {
+      return { ok: false, error: "You are not allowed to edit variants." };
+    }
+    const message =
+      error instanceof Error ? error.message : "Could not save variants.";
+    return { ok: false, error: message };
+  }
 }
