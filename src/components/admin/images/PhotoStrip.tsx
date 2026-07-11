@@ -15,6 +15,7 @@
  */
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "motion/react";
 import {
   ImageOffIcon,
@@ -22,6 +23,10 @@ import {
   StarIcon,
   Trash2Icon,
   GripVerticalIcon,
+  Maximize2Icon,
+  XIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
 } from "lucide-react";
 import type { ProductImage } from "@prisma/client";
 import { cn } from "@/lib/utils";
@@ -69,6 +74,8 @@ export function PhotoStrip({
   const [pendingRemoveUrl, setPendingRemoveUrl] = React.useState<string | null>(
     null,
   );
+  // Index of the image shown in the fullscreen lightbox, or null when closed.
+  const [lightboxIndex, setLightboxIndex] = React.useState<number | null>(null);
 
   const handleSetPrimary = React.useCallback(
     async (url: string) => {
@@ -152,7 +159,7 @@ export function PhotoStrip({
       aria-label="Product images"
     >
       <AnimatePresence initial={false}>
-        {images.map((image) => {
+        {images.map((image, index) => {
           const isBusy = busyUrl === image.url;
           const isDragging = dragUrl === image.url;
           const isOver = overUrl === image.url && dragUrl !== image.url;
@@ -187,12 +194,16 @@ export function PhotoStrip({
                 image.isPrimary && "ring-2 ring-primary",
               )}
             >
+              {/* Click the image (not the action buttons) to open the
+                  fullscreen lightbox. A plain click opens it; dragging the tile
+                  still reorders. */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={tileSrc(image)}
                 alt=""
                 draggable={false}
-                className="h-full w-full object-cover"
+                onClick={() => setLightboxIndex(index)}
+                className="h-full w-full cursor-zoom-in object-cover"
                 loading="lazy"
               />
 
@@ -215,6 +226,18 @@ export function PhotoStrip({
               {/* Action overlay. On touch devices (no hover) it is ALWAYS
                   visible — otherwise Set-primary / Remove are unreachable. */}
               <div className="absolute inset-x-0 bottom-0 flex items-center justify-end gap-1 bg-gradient-to-t from-background/80 to-transparent p-1 opacity-0 transition-opacity group-hover/tile:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100">
+                <Tooltip content="View full size">
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="secondary"
+                    onClick={() => setLightboxIndex(index)}
+                    aria-label="View image full size"
+                  >
+                    <Maximize2Icon />
+                  </Button>
+                </Tooltip>
+
                 {!image.isPrimary ? (
                   <Tooltip content="Set as primary">
                     <Button
@@ -267,7 +290,115 @@ export function PhotoStrip({
           setPendingRemoveUrl(null);
         }}
       />
+
+      {lightboxIndex !== null ? (
+        <Lightbox
+          images={images}
+          index={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+          onNavigate={setLightboxIndex}
+        />
+      ) : null}
     </>
+  );
+}
+
+/**
+ * Fullscreen image preview. Renders through a portal so it always covers the
+ * viewport regardless of any transformed ancestor. Esc closes; ← / → navigate;
+ * clicking the backdrop closes. Shows the FULL image (`url`), not the thumbnail.
+ */
+function Lightbox({
+  images,
+  index,
+  onClose,
+  onNavigate,
+}: {
+  images: ProductImage[];
+  index: number;
+  onClose: () => void;
+  onNavigate: (index: number) => void;
+}) {
+  const count = images.length;
+  const image = images[index];
+
+  React.useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+      else if (event.key === "ArrowRight") onNavigate((index + 1) % count);
+      else if (event.key === "ArrowLeft") onNavigate((index - 1 + count) % count);
+    }
+    window.addEventListener("keydown", onKey);
+    // Lock body scroll while open.
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [index, count, onClose, onNavigate]);
+
+  if (!image) return null;
+
+  return createPortal(
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Image preview"
+      onClick={onClose}
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm"
+    >
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close preview"
+        className="absolute top-3 right-3 inline-flex size-10 items-center justify-center rounded-full bg-white/10 text-white outline-none transition-colors hover:bg-white/20 focus-visible:ring-3 focus-visible:ring-white/40"
+      >
+        <XIcon className="size-5" />
+      </button>
+
+      {count > 1 ? (
+        <>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onNavigate((index - 1 + count) % count);
+            }}
+            aria-label="Previous image"
+            className="absolute left-3 inline-flex size-11 items-center justify-center rounded-full bg-white/10 text-white outline-none transition-colors hover:bg-white/20 focus-visible:ring-3 focus-visible:ring-white/40"
+          >
+            <ChevronLeftIcon className="size-6" />
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onNavigate((index + 1) % count);
+            }}
+            aria-label="Next image"
+            className="absolute right-3 inline-flex size-11 items-center justify-center rounded-full bg-white/10 text-white outline-none transition-colors hover:bg-white/20 focus-visible:ring-3 focus-visible:ring-white/40"
+          >
+            <ChevronRightIcon className="size-6" />
+          </button>
+        </>
+      ) : null}
+
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={image.url}
+        alt=""
+        onClick={(e) => e.stopPropagation()}
+        className="max-h-[86vh] max-w-full rounded-lg object-contain shadow-2xl"
+      />
+
+      {count > 1 ? (
+        <span className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/50 px-3 py-1 text-sm font-medium text-white tabular-nums">
+          {index + 1} / {count}
+        </span>
+      ) : null}
+    </div>,
+    document.body,
   );
 }
 
