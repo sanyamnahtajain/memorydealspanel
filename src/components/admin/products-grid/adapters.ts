@@ -23,6 +23,9 @@ export function toProductRow(product: PricedProduct): ProductRow {
     name: product.name,
     sku: product.sku,
     brand: product.brand,
+    // Brand master is authoritative — the editable `brandId` select column reads
+    // this. The legacy free-text `brand` above stays read-through for back-compat.
+    brandId: product.brandRef?.id ?? null,
     categoryId: product.categoryId,
     price: product.price,
     mrp: product.mrp,
@@ -50,9 +53,13 @@ export function toUpdateInput(
 
   if ("name" in patch && patch.name !== undefined) out.name = patch.name;
   if ("sku" in patch && patch.sku !== undefined) out.sku = patch.sku;
-  if ("brand" in patch) {
-    const brand = typeof patch.brand === "string" ? patch.brand.trim() : patch.brand;
-    out.brand = brand ? brand : undefined;
+  if ("brandId" in patch) {
+    // The brand select commits a Brand-master id, or "" / null when cleared.
+    // An empty value becomes `undefined` so the service clears the brand link
+    // (and mirrors the legacy `brand` string) rather than rejecting a blank id.
+    const brandId =
+      typeof patch.brandId === "string" ? patch.brandId.trim() : patch.brandId;
+    out.brandId = brandId ? brandId : undefined;
   }
   if ("categoryId" in patch && patch.categoryId !== undefined) {
     out.categoryId = patch.categoryId;

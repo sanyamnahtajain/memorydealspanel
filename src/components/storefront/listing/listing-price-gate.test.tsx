@@ -56,6 +56,7 @@ const publicProduct: PublicProduct = {
   slug: "kingston-16gb-ddr4",
   sku: "KVR-16-DDR4",
   brand: "Kingston",
+  brandRef: null,
   description: "High-density desktop memory.",
   specs: { capacity: "16GB", type: "DDR4" },
   moq: 10,

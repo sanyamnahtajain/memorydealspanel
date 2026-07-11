@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { getViewer } from "@/server/auth/viewer";
 import { isAdmin } from "@/server/types/viewer";
 import { listAll } from "@/server/dal/categories";
+import { listActiveBrands } from "@/server/services/brands";
 import { AdminShell } from "@/components/shell/AdminShell";
 import { PageHeader } from "@/components/common";
 import { ProductEditorForm } from "@/components/admin/products/ProductEditorForm";
@@ -25,7 +26,10 @@ export default async function NewProductPage() {
     redirect("/admin/login");
   }
 
-  const categories = await listAll(viewer);
+  const [categories, brands] = await Promise.all([
+    listAll(viewer),
+    listActiveBrands(),
+  ]);
 
   return (
     <AdminShell title="New product">
@@ -37,6 +41,7 @@ export default async function NewProductPage() {
           backLabel="Products"
         />
         <ProductEditorForm
+          brands={brands}
           categories={categories.map((c) => ({
             id: c.id,
             name: c.name,

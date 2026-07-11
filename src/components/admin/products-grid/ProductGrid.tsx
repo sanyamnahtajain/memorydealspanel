@@ -23,6 +23,7 @@ import { DealSheet, MobileCardEditor } from "@/components/grid";
 import type { OnSave } from "@/components/grid/types";
 import { EmptyState, useIsMobile } from "@/components/common";
 import type { CategoryDTO } from "@/server/dal/categories";
+import type { BrandOption } from "@/server/services/brands";
 import { saveProductField } from "@/server/actions/products";
 
 import { buildProductColumns, type ProductRow } from "./productColumns";
@@ -33,18 +34,20 @@ export interface ProductGridProps {
   rows: ProductRow[];
   /** All categories (admin list) for the colored category select. */
   categories: CategoryDTO[];
+  /** Active brands (Brand master) for the brand select column. */
+  brands: BrandOption[];
 }
 
 /** Stable grid id — namespaces saved views in localStorage. */
 const GRID_ID = "products";
 
-export function ProductGrid({ rows, categories }: ProductGridProps) {
+export function ProductGrid({ rows, categories, brands }: ProductGridProps) {
   const router = useRouter();
   const isMobile = useIsMobile();
 
   const columns = React.useMemo(
-    () => buildProductColumns(categories),
-    [categories],
+    () => buildProductColumns(categories, brands),
+    [categories, brands],
   );
 
   /**

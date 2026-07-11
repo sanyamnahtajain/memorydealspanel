@@ -18,6 +18,7 @@ import { motion, useReducedMotion } from "motion/react";
 
 import { cn } from "@/lib/utils";
 import { StatusChip } from "@/components/common/StatusChip";
+import { BrandBadge } from "@/components/storefront/BrandBadge";
 import { staggerItemVariants } from "@/components/motion/primitives";
 import type { ListingItem } from "./types";
 import { keySpec, stockChipVariant, thumbUrl } from "./product-display";
@@ -87,7 +88,14 @@ function CompactRow({
       </div>
 
       <div className="min-w-0 flex-1">
-        {product.brand ? (
+        {product.brandRef ? (
+          <BrandBadge
+            name={product.brandRef.name}
+            slug={product.brandRef.slug}
+            asLink={false}
+            className="max-w-full"
+          />
+        ) : product.brand ? (
           <span className="block truncate text-[0.7rem] font-medium tracking-wide text-muted-foreground uppercase">
             {product.brand}
           </span>

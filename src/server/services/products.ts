@@ -40,6 +40,7 @@ const PRICED_SELECT = {
   slug: true,
   sku: true,
   brand: true,
+  brandRef: { select: { id: true, name: true, slug: true } },
   description: true,
   specs: true,
   moq: true,
@@ -56,6 +57,7 @@ const PRICED_SELECT = {
 export type ProductServiceErrorCode =
   | "DUPLICATE_SKU"
   | "CATEGORY_NOT_FOUND"
+  | "BRAND_NOT_FOUND"
   | "NOT_FOUND"
   | "INVALID_PRICE";
 
@@ -121,6 +123,26 @@ async function assertCategoryExists(categoryId: string): Promise<void> {
       "The selected category no longer exists.",
     );
   }
+}
+
+/**
+ * Resolves a Brand master by id, returning its name. The name is mirrored into
+ * the legacy `brand` string on the product for back-compat, so the old
+ * free-text-driven reads (search, exports) keep working while the app moves to
+ * the `brandId`/`brandRef` relation. Throws `BRAND_NOT_FOUND` for a stale id.
+ */
+async function resolveBrandName(brandId: string): Promise<string> {
+  const brand = await prisma.brand.findUnique({
+    where: { id: brandId },
+    select: { name: true },
+  });
+  if (!brand) {
+    throw new ProductServiceError(
+      "BRAND_NOT_FOUND",
+      "The selected brand no longer exists.",
+    );
+  }
+  return brand.name;
 }
 
 /** Normalises embedded images: exactly one primary, contiguous sortOrder. */
@@ -190,6 +212,13 @@ export async function createProduct(
     );
   }
 
+  // When a brand master is selected, mirror its name into the legacy `brand`
+  // string for back-compat. `brandId` is the source of truth going forward.
+  const brandName =
+    data.brandId !== undefined
+      ? await resolveBrandName(data.brandId)
+      : data.brand;
+
   const slug = await makeUniqueSlug(data.name, (candidate) =>
     slugExists(candidate),
   );
@@ -201,7 +230,8 @@ export async function createProduct(
         name: data.name,
         slug,
         sku: data.sku,
-        brand: data.brand,
+        brand: brandName,
+        brandId: data.brandId,
         description: data.description,
         specs: data.specs ?? undefined,
         price: data.price,
@@ -275,7 +305,16 @@ export async function updateProduct(
     update.name = data.name;
   }
   if (data.sku !== undefined) update.sku = data.sku;
-  if (data.brand !== undefined) update.brand = data.brand;
+  // Brand: `brandId` is authoritative. When it changes, connect/disconnect the
+  // relation AND mirror the master's name into the legacy `brand` string. A
+  // bare `brand` patch (no brandId) still updates the legacy string alone, for
+  // back-compat with the old free-text path.
+  if (data.brandId !== undefined) {
+    update.brandRef = { connect: { id: data.brandId } };
+    update.brand = await resolveBrandName(data.brandId);
+  } else if (data.brand !== undefined) {
+    update.brand = data.brand;
+  }
   if (data.description !== undefined) update.description = data.description;
   if (data.specs !== undefined) update.specs = data.specs;
   if (data.price !== undefined) update.price = data.price;
@@ -332,6 +371,7 @@ export async function duplicateProduct(id: string): Promise<PricedProduct> {
       slug,
       sku,
       brand: source.brand,
+      brandId: source.brandRef?.id,
       description: source.description,
       specs: (source.specs ?? undefined) as Prisma.InputJsonValue | undefined,
       price: source.price,

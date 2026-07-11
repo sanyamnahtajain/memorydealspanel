@@ -16,6 +16,7 @@ import { StorefrontShell } from "@/components/shell/StorefrontShell";
 import { StatusChip, type StatusChipVariant } from "@/components/common";
 import { FadeUp } from "@/components/motion/primitives";
 import { ProductGallery } from "@/components/storefront/ProductGallery";
+import { BrandBadge } from "@/components/storefront/BrandBadge";
 import { SpecTable } from "@/components/storefront/SpecTable";
 import { renderPriceSlot } from "@/components/storefront/priceSlot";
 import { recordProductView } from "@/server/services/pageviews";
@@ -202,7 +203,13 @@ export default async function ProductDetailPage({ params }: PageParams) {
             <div className="flex flex-col gap-5">
               <header className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
-                  {product.brand ? (
+                  {product.brandRef ? (
+                    <BrandBadge
+                      name={product.brandRef.name}
+                      slug={product.brandRef.slug}
+                      size="md"
+                    />
+                  ) : product.brand ? (
                     <span className="text-sm font-medium tracking-wide text-muted-foreground uppercase">
                       {product.brand}
                     </span>
@@ -297,6 +304,7 @@ function toPublicShape(p: PublicProduct | PricedProduct): PublicProduct {
     slug: p.slug,
     sku: p.sku,
     brand: p.brand,
+    brandRef: p.brandRef,
     description: p.description,
     specs: p.specs,
     moq: p.moq,

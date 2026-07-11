@@ -35,6 +35,9 @@ const PUBLIC_FIELDS = {
   slug: true,
   sku: true,
   brand: true,
+  // Brand master join — PUBLIC fields only (id/name/slug). Adds NO price to
+  // the payload, so this is safe for every viewer including anon.
+  brandRef: { select: { id: true, name: true, slug: true } },
   description: true,
   specs: true,
   moq: true,
@@ -222,6 +225,7 @@ function searchWhere(query: string): Prisma.ProductWhereInput {
       { name: { contains: term, mode: "insensitive" } },
       { sku: { contains: term, mode: "insensitive" } },
       { brand: { contains: term, mode: "insensitive" } },
+      { brandRef: { name: { contains: term, mode: "insensitive" } } },
       { tags: { has: term } },
     ],
   }));

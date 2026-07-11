@@ -6,6 +6,7 @@ import { prisma } from "@/server/db";
 import { getViewer } from "@/server/auth/viewer";
 import { isAdmin } from "@/server/types/viewer";
 import { listAll } from "@/server/dal/categories";
+import { listActiveBrands } from "@/server/services/brands";
 import { toPricedProduct } from "@/server/dto/product";
 import { objectIdSchema } from "@/lib/schemas/shared";
 import { AdminShell } from "@/components/shell/AdminShell";
@@ -33,6 +34,7 @@ const EDIT_SELECT = {
   slug: true,
   sku: true,
   brand: true,
+  brandRef: { select: { id: true, name: true, slug: true } },
   description: true,
   specs: true,
   moq: true,
@@ -66,9 +68,10 @@ export default async function EditProductPage({
     notFound();
   }
 
-  const [row, categories] = await Promise.all([
+  const [row, categories, brands] = await Promise.all([
     prisma.product.findUnique({ where: { id }, select: EDIT_SELECT }),
     listAll(viewer),
+    listActiveBrands(),
   ]);
 
   if (!row) {
@@ -82,6 +85,7 @@ export default async function EditProductPage({
     name: priced.name,
     sku: priced.sku,
     brand: priced.brand,
+    brandRef: priced.brandRef,
     description: priced.description,
     price: priced.price,
     mrp: priced.mrp,
@@ -104,6 +108,7 @@ export default async function EditProductPage({
         />
         <ProductEditorForm
           product={product}
+          brands={brands}
           categories={categories.map((c) => ({
             id: c.id,
             name: c.name,

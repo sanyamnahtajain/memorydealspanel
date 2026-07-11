@@ -26,6 +26,17 @@ export interface PublicProductImage {
 }
 
 /**
+ * Public projection of the referenced Brand master. Brand data (name / slug)
+ * is PUBLIC — it carries no pricing — so it appears on `PublicProduct` too.
+ * `null` when the product references no brand.
+ */
+export interface PublicProductBrand {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+/**
  * A product without any pricing information. This is the DEFAULT return
  * shape of the DAL — prices are opt-in and gated.
  */
@@ -35,7 +46,10 @@ export interface PublicProduct {
   name: string;
   slug: string;
   sku: string;
+  /** Legacy free-text brand string (back-compat). Prefer `brand.name`. */
   brand: string | null;
+  /** The referenced Brand master (PUBLIC — no price). Null when unset. */
+  brandRef: PublicProductBrand | null;
   description: string | null;
   specs: unknown;
   moq: number | null;
@@ -73,6 +87,11 @@ export interface PublicSource {
   slug: string;
   sku: string;
   brand: string | null;
+  /**
+   * The joined Brand relation. `null` when `brandId` is unset. Only these
+   * three PUBLIC fields are ever selected in the DAL — never any price.
+   */
+  brandRef?: { id: string; name: string; slug: string } | null;
   description: string | null;
   specs: Prisma.JsonValue;
   moq: number | null;
@@ -114,6 +133,9 @@ export function toPublicProduct(row: PublicSource): PublicProduct {
     slug: row.slug,
     sku: row.sku,
     brand: row.brand ?? null,
+    brandRef: row.brandRef
+      ? { id: row.brandRef.id, name: row.brandRef.name, slug: row.brandRef.slug }
+      : null,
     description: row.description ?? null,
     specs: row.specs ?? null,
     moq: row.moq ?? null,

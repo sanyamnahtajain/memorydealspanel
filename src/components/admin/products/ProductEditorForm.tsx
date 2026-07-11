@@ -28,6 +28,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { FadeUp } from "@/components/motion/primitives";
+import type { BrandOption } from "@/server/services/brands";
+import { BrandField } from "./BrandField";
 import {
   SpecEditor,
   newSpecRow,
@@ -53,6 +55,7 @@ export type EditorProduct = Pick<
   | "name"
   | "sku"
   | "brand"
+  | "brandRef"
   | "description"
   | "price"
   | "mrp"
@@ -66,6 +69,12 @@ export type EditorProduct = Pick<
 
 export interface ProductEditorFormProps {
   categories: EditorCategory[];
+  /**
+   * Active brands for the brand dropdown. INTEGRATOR: the server page must load
+   * these via `listActiveBrands()` (from @/server/services/brands) and pass
+   * them here — the editor does not fetch them itself.
+   */
+  brands: BrandOption[];
   /** Present when editing; omit for a create form. */
   product?: EditorProduct;
 }
@@ -80,7 +89,7 @@ interface FormState {
   categoryId: string;
   name: string;
   sku: string;
-  brand: string;
+  brandId: string | null;
   description: string;
   /** Raw ₹ text inputs; converted to paise on submit. */
   priceInput: string;
@@ -108,7 +117,7 @@ function buildInitialState(product?: EditorProduct): FormState {
     categoryId: product?.categoryId ?? "",
     name: product?.name ?? "",
     sku: product?.sku ?? "",
-    brand: product?.brand ?? "",
+    brandId: product?.brandRef?.id ?? null,
     description: product?.description ?? "",
     priceInput: paiseToInput(product?.price),
     mrpInput: paiseToInput(product?.mrp),
@@ -140,6 +149,7 @@ function deriveMarginPct(price: number | null, mrp: number | null): number | nul
  */
 export function ProductEditorForm({
   categories,
+  brands,
   product,
 }: ProductEditorFormProps) {
   const router = useRouter();
@@ -190,7 +200,9 @@ export function ProductEditorForm({
       categoryId: state.categoryId,
       name: state.name.trim(),
       sku: state.sku.trim(),
-      brand: state.brand.trim() === "" ? undefined : state.brand.trim(),
+      // brandId is authoritative; the server mirrors the brand's name into the
+      // legacy `brand` string. We never send free-text `brand` from this form.
+      brandId: state.brandId ?? undefined,
       description:
         state.description.trim() === "" ? undefined : state.description.trim(),
       specs: rowsToSpecs(state.specRows),
@@ -259,12 +271,12 @@ export function ProductEditorForm({
               />
             </Field>
             <Field label="Brand" htmlFor="brand">
-              <Input
+              <BrandField
                 id="brand"
-                value={state.brand}
-                onChange={(e) => set("brand", e.target.value)}
-                placeholder="Samsung"
-                maxLength={80}
+                brands={brands}
+                value={state.brandId}
+                onChange={(brandId) => set("brandId", brandId)}
+                disabled={pending}
               />
             </Field>
           </div>

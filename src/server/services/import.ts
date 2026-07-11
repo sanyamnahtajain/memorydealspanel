@@ -244,6 +244,12 @@ export interface CommitResult {
   skipped: SkippedRow[];
   /** CSV text of every skipped/failed row with its reason (may be empty). */
   errorsCsv: string;
+  /**
+   * Brands AUTO-CREATED during this import (a brand column value that matched
+   * no existing brand). Surfaced so the summary can tell the admin which new
+   * masters were minted. Empty when every brand already existed.
+   */
+  newBrands: string[];
 }
 
 /* ------------------------------------------------------------------ */
@@ -807,6 +813,12 @@ export async function commitImport({ rows }: CommitInput): Promise<CommitResult>
     message: string;
   }> = [];
 
+  // Resolve every distinct brand name referenced by a committable row to a
+  // Brand id up front — auto-creating any that don't yet exist — so we hit the
+  // DB once per brand rather than once per product row. `newBrands` records the
+  // masters minted here for the import summary.
+  const resolver = await createBrandResolver(rows);
+
   for (const row of rows) {
     if (row.operation === "invalid" || row.errors.length > 0) {
       const reason =
@@ -823,9 +835,13 @@ export async function commitImport({ rows }: CommitInput): Promise<CommitResult>
       continue;
     }
 
+    // Map this row's brand name (if any) to a Brand id (created on demand).
+    const brandId = resolver.idFor(row.values.brand);
+
     try {
       if (row.operation === "create") {
-        await createProduct(toCreateInput(row.values));
+        const product = await createProduct(toCreateInput(row.values));
+        if (brandId) await linkProductBrand(product.id, brandId);
         created++;
       } else {
         const sku = row.values.sku as string;
@@ -842,6 +858,10 @@ export async function commitImport({ rows }: CommitInput): Promise<CommitResult>
           continue;
         }
         await updateProduct(id, toUpdatePatch(row.values));
+        // Only re-link the brand when the row actually carried a brand value,
+        // so an update that omits the brand column leaves the existing link
+        // untouched (mirrors how omitted fields are left alone above).
+        if (brandId) await linkProductBrand(id, brandId);
         updated++;
       }
     } catch (error) {
@@ -869,6 +889,7 @@ export async function commitImport({ rows }: CommitInput): Promise<CommitResult>
     updated,
     skipped,
     errorsCsv: errorEntries.length > 0 ? buildErrorCsv(errorEntries) : "",
+    newBrands: resolver.newBrands,
   };
 }
 
@@ -884,6 +905,93 @@ async function resolveIdBySku(sku: string): Promise<string | null> {
     select: { id: true },
   });
   return row?.id ?? null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Brand resolution (Brand master mapping)                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A brand-name → Brand-id resolver bound to a single import run. Every distinct
+ * brand value across the committable rows is resolved once, up front: a
+ * case-insensitive match against an existing Brand reuses its id; anything with
+ * no match is AUTO-CREATED (with a unique slug) and its id used thereafter.
+ *
+ * Product wiring keeps the legacy `brand` STRING (written by the product
+ * service) AND sets the canonical `brandId` foreign key here, so imports no
+ * longer produce free-text brand typos disconnected from the master.
+ */
+interface BrandResolver {
+  /** Brand id for a raw brand name (undefined when the row had no brand). */
+  idFor(brandName: string | undefined): string | undefined;
+  /** Names of brands newly created during this run (display order). */
+  newBrands: string[];
+}
+
+async function createBrandResolver(rows: PreviewRow[]): Promise<BrandResolver> {
+  // Distinct, trimmed brand names from rows that will actually be committed,
+  // keyed case-insensitively but preserving the first-seen display casing.
+  const byLower = new Map<string, string>();
+  for (const row of rows) {
+    if (row.operation === "invalid" || row.errors.length > 0) continue;
+    const name = row.values.brand?.trim();
+    if (!name) continue;
+    const lower = name.toLowerCase();
+    if (!byLower.has(lower)) byLower.set(lower, name);
+  }
+
+  const idByLower = new Map<string, string>();
+  const newBrands: string[] = [];
+
+  if (byLower.size === 0) {
+    return { idFor: () => undefined, newBrands };
+  }
+
+  const { prisma } = await import("@/server/db");
+  const { makeUniqueSlug } = await import("@/lib/slug");
+
+  // One pass to bind every distinct name to an id, creating on demand.
+  for (const [lower, displayName] of byLower) {
+    const existing = await prisma.brand.findFirst({
+      where: { name: { equals: displayName, mode: "insensitive" } },
+      select: { id: true },
+    });
+    if (existing) {
+      idByLower.set(lower, existing.id);
+      continue;
+    }
+    const slug = await makeUniqueSlug(displayName, async (candidate) => {
+      const hit = await prisma.brand.findUnique({
+        where: { slug: candidate },
+        select: { id: true },
+      });
+      return hit !== null;
+    });
+    const brand = await prisma.brand.create({
+      data: { name: displayName, slug },
+      select: { id: true },
+    });
+    idByLower.set(lower, brand.id);
+    newBrands.push(displayName);
+  }
+
+  return {
+    idFor(brandName) {
+      const key = brandName?.trim().toLowerCase();
+      if (!key) return undefined;
+      return idByLower.get(key);
+    },
+    newBrands,
+  };
+}
+
+/** Sets a product's canonical `brandId` foreign key (leaves `brand` string). */
+async function linkProductBrand(productId: string, brandId: string): Promise<void> {
+  const { prisma } = await import("@/server/db");
+  await prisma.product.update({
+    where: { id: productId },
+    data: { brandId },
+  });
 }
 
 /** Exposed for callers that need the canonical field→label lookup. */
