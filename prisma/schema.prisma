@@ -44,6 +44,35 @@ enum OrderStatus {
   CANCELLED
 }
 
+// ── GST / tax (Phase 13) ──────────────────────────────────────────────────
+// How a stored price relates to GST. EXCLUSIVE: the stored paise is the
+// taxable base and GST is added on top. INCLUSIVE: the stored paise already
+// contains GST (MRP-style) and the base is back-computed.
+enum TaxTreatment {
+  TAX_EXCLUSIVE
+  TAX_INCLUSIVE
+}
+
+// Intra-state supply → CGST + SGST; inter-state → IGST. Decided server-side
+// from the seller's state vs the customer's place of supply.
+enum SupplyType {
+  INTRA
+  INTER
+}
+
+// GST rounding policy: per-line (default, standard on invoices) or a single
+// invoice-level round-off to the nearest rupee.
+enum RoundingMode {
+  LINE
+  INVOICE
+}
+
+// How prices are shown to retailers by default (independent of storage).
+enum PriceDisplayMode {
+  INCLUSIVE
+  EXCLUSIVE
+}
+
 model Category {
   id        String       @id @default(auto()) @map("_id") @db.ObjectId
   name      String
@@ -51,6 +80,10 @@ model Category {
   image     String?
   sortOrder Int          @default(0)
   status    EntityStatus @default(ACTIVE)
+  // GST (Phase 13): category-level defaults inherited by products that don't
+  // set their own. gstRateBps is basis points (1800 = 18.00%).
+  defaultHsnCode    String?
+  defaultGstRateBps Int?
   parentId  String?      @db.ObjectId
   parent    Category?    @relation("SubCategories", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   children  Category[]   @relation("SubCategories")
@@ -86,6 +119,12 @@ model Product {
   price       Int // paise
   mrp         Int? // paise
   moq         Int?
+  // GST (Phase 13): optional per-product override; null ⇒ inherit the
+  // category default, then the SellerTaxProfile default. gstRateBps is basis
+  // points (1800 = 18.00%). taxTreatment null ⇒ inherit the profile mode.
+  hsnCode      String?
+  gstRateBps   Int?
+  taxTreatment TaxTreatment?
   stockStatus StockStatus    @default(IN_STOCK)
   status      EntityStatus   @default(ACTIVE)
   tags        String[]       @default([])
@@ -121,6 +160,11 @@ model Customer {
   passwordHash String
   email        String?
   gstNumber    String?
+  // GST (Phase 13): 2-digit state code parsed from a validated GSTIN, and the
+  // explicit place of supply (billing state). GSTIN state wins for registered
+  // buyers; unregistered buyers fall back to placeOfSupplyStateCode.
+  gstStateCode           String?
+  placeOfSupplyStateCode String?
   city         String?
   status       CustomerStatus  @default(PENDING)
   notes        String?
@@ -304,6 +348,10 @@ model ProductVariant {
   price        Int // paise
   mrp          Int? // paise
   moq          Int?
+  // GST (Phase 13): per-variant override; null ⇒ inherit the parent product.
+  hsnCode      String?
+  gstRateBps   Int?
+  taxTreatment TaxTreatment?
   stockStatus  StockStatus  @default(IN_STOCK)
   status       EntityStatus @default(ACTIVE)
   images       ProductImage[]
@@ -349,9 +397,49 @@ model Order {
   itemCount     Int
   note          String?
   adminNote     String?
+  // GST (Phase 13): tax snapshot frozen at placement (rates change; a placed
+  // order must not). Per-line tax lives inside `items`; these are the
+  // order-level totals + supply context. All *Paise are integer paise.
+  // gstEnabled=false at placement ⇒ these stay null and the order behaves
+  // exactly as a pre-GST order (subtotalPaise is the total).
+  taxApplied             Boolean     @default(false)
+  supplyType             SupplyType?
+  placeOfSupplyStateCode String?
+  sellerStateCode        String?
+  sellerGstin            String?
+  totalTaxablePaise      Int?
+  totalCgstPaise         Int?
+  totalSgstPaise         Int?
+  totalIgstPaise         Int?
+  totalTaxPaise          Int?
+  roundOffPaise          Int?
+  grandTotalPaise        Int?
+  // Group-by-(hsn,rate) summary rows for the invoice layout.
+  hsnSummary             Json?
   placedAt      DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
   @@index([customerId, placedAt])
   @@index([status, placedAt])
+}
+
+// ── Seller tax profile (Phase 13) ─────────────────────────────────────────
+// A single settings document for the wholesaler's GST configuration. There is
+// exactly one row (a fixed `key`); the service upserts it. When `gstEnabled`
+// is false the whole GST feature is inert and the app behaves exactly as
+// pre-GST (no tax figures anywhere), which is the safe default at launch.
+model SellerTaxProfile {
+  id                String           @id @default(auto()) @map("_id") @db.ObjectId
+  key               String           @unique @default("default")
+  gstEnabled        Boolean          @default(false)
+  gstin             String?
+  legalName         String?
+  stateCode         String? // 2-digit place-of-supply origin
+  priceEntryMode    TaxTreatment     @default(TAX_EXCLUSIVE)
+  displayMode       PriceDisplayMode @default(EXCLUSIVE)
+  roundingMode      RoundingMode     @default(LINE)
+  defaultGstRateBps Int              @default(1800) // 18.00%
+  defaultHsnCode    String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
 }
