@@ -88,7 +88,8 @@ export default async function HomePage() {
             seeAllLabel="View all"
           />
           {categories.length > 0 ? (
-            <CategoryGrid categories={categories} animated />
+            // Home teaser — show a clean set; the full list lives at /categories.
+            <CategoryGrid categories={categories.slice(0, 12)} animated />
           ) : (
             <EmptyState
               illustration="empty-box"
