@@ -16,7 +16,7 @@
 
 import * as React from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { CheckIcon, Loader2Icon } from "lucide-react";
+import { Loader2Icon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,6 +36,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { StatusChip } from "@/components/common/StatusChip";
+import { CityField } from "@/components/storefront/CityField";
 import { useIsMobile } from "@/components/common/use-is-mobile";
 import { accessRequestSchema } from "@/lib/schemas/customer";
 import { requestAccess } from "@/server/actions/access";
@@ -318,19 +319,34 @@ export function RequestAccessForm({ onClose }: RequestAccessFormProps) {
                   </span>
                 ) : null}
               </Label>
-              <Input
-                id={`ra-${field.name}`}
-                name={field.name}
-                type={field.type ?? "text"}
-                inputMode={field.inputMode}
-                placeholder={field.placeholder}
-                autoComplete={field.autoComplete}
-                value={values[field.name]}
-                disabled={submitting}
-                aria-invalid={error ? true : undefined}
-                aria-describedby={error ? `ra-${field.name}-error` : undefined}
-                onChange={(e) => setField(field.name, e.target.value)}
-              />
+              {field.name === "city" ? (
+                <CityField
+                  id={`ra-${field.name}`}
+                  name={field.name}
+                  source="static"
+                  placeholder={field.placeholder}
+                  autoComplete={field.autoComplete}
+                  value={values.city}
+                  disabled={submitting}
+                  aria-invalid={error ? true : undefined}
+                  aria-describedby={error ? `ra-${field.name}-error` : undefined}
+                  onValueChange={(v) => setField("city", v)}
+                />
+              ) : (
+                <Input
+                  id={`ra-${field.name}`}
+                  name={field.name}
+                  type={field.type ?? "text"}
+                  inputMode={field.inputMode}
+                  placeholder={field.placeholder}
+                  autoComplete={field.autoComplete}
+                  value={values[field.name]}
+                  disabled={submitting}
+                  aria-invalid={error ? true : undefined}
+                  aria-describedby={error ? `ra-${field.name}-error` : undefined}
+                  onChange={(e) => setField(field.name, e.target.value)}
+                />
+              )}
               {error ? (
                 <p
                   id={`ra-${field.name}-error`}

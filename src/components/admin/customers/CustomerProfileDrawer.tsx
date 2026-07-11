@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { CityField } from "@/components/storefront/CityField";
 import { usePromptDialog } from "@/components/ui/prompt-dialog";
 import { StatusChip, type StatusChipVariant } from "@/components/common";
 import { ConfirmSheet } from "@/components/common";
@@ -279,13 +280,25 @@ export function CustomerProfileDrawer({
             {EDITABLE_FIELDS.map((f) => (
               <div key={f.key} className="space-y-1">
                 <Label htmlFor={`cust-${f.key}`}>{f.label}</Label>
-                <Input
-                  id={`cust-${f.key}`}
-                  value={fields[f.key]}
-                  onChange={(e) =>
-                    setFields((prev) => ({ ...prev, [f.key]: e.target.value }))
-                  }
-                />
+                {f.key === "city" ? (
+                  <CityField
+                    id={`cust-${f.key}`}
+                    source="customers"
+                    disabled={busy}
+                    value={fields.city}
+                    onValueChange={(v) =>
+                      setFields((prev) => ({ ...prev, city: v }))
+                    }
+                  />
+                ) : (
+                  <Input
+                    id={`cust-${f.key}`}
+                    value={fields[f.key]}
+                    onChange={(e) =>
+                      setFields((prev) => ({ ...prev, [f.key]: e.target.value }))
+                    }
+                  />
+                )}
               </div>
             ))}
             <Button size="sm" onClick={saveFields} disabled={busy}>

@@ -4,7 +4,8 @@ import * as React from "react";
 import { PlusIcon, Trash2Icon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Combobox } from "@/components/ui/combobox";
+import { specKeysAction, specValuesAction } from "@/server/actions/suggestions";
 
 /** A single spec row with a stable key so inputs don't lose focus on edit. */
 export interface SpecRow {
@@ -85,35 +86,14 @@ export function SpecEditor({
       {rows.length > 0 ? (
         <div className="space-y-2">
           {rows.map((row) => (
-            <div key={row.id} className="flex items-center gap-2">
-              <Input
-                aria-label="Spec name"
-                placeholder="Capacity"
-                value={row.key}
-                disabled={disabled}
-                onChange={(e) => updateRow(row.id, { key: e.target.value })}
-                className="flex-1"
-              />
-              <Input
-                aria-label="Spec value"
-                placeholder="128 GB"
-                value={row.value}
-                disabled={disabled}
-                onChange={(e) => updateRow(row.id, { value: e.target.value })}
-                className="flex-1"
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Remove spec"
-                disabled={disabled}
-                onClick={() => removeRow(row.id)}
-                className="shrink-0 text-muted-foreground hover:text-destructive"
-              >
-                <Trash2Icon aria-hidden />
-              </Button>
-            </div>
+            <SpecRowFields
+              key={row.id}
+              row={row}
+              disabled={disabled}
+              onKeyChange={(key) => updateRow(row.id, { key })}
+              onValueChange={(value) => updateRow(row.id, { value })}
+              onRemove={() => removeRow(row.id)}
+            />
           ))}
         </div>
       ) : (
@@ -129,6 +109,103 @@ export function SpecEditor({
       >
         <PlusIcon aria-hidden />
         Add spec
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * A single spec row: a KEY combobox and a VALUE combobox.
+ *
+ * KEY suggests the DISTINCT spec keys already used across the catalog
+ * (`specKeysAction`), so "Wattage" / "wattage" / "Watts" collapse onto one
+ * canonical spelling instead of fragmenting facets.
+ *
+ * VALUE is keyed off the chosen key: once a key is set, it suggests the values
+ * previously entered *for that key* (`specValuesAction(key)`) — e.g. picking
+ * "Interface" offers "USB 3.2", "NVMe", "SATA III". Both allow free entry so a
+ * genuinely new spec/value is never blocked.
+ *
+ * Split into its own component so each row owns a stable `onSearch` closure
+ * bound to its current key, without re-deriving fetchers for every row on
+ * every parent render.
+ */
+function SpecRowFields({
+  row,
+  disabled,
+  onKeyChange,
+  onValueChange,
+  onRemove,
+}: {
+  row: SpecRow;
+  disabled?: boolean;
+  onKeyChange: (key: string) => void;
+  onValueChange: (value: string) => void;
+  onRemove: () => void;
+}) {
+  const fetchKeys = React.useCallback(async (query: string): Promise<string[]> => {
+    try {
+      const res = await specKeysAction(query);
+      return res.ok ? res.values : [];
+    } catch {
+      return [];
+    }
+  }, []);
+
+  // Rebind the value fetcher whenever the key changes so suggestions always
+  // reflect the current key. Empty key → no value suggestions yet.
+  const key = row.key.trim();
+  const fetchValues = React.useCallback(
+    async (query: string): Promise<string[]> => {
+      if (!key) return [];
+      try {
+        const res = await specValuesAction(key, query);
+        return res.ok ? res.values : [];
+      } catch {
+        return [];
+      }
+    },
+    [key],
+  );
+
+  return (
+    <div className="flex items-center gap-2">
+      <Combobox
+        aria-label="Spec name"
+        placeholder="Capacity"
+        value={row.key}
+        disabled={disabled}
+        onValueChange={onKeyChange}
+        onSearch={fetchKeys}
+        allowCreate
+        emptyMessage="New spec — press Enter to add it"
+        className="flex-1"
+      />
+      <Combobox
+        aria-label="Spec value"
+        placeholder="128 GB"
+        value={row.value}
+        disabled={disabled}
+        onValueChange={onValueChange}
+        onSearch={fetchValues}
+        allowCreate
+        emptyMessage={
+          key
+            ? "New value — press Enter to add it"
+            : "Enter a spec name first"
+        }
+        className="flex-1"
+      />
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Remove spec"
+        disabled={disabled}
+        onClick={onRemove}
+        className="shrink-0 text-muted-foreground hover:text-destructive"
+      >
+        <Trash2Icon aria-hidden />
       </Button>
     </div>
   );
