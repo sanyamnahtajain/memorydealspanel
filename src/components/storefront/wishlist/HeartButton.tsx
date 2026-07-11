@@ -130,7 +130,15 @@ export function HeartButton({
                 ? { scale: [1, 1.28, 1] }
                 : { scale: 1 }
           }
-          transition={reduced ? { duration: 0 } : springs.snappy}
+          // A 3-keyframe "pop" (saved) can't use a spring — springs support 2
+          // frames — so it's a short tween; the resting state uses the spring.
+          transition={
+            reduced
+              ? { duration: 0 }
+              : saved
+                ? { duration: 0.32, times: [0, 0.5, 1], ease: "easeOut" }
+                : springs.snappy
+          }
         />
       </motion.button>
     </Tooltip>

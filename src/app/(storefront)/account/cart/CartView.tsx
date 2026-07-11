@@ -253,8 +253,10 @@ export function CartView({
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
-      {/* Line items */}
-      <div>
+      {/* Line items. Extra bottom padding on mobile clears the fixed summary
+          bar (+ the storefront bottom tab nav on phones); none needed at lg
+          where the summary is an inline sidebar. */}
+      <div className="pb-36 md:pb-24 lg:pb-0">
         {!canOrder ? (
           <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-700 dark:text-amber-300">
             <Lock className="mt-0.5 size-4 shrink-0" />
@@ -453,8 +455,10 @@ export function CartView({
         </div>
       </aside>
 
-      {/* Sticky mobile summary bar */}
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur lg:hidden">
+      {/* Sticky mobile summary bar. Sits ABOVE the storefront bottom tab nav
+          on phones (the nav is `fixed bottom-0 z-40 md:hidden`, ~3.5rem tall);
+          from md up the nav is gone, so it drops to the very bottom. */}
+      <div className="fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-40 border-t border-border bg-background/95 p-3 backdrop-blur md:bottom-0 md:pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:hidden">
         <div className="mx-auto flex max-w-3xl items-center gap-3">
           <div className="min-w-0 flex-1">
             {priced ? (

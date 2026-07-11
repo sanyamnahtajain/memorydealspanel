@@ -14,7 +14,7 @@
  * per-retailer data can't leak across sessions or go stale.
  */
 
-const CACHE_VERSION = "v1";
+const CACHE_VERSION = "v2";
 const CACHE_NAME = `memorydeals-${CACHE_VERSION}`;
 const OFFLINE_URL = "/offline";
 
@@ -23,10 +23,9 @@ const OFFLINE_URL = "/offline";
 const PRECACHE_URLS = [
   OFFLINE_URL,
   "/manifest.webmanifest",
-  "/icons/icon.svg",
-  "/icons/icon-maskable.svg",
-  "/icons/favicon.svg",
-  "/icons/apple-touch-icon.svg",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+  "/favicon.png",
 ];
 
 // ---------------------------------------------------------------------------
@@ -46,8 +45,8 @@ self.addEventListener("push", (event) => {
   const title = payload.title || "MemoryDeals";
   const options = {
     body: payload.body || "You have a new notification.",
-    icon: "/icons/icon.svg",
-    badge: "/icons/favicon.svg",
+    icon: "/icons/icon-192.png",
+    badge: "/favicon.png",
     tag: payload.tag || "memorydeals-admin",
     data: { url: payload.url || "/admin/dashboard" },
   };

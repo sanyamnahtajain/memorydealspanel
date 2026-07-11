@@ -9,7 +9,6 @@ import { MAX_CART_NOTE_LENGTH } from "@/lib/schemas/cart";
 import {
   placeOrder,
   type PlaceOrderResult,
-  type PricedCartLine,
 } from "@/server/services/orders";
 
 /**
@@ -110,5 +109,3 @@ export async function placeOrderAction(
   };
 }
 
-/** Re-export the priced-line type for the cart UI (client-safe, no secrets). */
-export type { PricedCartLine };
