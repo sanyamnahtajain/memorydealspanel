@@ -1,6 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { DownloadIcon, ShareIcon, XIcon } from "lucide-react";
 
@@ -103,37 +108,56 @@ function markDismissedNow() {
  * Token-styled; renders nothing until it has something to show. Safe on both
  * the light storefront and dark admin surfaces.
  */
+/** No-op subscription — the client snapshot never changes after hydration. */
+function subscribeNoop(): () => void {
+  return () => {};
+}
+
 export function InstallPrompt({ className }: { className?: string }) {
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(
     null,
   );
   const [hasPrompt, setHasPrompt] = useState(false);
-  const [iosHint, setIosHint] = useState(false);
-  // Start hidden; the mount effect decides whether we're snoozed. Rendering
-  // `null` on the server and on the first client paint keeps hydration stable.
-  const [snoozed, setSnoozed] = useState(true);
 
-  // Re-show once the snooze window elapses, unless already installed.
+  // Client-mounted gate: `false` on the server and the first client paint (so
+  // we render `null` and hydration matches), `true` thereafter — no
+  // setState-in-effect needed to reveal.
+  const mounted = useSyncExternalStore(
+    subscribeNoop,
+    () => true,
+    () => false,
+  );
+
+  // Lazily computed from client state; only ever consulted once `mounted`, so
+  // an SSR/CSR difference can't cause a hydration mismatch.
+  const [iosHint] = useState(
+    () =>
+      typeof window !== "undefined" && isIos() && !isStandalone(),
+  );
+  const [snoozed, setSnoozed] = useState(() => {
+    if (typeof window === "undefined") return true;
+    return isInstalled() || snoozeRemaining() > 0;
+  });
+
+  // Re-show once the snooze window elapses, unless already installed. Runs in a
+  // timeout/handler (never synchronously in an effect), so state updates stay
+  // outside the effect body.
   const scheduleReshow = useCallback((delay: number) => {
-    return window.setTimeout(() => {
-      if (!isInstalled()) setSnoozed(false);
-    }, Math.max(0, Math.min(delay, 2 ** 31 - 1)));
+    return window.setTimeout(
+      () => {
+        if (!isInstalled()) setSnoozed(false);
+      },
+      Math.max(0, Math.min(delay, 2 ** 31 - 1)),
+    );
   }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (isInstalled()) return; // permanently suppressed
 
-    setIosHint(isIos() && !isStandalone());
-
-    let timer: number | undefined;
+    // If currently snoozed, arm a timer to reveal when the window elapses.
     const remaining = snoozeRemaining();
-    if (remaining > 0) {
-      setSnoozed(true);
-      timer = scheduleReshow(remaining);
-    } else {
-      setSnoozed(false);
-    }
+    const timer = remaining > 0 ? scheduleReshow(remaining) : undefined;
 
     const onBeforeInstall = (event: Event) => {
       event.preventDefault();
@@ -157,7 +181,7 @@ export function InstallPrompt({ className }: { className?: string }) {
     };
   }, [scheduleReshow]);
 
-  const visible = !snoozed && (hasPrompt || iosHint);
+  const visible = mounted && !snoozed && (hasPrompt || iosHint);
 
   const snooze = useCallback(() => {
     markDismissedNow();
