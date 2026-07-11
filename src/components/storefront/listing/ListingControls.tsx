@@ -1,11 +1,12 @@
 "use client";
 
 /**
- * ListingControls — the stock filter + sort controls for the listing.
+ * ListingControls — the SORT control for the listing.
  *
- * Desktop: inline custom segmented chips (stock) and a custom sort menu.
- * Mobile: a single "Filter & sort" button that opens a bottom Sheet with the
- * same controls plus apply/clear. Never a native <select> / <option>.
+ * Stock (and every other facet: brand / spec / tag / price band) now lives in
+ * the discovery {@link DiscoveryFilters} panel (server-side, with counts), so
+ * this control is sort-only: a custom sort menu on desktop and a "Sort" bottom
+ * Sheet on mobile. Never a native <select> / <option>.
  *
  * Carries NO pricing. The price-sort options are only OFFERED when
  * `canSortPrice` is true (approved viewer) — a gated viewer never sees them,
@@ -13,7 +14,7 @@
  */
 
 import * as React from "react";
-import { ArrowUpDown, Check, SlidersHorizontal } from "lucide-react";
+import { ArrowUpDown, Check } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/components/common/use-is-mobile";
@@ -33,18 +34,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  SORT_LABELS,
-  STOCK_FILTERS,
-  STOCK_LABELS,
-  type SortKey,
-  type StockFilter,
-} from "./types";
+import { SORT_LABELS, type SortKey } from "./types";
 
 interface ListingControlsProps {
-  stock: StockFilter;
   sort: SortKey;
-  onStock: (value: StockFilter) => void;
   onSort: (value: SortKey) => void;
   /** Whether price sort options are shown (approved viewer). */
   canSortPrice: boolean;
@@ -67,17 +60,10 @@ export function ListingControls(props: ListingControlsProps) {
 /* Desktop                                                             */
 /* ------------------------------------------------------------------ */
 
-function DesktopControls({
-  stock,
-  sort,
-  onStock,
-  onSort,
-  canSortPrice,
-}: ListingControlsProps) {
+function DesktopControls({ sort, onSort, canSortPrice }: ListingControlsProps) {
   const options = sortOptions(canSortPrice);
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <StockChips stock={stock} onStock={onStock} />
       <div className="ml-auto flex items-center gap-1.5">
         <ArrowUpDown className="size-4 text-muted-foreground" aria-hidden />
         <Select
@@ -103,52 +89,13 @@ function DesktopControls({
   );
 }
 
-function StockChips({
-  stock,
-  onStock,
-}: {
-  stock: StockFilter;
-  onStock: (value: StockFilter) => void;
-}) {
-  return (
-    <div role="radiogroup" aria-label="Stock" className="flex flex-wrap items-center gap-1.5">
-      {STOCK_FILTERS.map((value) => {
-        const active = value === stock;
-        return (
-          <button
-            key={value}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            onClick={() => onStock(value)}
-            className={cn(
-              "inline-flex min-h-8 items-center rounded-full border px-3 text-xs font-medium outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97]",
-              active
-                ? "border-primary bg-primary/10 text-primary"
-                : "border-border bg-card text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {STOCK_LABELS[value]}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 /* ------------------------------------------------------------------ */
 /* Mobile (bottom sheet)                                               */
 /* ------------------------------------------------------------------ */
 
-function MobileControls({
-  stock,
-  sort,
-  onStock,
-  onSort,
-  canSortPrice,
-}: ListingControlsProps) {
+function MobileControls({ sort, onSort, canSortPrice }: ListingControlsProps) {
   const options = sortOptions(canSortPrice);
-  const isDefault = stock === "all" && sort === "newest";
+  const isDefault = sort === "newest";
 
   return (
     <Sheet>
@@ -158,8 +105,8 @@ function MobileControls({
             type="button"
             className="inline-flex min-h-10 items-center gap-2 rounded-full border border-border bg-card px-4 text-sm font-medium text-foreground shadow-sm outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97]"
           >
-            <SlidersHorizontal className="size-4" aria-hidden />
-            Filter &amp; sort
+            <ArrowUpDown className="size-4" aria-hidden />
+            Sort
             {!isDefault ? (
               <span className="inline-flex size-2 rounded-full bg-primary" aria-hidden />
             ) : null}
@@ -168,37 +115,10 @@ function MobileControls({
       />
       <SheetContent side="bottom" className="rounded-t-2xl">
         <SheetHeader>
-          <SheetTitle>Filter &amp; sort</SheetTitle>
+          <SheetTitle>Sort by</SheetTitle>
         </SheetHeader>
 
         <div className="space-y-5 px-4 pb-2">
-          <fieldset>
-            <legend className="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-              Stock
-            </legend>
-            <div className="flex flex-wrap gap-2">
-              {STOCK_FILTERS.map((value) => {
-                const active = value === stock;
-                return (
-                  <button
-                    key={value}
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() => onStock(value)}
-                    className={cn(
-                      "inline-flex min-h-9 items-center rounded-full border px-3.5 text-sm font-medium outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97]",
-                      active
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-border bg-card text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    {STOCK_LABELS[value]}
-                  </button>
-                );
-              })}
-            </div>
-          </fieldset>
-
           <fieldset>
             <legend className="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
               Sort by
@@ -231,10 +151,7 @@ function MobileControls({
         <SheetFooter className="flex-row gap-3">
           <button
             type="button"
-            onClick={() => {
-              onStock("all");
-              onSort("newest");
-            }}
+            onClick={() => onSort("newest")}
             className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full border border-border bg-background text-sm font-semibold text-foreground outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
           >
             Reset

@@ -42,12 +42,10 @@ import { ProductCompactView } from "./ProductCompactView";
 import { ProductTableView } from "./ProductTableView";
 import {
   isSortKey,
-  isStockFilter,
   VIEW_MODES,
   type ListingItem,
   type LoadMoreFn,
   type SortKey,
-  type StockFilter,
 } from "./types";
 
 interface StorefrontListingProps {
@@ -85,16 +83,15 @@ export function StorefrontListing({
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  // ---- View / filter / sort state, seeded from URL, then preferences. ----
+  // ---- View / sort state, seeded from URL, then preferences. ----
+  // NOTE: stock (and every other facet) is now applied SERVER-SIDE by the
+  // discovery layer via the DiscoveryFilters panel; this component only owns
+  // the view mode and the client-side re-sort of the accumulated page set.
   const urlView = searchParams.get("view");
-  const urlStock = searchParams.get("stock");
   const urlSort = searchParams.get("sort");
 
   const [viewMode, setViewMode] = React.useState<ViewMode>(() =>
     isViewMode(urlView) ? urlView : prefs.defaultViewMode,
-  );
-  const [stock, setStock] = React.useState<StockFilter>(() =>
-    isStockFilter(urlStock) ? urlStock : "all",
   );
   const [sort, setSort] = React.useState<SortKey>(() => {
     if (isSortKey(urlSort)) {
@@ -122,16 +119,15 @@ export function StorefrontListing({
     setExhausted(false);
   }
 
-  // ---- Persist view / stock / sort into the URL (shareable, back-safe). ----
+  // ---- Persist view / sort into the URL (shareable, back-safe). ----
   const writeUrl = React.useCallback(
-    (patch: { view?: ViewMode; stock?: StockFilter; sort?: SortKey }) => {
+    (patch: { view?: ViewMode; sort?: SortKey }) => {
       const params = new URLSearchParams(searchParams.toString());
       const set = (key: string, value: string, dflt: string) => {
         if (value === dflt) params.delete(key);
         else params.set(key, value);
       };
       if (patch.view !== undefined) set("view", patch.view, "grid");
-      if (patch.stock !== undefined) set("stock", patch.stock, "all");
       if (patch.sort !== undefined) set("sort", patch.sort, "newest");
       const qs = params.toString();
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
@@ -142,10 +138,6 @@ export function StorefrontListing({
   const changeView = (mode: ViewMode) => {
     setViewMode(mode);
     writeUrl({ view: mode });
-  };
-  const changeStock = (value: StockFilter) => {
-    setStock(value);
-    writeUrl({ stock: value });
   };
   const changeSort = (value: SortKey) => {
     // Guard: never apply a price sort for a gated viewer.
@@ -177,12 +169,11 @@ export function StorefrontListing({
     }
   }, [loadMore, pending, done, page, pageSize]);
 
-  // ---- Client-side stock filter + sort over the accumulated set. ----
+  // ---- Client-side re-sort over the accumulated set. ----
+  // Stock (and every facet) is filtered SERVER-SIDE by the discovery layer, so
+  // `items` already reflects the active facets; here we only re-order them.
   const visible = React.useMemo(() => {
     let out = items;
-    if (stock !== "all") {
-      out = out.filter((it) => it.product.stockStatus === stock);
-    }
     if (sort === "name") {
       out = [...out].sort((a, b) =>
         a.product.name.localeCompare(b.product.name, undefined, {
@@ -202,7 +193,7 @@ export function StorefrontListing({
     }
     // "newest" keeps the DAL's server order (already newest-first).
     return out;
-  }, [items, stock, sort, canSeePrices]);
+  }, [items, sort, canSeePrices]);
 
   const compactDensity = prefs.density === "compact";
   const resultCount = visible.length;
@@ -217,16 +208,14 @@ export function StorefrontListing({
             aria-live="polite"
             role="status"
           >
-            {formatCount(resultCount, total, stock !== "all")}
+            {formatCount(resultCount, total)}
           </p>
           <div className="ml-auto">
             <ViewModeSwitcher value={viewMode} onChange={changeView} />
           </div>
         </div>
         <ListingControls
-          stock={stock}
           sort={sort}
-          onStock={changeStock}
           onSort={changeSort}
           canSortPrice={canSeePrices}
         />
@@ -242,8 +231,8 @@ export function StorefrontListing({
       ) : visible.length === 0 ? (
         <EmptyState
           illustration="no-results"
-          title="No products match this filter"
-          description="Try a different stock filter to see more products."
+          title="No products match these filters"
+          description="Try removing a filter to see more products."
         />
       ) : (
         <ListingBody
@@ -301,8 +290,10 @@ function ListingBody({
   }
 }
 
-function formatCount(shown: number, total: number | undefined, filtered: boolean): string {
-  const n = filtered || total === undefined ? shown : total;
+function formatCount(shown: number, total: number | undefined): string {
+  // `total` is the authoritative server-side count for the active facets when
+  // known; otherwise fall back to the number loaded so far.
+  const n = total === undefined ? shown : total;
   const noun = n === 1 ? "product" : "products";
   return `${n.toLocaleString("en-IN")} ${noun}`;
 }
