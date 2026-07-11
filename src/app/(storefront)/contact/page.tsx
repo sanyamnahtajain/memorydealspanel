@@ -19,10 +19,6 @@ export default function ContactPage() {
       <h2>Get in touch</h2>
       <ul>
         <li>
-          <strong>Email:</strong>{" "}
-          <a href={`mailto:${CONTACT.email}`}>{CONTACT.email}</a>
-        </li>
-        <li>
           <strong>Phone:</strong>{" "}
           <a href={`tel:${CONTACT.phoneDisplay.replace(/\s/g, "")}`}>
             {CONTACT.phoneDisplay}

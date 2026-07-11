@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Mail, MapPin, MessageCircle, Phone } from "lucide-react";
+import { MapPin, MessageCircle, Phone } from "lucide-react";
 
 import { APP_NAME, APP_TAGLINE, CONTACT } from "@/lib/constants";
 import { Logo } from "@/components/brand/Logo";
@@ -48,15 +48,6 @@ export function StorefrontFooter() {
               {APP_TAGLINE}
             </p>
             <ul className="mt-4 space-y-2 text-sm">
-              <li>
-                <a
-                  href={`mailto:${CONTACT.email}`}
-                  className="inline-flex items-center gap-2 text-muted-foreground transition-colors hover:text-foreground"
-                >
-                  <Mail className="size-4" aria-hidden />
-                  {CONTACT.email}
-                </a>
-              </li>
               <li>
                 <a
                   href={`tel:${CONTACT.phoneDisplay.replace(/\s/g, "")}`}

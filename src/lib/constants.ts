@@ -12,19 +12,19 @@ export const APP_SLOGAN = "You need it — we have it.";
  * (Name, tagline and map link are from the real business.)
  */
 export const CONTACT = {
-  email: "hello@thememorydeals.com",
   website: "https://thememorydeals.com",
   /** Display phone + a wa.me-compatible number (digits only, incl. country code). */
-  phoneDisplay: "+91 90000 00000",
-  whatsappNumber: "919000000000",
+  phoneDisplay: "088827 67999",
+  whatsappNumber: "918882767999",
   addressLines: [
     "The Memory Deals",
-    "Best Branded Mobile Accessories Store",
-    "Faridabad, Haryana",
-    "India",
+    "Shop No. 55 (Basement), HUDA Market",
+    "Sector 15 Main, Faridabad",
+    "Haryana 121007, India",
   ],
-  /** Google Maps listing (real). */
-  mapsUrl: "https://maps.app.goo.gl/dczfg6BeqZV1LD5d6",
+  /** Google Maps directions to the shop. */
+  mapsUrl:
+    "https://www.google.com/maps/search/?api=1&query=HUDA%20Market%20Shop%20No%2055%20Sector%2015%20Main%20Faridabad%20Haryana%20121007",
   hours: "Mon–Sat, 10:00–20:00 IST",
 } as const;
 

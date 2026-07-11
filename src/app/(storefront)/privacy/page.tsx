@@ -79,8 +79,11 @@ export default function PrivacyPage() {
       <h2>Your choices</h2>
       <p>
         You can request access to, correction of, or deletion of your personal
-        information by contacting us at{" "}
-        <a href={`mailto:${CONTACT.email}`}>{CONTACT.email}</a>.
+        information by contacting us on{" "}
+        <a href={`tel:${CONTACT.phoneDisplay.replace(/\s/g, "")}`}>
+          {CONTACT.phoneDisplay}
+        </a>{" "}
+        or via our Contact page.
       </p>
 
       <h2>Changes</h2>
