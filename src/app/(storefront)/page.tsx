@@ -68,6 +68,14 @@ export default async function HomePage() {
           categories={categories.length}
         />
 
+        {/* Shop by brand — leverages the brand master; surfaced first. */}
+        {brands.length > 0 ? (
+          <section aria-labelledby="home-brands">
+            <SectionHeading id="home-brands" title="Shop by brand" />
+            <BrandShowcase brands={brands} />
+          </section>
+        ) : null}
+
         {/* Shop by category — the retailer's #1 jump-off point, high on the page. */}
         <section aria-labelledby="home-categories">
           <SectionHeading
@@ -96,14 +104,6 @@ export default async function HomePage() {
               seeAllHref="/search"
             />
             <FeaturedRail items={featuredItems} />
-          </section>
-        ) : null}
-
-        {/* Shop by brand — leverages the brand master. */}
-        {brands.length > 0 ? (
-          <section aria-labelledby="home-brands">
-            <SectionHeading id="home-brands" title="Shop by brand" />
-            <BrandShowcase brands={brands} />
           </section>
         ) : null}
 
