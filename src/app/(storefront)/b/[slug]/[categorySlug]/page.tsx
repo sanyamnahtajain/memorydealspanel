@@ -5,10 +5,11 @@ import { notFound } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
 
 import { PAGE_SIZES } from "@/lib/constants";
-import { getBrandBySlug, listByBrandForViewer } from "@/server/dal/brands";
+import { getBrandBySlug } from "@/server/dal/brands";
 import { getBySlug } from "@/server/dal/categories";
 import { getViewer } from "@/server/auth/viewer";
 import { canSeePrices } from "@/server/types/viewer";
+import { discoverProducts } from "@/server/storefront/discovery";
 import { wishlistStateForViewer } from "@/server/services/wishlist";
 import { cartCountForViewer } from "@/server/services/cart";
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
@@ -18,16 +19,36 @@ import {
   buildListingItems,
   type ListingItem,
 } from "@/components/storefront/listing";
+import { DiscoveryFilters } from "@/components/storefront/filters";
+import {
+  loadFacetData,
+  selectionToDiscoverParams,
+  toDiscoverSort,
+} from "@/components/storefront/filters/adapter";
+import { parseSelection } from "@/components/storefront/filters/types";
 
 /**
- * Brand → Category → Products: the leaf of the drill-down. Lists the products
- * that are BOTH this brand AND this category, viewer-gated (no price for a
- * gated viewer). Reached from the brand landing page's category grid.
+ * Brand → Category → Products (with filters). Lists products that are BOTH this
+ * brand AND category, filterable within that scope (spec / stock / tag, and —
+ * approved only — price band). Viewer-gated; reached from the brand's category
+ * grid.
  */
 export const dynamic = "force-dynamic";
 
 interface PageProps {
   params: Promise<{ slug: string; categorySlug: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}
+
+function toSearchParams(
+  raw: Record<string, string | string[] | undefined>,
+): URLSearchParams {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(raw)) {
+    if (Array.isArray(value)) for (const v of value) params.append(key, v);
+    else if (typeof value === "string") params.append(key, value);
+  }
+  return params;
 }
 
 export async function generateMetadata({
@@ -38,9 +59,7 @@ export async function generateMetadata({
     getBrandBySlug(slug),
     getBySlug(categorySlug),
   ]);
-  if (!brand || !category) {
-    return { title: "Not found — MemoryDeals" };
-  }
+  if (!brand || !category) return { title: "Not found — MemoryDeals" };
   return {
     title: `${brand.name} ${category.name} — MemoryDeals`,
     description: `Browse ${brand.name} ${category.name} in the MemoryDeals wholesale catalogue. Approved buyers unlock live trade pricing.`,
@@ -48,41 +67,62 @@ export async function generateMetadata({
   };
 }
 
-export default async function BrandCategoryPage({ params }: PageProps) {
+export default async function BrandCategoryPage({
+  params,
+  searchParams,
+}: PageProps) {
   const { slug, categorySlug } = await params;
+  const raw = await searchParams;
   const [brand, category] = await Promise.all([
     getBrandBySlug(slug),
     getBySlug(categorySlug),
   ]);
-  if (!brand || !category) {
-    notFound();
-  }
+  if (!brand || !category) notFound();
 
   const viewer = await getViewer();
-  const [products, wishlistState, cartCount] = await Promise.all([
-    listByBrandForViewer(viewer, brand.id, {
-      categoryId: category.id,
-      page: 1,
-      take: PAGE_SIZES.storefront,
+  const approved = canSeePrices(viewer);
+  const urlParams = toSearchParams(raw);
+  const selection = parseSelection(urlParams, approved);
+  const sort = toDiscoverSort(urlParams.get("sort"));
+  const brandIds = [brand.id];
+  const categoryId = category.id;
+
+  const [facets, firstPage, wishlistState, cartCount] = await Promise.all([
+    loadFacetData(viewer, { brandIds, categoryId }),
+    discoverProducts(viewer, {
+      ...selectionToDiscoverParams(selection, {
+        approved,
+        categoryId,
+        sort,
+        limit: PAGE_SIZES.storefront,
+      }),
+      brandIds,
     }),
     wishlistStateForViewer(viewer),
     cartCountForViewer(viewer),
   ]);
 
-  const items: ListingItem[] = buildListingItems(products, viewer);
+  const items: ListingItem[] = buildListingItems(firstPage.items, viewer);
 
-  const brandId = brand.id;
-  const categoryId = category.id;
+  const selectionSnapshot = selection;
+  const sortSnapshot = sort;
   async function loadMore(nextPage: number): Promise<ListingItem[]> {
     "use server";
     const page = Math.max(1, Math.trunc(nextPage));
     const v = await getViewer();
-    const rows = await listByBrandForViewer(v, brandId, {
-      categoryId,
-      page,
-      take: PAGE_SIZES.storefront,
+    const result = await discoverProducts(v, {
+      ...selectionToDiscoverParams(selectionSnapshot, {
+        approved: canSeePrices(v),
+        categoryId,
+        sort: sortSnapshot,
+        limit: page * PAGE_SIZES.storefront,
+      }),
+      brandIds,
     });
-    return buildListingItems(rows, v);
+    return buildListingItems(
+      result.items.slice((page - 1) * PAGE_SIZES.storefront),
+      v,
+    );
   }
 
   return (
@@ -121,16 +161,19 @@ export default async function BrandCategoryPage({ params }: PageProps) {
         </div>
       </FadeUp>
 
-      <StorefrontListing
-        initialItems={items}
-        loadMore={loadMore}
-        pageSize={PAGE_SIZES.storefront}
-        initialPage={1}
-        canSeePrices={canSeePrices(viewer)}
-        emptyTitle={`No ${brand.name} ${category.name} yet`}
-        emptyDescription="We're adding stock for this brand and category soon — check back shortly."
-        savedProductIds={wishlistState.savedProductIds}
-      />
+      <DiscoveryFilters facets={facets} resultCount={firstPage.total}>
+        <StorefrontListing
+          initialItems={items}
+          loadMore={loadMore}
+          pageSize={PAGE_SIZES.storefront}
+          initialPage={1}
+          canSeePrices={approved}
+          total={firstPage.total}
+          emptyTitle={`No ${brand.name} ${category.name} match`}
+          emptyDescription="Try clearing a filter, or check back as we add stock."
+          savedProductIds={wishlistState.savedProductIds}
+        />
+      </DiscoveryFilters>
     </StorefrontShell>
   );
 }

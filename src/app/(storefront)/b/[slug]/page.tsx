@@ -5,13 +5,10 @@ import { notFound } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
 
 import { PAGE_SIZES } from "@/lib/constants";
-import {
-  getBrandBySlug,
-  listByBrandForViewer,
-  listBrandCategories,
-} from "@/server/dal/brands";
+import { getBrandBySlug, listBrandCategories } from "@/server/dal/brands";
 import { getViewer } from "@/server/auth/viewer";
 import { canSeePrices } from "@/server/types/viewer";
+import { discoverProducts } from "@/server/storefront/discovery";
 import { wishlistStateForViewer } from "@/server/services/wishlist";
 import { cartCountForViewer } from "@/server/services/cart";
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
@@ -23,24 +20,39 @@ import {
 } from "@/components/storefront/listing";
 import { BrandCategoryGrid } from "@/components/storefront/BrandCategoryGrid";
 import { SectionHeading } from "@/components/storefront/home";
-import { loadMoreBrandProducts } from "./actions";
+import { DiscoveryFilters } from "@/components/storefront/filters";
+import {
+  loadFacetData,
+  selectionToDiscoverParams,
+  toDiscoverSort,
+} from "@/components/storefront/filters/adapter";
+import { parseSelection } from "@/components/storefront/filters/types";
 
 /**
- * Brand landing page — brand → category → products drill-down.
+ * Brand landing — brand → category → products, WITH faceted filters.
  *
- * The page LEADS with a category selection (only the categories this brand has
- * products in, each linking to `/b/[brand]/[category]`), and ends with an
- * "All {brand} products" listing as the browse-everything escape hatch.
- *
- * RENDERING: reads the current viewer to unlock live pricing for approved
- * customers, so it is dynamic. It never embeds a price for a gated viewer — the
- * brand-scoped DAL projects prices away and each listing item renders a locked
- * pill. The brand header + category grid + counts are all price-free.
+ * Multi-category brands lead with a category drill-down; every brand then gets
+ * an "All {brand} products" listing scoped to the brand and filterable by the
+ * same facets as /search (category / spec / stock / tag, and — approved only —
+ * a price band). The brand scope is fixed server-side, so filters only ever
+ * narrow WITHIN the brand. Price gate intact (gated viewers get locked pills).
  */
 export const dynamic = "force-dynamic";
 
 interface BrandPageProps {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}
+
+function toSearchParams(
+  raw: Record<string, string | string[] | undefined>,
+): URLSearchParams {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(raw)) {
+    if (Array.isArray(value)) for (const v of value) params.append(key, v);
+    else if (typeof value === "string") params.append(key, value);
+  }
+  return params;
 }
 
 export async function generateMetadata({
@@ -48,9 +60,7 @@ export async function generateMetadata({
 }: BrandPageProps): Promise<Metadata> {
   const { slug } = await params;
   const brand = await getBrandBySlug(slug);
-  if (!brand) {
-    return { title: "Brand not found — MemoryDeals" };
-  }
+  if (!brand) return { title: "Brand not found — MemoryDeals" };
   return {
     title: `${brand.name} — MemoryDeals`,
     description: `Browse ${brand.name} products by category in the MemoryDeals wholesale catalogue. Approved buyers unlock live trade pricing.`,
@@ -58,30 +68,58 @@ export async function generateMetadata({
   };
 }
 
-export default async function BrandPage({ params }: BrandPageProps) {
+export default async function BrandPage({
+  params,
+  searchParams,
+}: BrandPageProps) {
   const { slug } = await params;
+  const raw = await searchParams;
   const brand = await getBrandBySlug(slug);
-  if (!brand) {
-    notFound();
-  }
+  if (!brand) notFound();
 
   const viewer = await getViewer();
-  const [categories, products, wishlistState, cartCount] = await Promise.all([
-    listBrandCategories(brand.id),
-    listByBrandForViewer(viewer, brand.id, {
-      page: 1,
-      take: PAGE_SIZES.storefront,
-    }),
-    wishlistStateForViewer(viewer),
-    cartCountForViewer(viewer),
-  ]);
+  const approved = canSeePrices(viewer);
+  const urlParams = toSearchParams(raw);
+  const selection = parseSelection(urlParams, approved);
+  const sort = toDiscoverSort(urlParams.get("sort"));
+  const brandIds = [brand.id];
 
-  const items: ListingItem[] = buildListingItems(products, viewer);
+  const [categories, facets, firstPage, wishlistState, cartCount] =
+    await Promise.all([
+      listBrandCategories(brand.id),
+      loadFacetData(viewer, { brandIds }),
+      discoverProducts(viewer, {
+        ...selectionToDiscoverParams(selection, {
+          approved,
+          sort,
+          limit: PAGE_SIZES.storefront,
+        }),
+        brandIds,
+      }),
+      wishlistStateForViewer(viewer),
+      cartCountForViewer(viewer),
+    ]);
 
-  const brandId = brand.id;
+  const items: ListingItem[] = buildListingItems(firstPage.items, viewer);
+
+  const selectionSnapshot = selection;
+  const sortSnapshot = sort;
   async function loadMore(nextPage: number): Promise<ListingItem[]> {
     "use server";
-    return loadMoreBrandProducts(brandId, nextPage);
+    const page = Math.max(1, Math.trunc(nextPage));
+    const v = await getViewer();
+    const result = await discoverProducts(v, {
+      ...selectionToDiscoverParams(selectionSnapshot, {
+        approved: canSeePrices(v),
+        sort: sortSnapshot,
+        limit: page * PAGE_SIZES.storefront,
+      }),
+      brandIds,
+    });
+    return buildListingItems(
+      result.items.slice((page - 1) * PAGE_SIZES.storefront),
+      v,
+    );
   }
 
   return (
@@ -89,11 +127,11 @@ export default async function BrandPage({ params }: BrandPageProps) {
       <FadeUp>
         <div className="mt-2 mb-6">
           <Link
-            href="/"
+            href="/brands"
             className="inline-flex items-center gap-1 rounded-full py-1 text-sm font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
           >
             <ChevronLeft className="size-4" aria-hidden />
-            Home
+            All brands
           </Link>
 
           <div className="mt-2 flex items-center gap-3">
@@ -115,9 +153,9 @@ export default async function BrandPage({ params }: BrandPageProps) {
         </div>
       </FadeUp>
 
-      {/* Category selection — the primary way in. */}
-      {categories.length > 0 ? (
-        <section aria-labelledby="brand-categories" className="mb-12">
+      {/* Category drill-down — only worth showing when the brand spans >1. */}
+      {categories.length > 1 ? (
+        <section aria-labelledby="brand-categories" className="mb-10">
           <SectionHeading
             id="brand-categories"
             title={`Shop ${brand.name} by category`}
@@ -126,19 +164,22 @@ export default async function BrandPage({ params }: BrandPageProps) {
         </section>
       ) : null}
 
-      {/* Browse everything — the escape hatch at the end. */}
+      {/* Filterable product listing, scoped to the brand. */}
       <section aria-labelledby="brand-all">
         <SectionHeading id="brand-all" title={`All ${brand.name} products`} />
-        <StorefrontListing
-          initialItems={items}
-          loadMore={loadMore}
-          pageSize={PAGE_SIZES.storefront}
-          initialPage={1}
-          canSeePrices={canSeePrices(viewer)}
-          emptyTitle={`No ${brand.name} products yet`}
-          emptyDescription="We're adding stock for this brand soon — check back shortly."
-          savedProductIds={wishlistState.savedProductIds}
-        />
+        <DiscoveryFilters facets={facets} resultCount={firstPage.total}>
+          <StorefrontListing
+            initialItems={items}
+            loadMore={loadMore}
+            pageSize={PAGE_SIZES.storefront}
+            initialPage={1}
+            canSeePrices={approved}
+            total={firstPage.total}
+            emptyTitle={`No ${brand.name} products match`}
+            emptyDescription="Try clearing a filter, or check back as we add stock."
+            savedProductIds={wishlistState.savedProductIds}
+          />
+        </DiscoveryFilters>
       </section>
     </StorefrontShell>
   );
