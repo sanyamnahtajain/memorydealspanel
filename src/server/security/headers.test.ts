@@ -89,6 +89,22 @@ describe("buildContentSecurityPolicy", () => {
     expect(value).not.toContain("upgrade-insecure-requests");
   });
 
+  it("uses a relaxed nonce-free script policy in dev even when a nonce is supplied", () => {
+    delete process.env.R2_PUBLIC_URL;
+    // Middleware calls buildContentSecurityPolicy(isDev, nonce) with a nonce on
+    // EVERY request. In dev, Next/Turbopack can't reliably stamp that nonce onto
+    // its bootstrap + chunk scripts, and 'strict-dynamic' disables 'self' — so a
+    // nonce'd dev policy blocks the whole app. Dev must fall back to unsafe-inline.
+    const value = buildContentSecurityPolicy(true, "abc123");
+    const scriptSrc = value
+      .split(";")
+      .map((s) => s.trim())
+      .find((s) => s.startsWith("script-src"))!;
+    expect(scriptSrc).toContain("'unsafe-inline'");
+    expect(scriptSrc).not.toContain("strict-dynamic");
+    expect(scriptSrc).not.toContain("nonce-abc123");
+  });
+
   it("embeds the per-request nonce in script-src when supplied", () => {
     delete process.env.R2_PUBLIC_URL;
     const value = buildContentSecurityPolicy(false, "abc123");

@@ -87,18 +87,23 @@ export function buildContentSecurityPolicy(
   // is not the public read domain above — allow it or uploads are CSP-blocked.
   for (const uploadOrigin of r2UploadOrigins()) connectSrc.push(uploadOrigin);
 
-  if (nonce) {
-    // Allow Next's inline bootstrap scripts, which carry this exact nonce.
-    // `'strict-dynamic'` lets those trusted scripts load the rest of the
-    // chunk graph without having to enumerate every hashed filename, while
-    // still ignoring the host-based allowlist for scripts in modern browsers.
-    scriptSrc.push(`'nonce-${nonce}'`, "'strict-dynamic'");
-  }
-
   if (isDev) {
-    // HMR + React Refresh need eval and a live websocket back to the dev server.
-    scriptSrc.push("'unsafe-eval'");
+    // DEV ONLY — relaxed script policy. Next's dev server (Turbopack) does NOT
+    // reliably stamp the per-request nonce onto its inline bootstrap + chunk
+    // `<script>` tags, and `'strict-dynamic'` disables the `'self'` host
+    // allowlist, so a nonce'd policy blocks EVERY script and the app never
+    // hydrates. In dev we therefore drop the nonce/`strict-dynamic` and allow
+    // `'unsafe-inline'` + `'unsafe-eval'` (HMR/React-Refresh need eval; the
+    // bootstrap scripts need inline). Production keeps the strict nonce policy
+    // below. `connect-src` (incl. the R2 upload origins) stays strict in dev.
+    scriptSrc.push("'unsafe-inline'", "'unsafe-eval'");
     connectSrc.push("ws:", "wss:");
+  } else if (nonce) {
+    // Production: allow Next's inline bootstrap scripts, which carry this exact
+    // nonce. `'strict-dynamic'` lets those trusted scripts load the rest of the
+    // chunk graph without enumerating every hashed filename, while ignoring the
+    // host-based allowlist for scripts in modern browsers.
+    scriptSrc.push(`'nonce-${nonce}'`, "'strict-dynamic'");
   }
 
   const directives: Record<string, string[]> = {
