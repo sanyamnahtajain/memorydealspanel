@@ -13,6 +13,8 @@ import {
 import type { ProductImageInput } from "@/lib/schemas/product";
 import type { PricedProduct } from "@/server/dto/product";
 import type { EntityStatus, StockStatus } from "@/lib/schemas/shared";
+import type { TaxTreatment } from "@/lib/gst";
+import type { EffectiveTax } from "@/lib/tax-inherit";
 import {
   createProductAction,
   updateProductAction,
@@ -79,6 +81,24 @@ export type EditorProduct = Pick<
   optionTypes?: OptionType[];
   /** The product's variant rows mapped for the editor. */
   variants?: EditorVariant[];
+  /**
+   * The product's OWN GST overrides (raw stored values). `null` on any field
+   * means "inherit" (defer to the category / seller profile). Non-monetary.
+   */
+  hsnCode?: string | null;
+  gstRateBps?: number | null;
+  taxTreatment?: TaxTreatment | null;
+};
+
+/**
+ * The tax the editor uses for its "inherit" helper text: what would apply if
+ * the product overrode nothing (resolved from category defaults → seller
+ * profile). Supplied by the server page; `null` when the GST kill-switch is
+ * off, in which case the whole GST section is hidden.
+ */
+export type EditorTaxContext = {
+  /** The category → profile fallback (product overrides removed). */
+  inherited: EffectiveTax;
 };
 
 export interface ProductEditorFormProps {
@@ -91,6 +111,13 @@ export interface ProductEditorFormProps {
   brands: BrandOption[];
   /** Present when editing; omit for a create form. */
   product?: EditorProduct;
+  /**
+   * GST context for the tax section. When omitted (or `inherited` absent) the
+   * GST kill-switch is off and the tax section is hidden entirely, so the editor
+   * behaves exactly as pre-GST. INTEGRATOR: the server page resolves this via
+   * `resolveEffectiveTax` over the chosen category defaults + seller profile.
+   */
+  tax?: EditorTaxContext;
   /**
    * Server mutations for variants, injected so the editor stays decoupled from
    * the server half. INTEGRATOR: wire `saveProductVariantsAction` here (see
@@ -121,6 +148,27 @@ interface FormState {
   tags: string[];
   specRows: SpecRow[];
   images: ProductImageInput[];
+  /** Raw HSN override text; empty = inherit. */
+  hsnInput: string;
+  /** Raw GST-rate override as a percent string; empty = inherit. */
+  gstPercentInput: string;
+  /** Treatment override; null = inherit the profile default. */
+  taxTreatment: TaxTreatment | null;
+}
+
+/** bps (1800) -> editable percent string ("18", "18.5"); "" when null. */
+function bpsToPercentInput(bps: number | null | undefined): string {
+  if (bps == null) return "";
+  return String(bps / 100);
+}
+
+/** percent string -> integer bps, or null when blank/invalid. */
+function percentInputToBps(value: string): number | null {
+  const trimmed = value.trim();
+  if (trimmed === "") return null;
+  const pct = Number(trimmed);
+  if (!Number.isFinite(pct) || pct < 0) return null;
+  return Math.round(pct * 100);
 }
 
 /** paise -> editable rupee string ("49950" -> "499.50", "49900" -> "499"). */
@@ -153,7 +201,26 @@ function buildInitialState(product?: EditorProduct): FormState {
       sortOrder: image.sortOrder,
       isPrimary: image.isPrimary,
     })),
+    hsnInput: product?.hsnCode ?? "",
+    gstPercentInput: bpsToPercentInput(product?.gstRateBps),
+    taxTreatment: product?.taxTreatment ?? null,
   };
+}
+
+const TREATMENT_OPTIONS: { value: string; label: string }[] = [
+  { value: "INHERIT", label: "Inherit (use category / profile default)" },
+  { value: "TAX_EXCLUSIVE", label: "Tax exclusive (price is pre-GST)" },
+  { value: "TAX_INCLUSIVE", label: "Tax inclusive (price already includes GST)" },
+];
+
+/** Renders an effective tax as a short "18% · HSN 8523 · inclusive" summary. */
+function effectiveSummary(effective: EffectiveTax): string {
+  const parts = [`${(effective.gstRateBps / 100).toString()}% GST`];
+  if (effective.hsnCode) parts.push(`HSN ${effective.hsnCode}`);
+  parts.push(
+    effective.treatment === "TAX_INCLUSIVE" ? "inclusive" : "exclusive",
+  );
+  return parts.join(" · ");
 }
 
 /** Whole-number discount margin of price vs. mrp, or null when not derivable. */
@@ -172,6 +239,7 @@ export function ProductEditorForm({
   categories,
   brands,
   product,
+  tax,
   variantsActions = wiredVariantsActions,
 }: ProductEditorFormProps) {
   const router = useRouter();
@@ -219,6 +287,19 @@ export function ProductEditorForm({
     ? (variantState.fromPrice ?? typedPricePaise)
     : typedPricePaise;
 
+  // Live "what applies" preview: layer the product's own overrides over the
+  // inherited (category → profile) fallback, per field, exactly like
+  // resolveEffectiveTax. Only rendered when GST is on (`tax.inherited` present).
+  const overrideBps = percentInputToBps(state.gstPercentInput);
+  const overrideHsn = state.hsnInput.trim();
+  const resolvedTax: EffectiveTax | null = tax
+    ? {
+        hsnCode: overrideHsn !== "" ? overrideHsn : tax.inherited.hsnCode,
+        gstRateBps: overrideBps ?? tax.inherited.gstRateBps,
+        treatment: state.taxTreatment ?? tax.inherited.treatment,
+      }
+    : null;
+
   // Categories sorted parents-first for a readable select; sub-categories
   // indented under context (single flat list keeps the Base UI select simple).
   const categoryOptions = React.useMemo(() => {
@@ -245,6 +326,10 @@ export function ProductEditorForm({
       setFieldError("MRP is not a valid amount.");
       return;
     }
+    if (state.gstPercentInput.trim() !== "" && overrideBps == null) {
+      setFieldError("GST rate override is not a valid percentage.");
+      return;
+    }
 
     const moqValue = state.moq.trim() === "" ? undefined : Number(state.moq);
 
@@ -265,6 +350,11 @@ export function ProductEditorForm({
       status: state.status,
       tags: state.tags,
       images: state.images,
+      // GST overrides — empty/inherit becomes null so the effective tax is
+      // inherited. Only meaningful when GST is on; harmless (null) otherwise.
+      hsnCode: overrideHsn !== "" ? overrideHsn : null,
+      gstRateBps: overrideBps,
+      taxTreatment: state.taxTreatment,
     };
 
     const parsed = createProductSchema.safeParse(raw);
@@ -436,6 +526,91 @@ export function ProductEditorForm({
           ) : null}
         </Section>
       </FadeUp>
+
+      {tax ? (
+        <FadeUp delay={0.05}>
+          <Section
+            title="GST / tax"
+            description="Optional overrides. Leave blank to inherit from the category, then the seller profile."
+          >
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Field label="HSN / SAC code" htmlFor="hsn">
+                <Input
+                  id="hsn"
+                  value={state.hsnInput}
+                  onChange={(e) => set("hsnInput", e.target.value)}
+                  placeholder={tax.inherited.hsnCode ?? "e.g. 8523"}
+                  maxLength={16}
+                  className="font-tabular"
+                />
+              </Field>
+              <Field label="GST rate" htmlFor="gst-rate">
+                <div className="relative">
+                  <Input
+                    id="gst-rate"
+                    inputMode="decimal"
+                    value={state.gstPercentInput}
+                    onChange={(e) =>
+                      set(
+                        "gstPercentInput",
+                        e.target.value.replace(/[^\d.]/g, ""),
+                      )
+                    }
+                    placeholder={(tax.inherited.gstRateBps / 100).toString()}
+                    className="pr-7 font-tabular"
+                  />
+                  <span
+                    aria-hidden
+                    className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-sm text-muted-foreground"
+                  >
+                    %
+                  </span>
+                </div>
+              </Field>
+              <Field label="Treatment" htmlFor="tax-treatment">
+                <Select
+                  value={state.taxTreatment ?? "INHERIT"}
+                  onValueChange={(value) =>
+                    set(
+                      "taxTreatment",
+                      value === "INHERIT"
+                        ? null
+                        : (value as TaxTreatment),
+                    )
+                  }
+                  items={TREATMENT_OPTIONS}
+                >
+                  <SelectTrigger id="tax-treatment" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TREATMENT_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            </div>
+
+            {resolvedTax ? (
+              <p className="text-xs text-muted-foreground" aria-live="polite">
+                Applies:{" "}
+                <span className="font-medium text-foreground">
+                  {effectiveSummary(resolvedTax)}
+                </span>
+                {" · "}
+                inherits{" "}
+                <span className="font-tabular">
+                  {effectiveSummary(tax.inherited)}
+                </span>{" "}
+                when left blank
+              </p>
+            ) : null}
+          </Section>
+        </FadeUp>
+      ) : null}
 
       <FadeUp delay={0.06}>
         <Section

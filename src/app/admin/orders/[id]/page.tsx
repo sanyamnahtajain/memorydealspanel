@@ -65,9 +65,57 @@ export default async function AdminOrderDetailPage({
           city: detail.customer.city,
         }
       : null,
-    items: detail.items,
+    items: detail.items.map((line) => ({
+      productId: line.productId,
+      variantId: line.variantId,
+      name: line.name,
+      sku: line.sku,
+      brand: line.brand,
+      variantLabel: line.variantLabel,
+      imageUrl: line.imageUrl,
+      quantity: line.quantity,
+      unitPricePaise: line.unitPricePaise,
+      lineTotalPaise: line.lineTotalPaise,
+      tax: line.tax
+        ? {
+            hsnCode: line.tax.hsnCode,
+            gstRateBps: line.tax.gstRateBps,
+            taxInclusive: line.tax.treatment === "TAX_INCLUSIVE",
+            taxablePaise: line.tax.taxablePaise,
+            taxPaise: line.tax.taxPaise,
+            cgstPaise: line.tax.cgstPaise,
+            sgstPaise: line.tax.sgstPaise,
+            igstPaise: line.tax.igstPaise,
+            grossPaise: line.tax.grossPaise,
+          }
+        : null,
+    })),
     note: detail.note,
     adminNote: detail.adminNote,
+    tax: detail.tax
+      ? {
+          supplyType: detail.tax.supplyType,
+          sellerStateCode: detail.tax.sellerStateCode,
+          sellerGstin: detail.tax.sellerGstin,
+          placeOfSupplyStateCode: detail.tax.placeOfSupplyStateCode,
+          totalTaxablePaise: detail.tax.totalTaxablePaise,
+          totalCgstPaise: detail.tax.totalCgstPaise,
+          totalSgstPaise: detail.tax.totalSgstPaise,
+          totalIgstPaise: detail.tax.totalIgstPaise,
+          totalTaxPaise: detail.tax.totalTaxPaise,
+          roundOffPaise: detail.tax.roundOffPaise,
+          grandTotalPaise: detail.tax.grandTotalPaise,
+          hsnSummary: detail.tax.hsnSummary.map((r) => ({
+            hsnCode: r.hsnCode,
+            gstRateBps: r.gstRateBps,
+            taxablePaise: r.taxablePaise,
+            taxPaise: r.taxPaise,
+            cgstPaise: r.cgstPaise,
+            sgstPaise: r.sgstPaise,
+            igstPaise: r.igstPaise,
+          })),
+        }
+      : null,
   };
 
   return (

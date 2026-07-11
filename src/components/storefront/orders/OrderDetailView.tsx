@@ -32,6 +32,7 @@ import {
   orderStatusVariant,
 } from "./order-status";
 import { OrderStatusTimeline } from "./OrderStatusTimeline";
+import { OrderTaxBreakup } from "./OrderTaxBreakup";
 import type { OrderHistoryDetail, OrderHistoryLine } from "./types";
 import {
   cancelOrderAction,
@@ -186,6 +187,11 @@ export function OrderDetailView({ detail }: { detail: OrderHistoryDetail }) {
             </p>
           </div>
 
+          {/* Frozen GST breakup (proforma) — only for a priced viewer. */}
+          {detail.priced && detail.tax ? (
+            <OrderTaxBreakup tax={detail.tax} proforma />
+          ) : null}
+
           {detail.note ? (
             <div className="rounded-2xl border border-border bg-muted/40 p-4">
               <p className="text-xs font-medium text-muted-foreground">
@@ -250,6 +256,12 @@ function OrderLineRow({
             ? ` · ${formatPaise(line.unitPricePaise)} each`
             : ""}
         </p>
+        {priced && line.tax ? (
+          <p className="mt-0.5 text-[0.65rem] text-muted-foreground">
+            {line.tax.taxInclusive ? "incl." : "+"} {line.tax.gstRateBps / 100}% GST
+            {line.tax.hsnCode ? ` · HSN ${line.tax.hsnCode}` : ""}
+          </p>
+        ) : null}
       </div>
 
       {priced && line.lineTotalPaise !== null ? (

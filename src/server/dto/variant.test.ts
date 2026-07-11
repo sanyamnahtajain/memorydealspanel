@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { computeLineTax } from "@/lib/gst";
+import type { EffectiveTax } from "@/lib/tax-inherit";
 import {
   toPublicVariant,
   toPricedVariant,
@@ -79,5 +81,67 @@ describe("toPricedVariant", () => {
   it("returns null margin when mrp is absent or not above price", () => {
     expect(toPricedVariant({ ...BASE, mrp: null }).marginPct).toBeNull();
     expect(toPricedVariant({ ...BASE, mrp: 149900 }).marginPct).toBeNull();
+  });
+});
+
+/* ---------------------------------------------------------------------- */
+/* GST threading — the variant gate must NEVER leak a tax amount          */
+/* ---------------------------------------------------------------------- */
+
+const EXCLUSIVE_18: EffectiveTax = {
+  hsnCode: "8523",
+  gstRateBps: 1800,
+  treatment: "TAX_EXCLUSIVE",
+};
+
+describe("variant DTO — GST public metadata (amount-free)", () => {
+  it("public projection carries rate/HSN metadata but NO tax paise", () => {
+    const dto = toPublicVariant(BASE, { effective: EXCLUSIVE_18 });
+
+    expect(dto.tax).toEqual({
+      hsnCode: "8523",
+      gstRateBps: 1800,
+      taxInclusive: false,
+    });
+    // Adversarial: the priced-only breakdown is structurally absent, and no
+    // paise tax key survives on the public variant even from a full priced row.
+    expect("taxBreakdown" in dto).toBe(false);
+    const flat = JSON.stringify(dto);
+    expect(flat).not.toContain("taxPaise");
+    expect(flat).not.toContain("taxablePaise");
+    expect(flat).not.toContain("grossPaise");
+  });
+
+  it("GST off (effective null) yields the pre-GST metadata shape", () => {
+    const dto = toPublicVariant(BASE);
+    expect(dto.tax).toEqual({
+      hsnCode: null,
+      gstRateBps: null,
+      taxInclusive: false,
+    });
+  });
+});
+
+describe("variant DTO — priced tax breakdown", () => {
+  it("matches computeLineTax and is the only place a variant tax amount appears", () => {
+    const dto = toPricedVariant(BASE, { effective: EXCLUSIVE_18 });
+    const expected = computeLineTax({
+      amountPaise: 149900,
+      gstRateBps: 1800,
+      treatment: "TAX_EXCLUSIVE",
+    });
+    expect(dto.taxBreakdown).toEqual({
+      taxablePaise: expected.taxablePaise,
+      taxPaise: expected.taxPaise,
+      grossPaise: expected.grossPaise,
+      gstRateBps: 1800,
+      treatment: "TAX_EXCLUSIVE",
+    });
+  });
+
+  it("GST off (effective null) yields taxBreakdown null — pre-GST shape", () => {
+    const dto = toPricedVariant(BASE);
+    expect(dto.taxBreakdown).toBeNull();
+    expect(dto.tax.gstRateBps).toBeNull();
   });
 });

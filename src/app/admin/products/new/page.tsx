@@ -5,6 +5,8 @@ import { getViewer } from "@/server/auth/viewer";
 import { isAdmin } from "@/server/types/viewer";
 import { listAll } from "@/server/dal/categories";
 import { listActiveBrands } from "@/server/services/brands";
+import { getSellerTaxProfile } from "@/server/services/tax-profile";
+import { resolveEffectiveTax } from "@/lib/tax-inherit";
 import { AdminShell } from "@/components/shell/AdminShell";
 import { PageHeader } from "@/components/common";
 import { ProductEditorForm } from "@/components/admin/products/ProductEditorForm";
@@ -26,10 +28,27 @@ export default async function NewProductPage() {
     redirect("/admin/login");
   }
 
-  const [categories, brands] = await Promise.all([
+  const [categories, brands, profile] = await Promise.all([
     listAll(viewer),
     listActiveBrands(),
+    getSellerTaxProfile(),
   ]);
+
+  // Create mode: no category chosen yet, so the inherited fallback is the
+  // seller-profile default. Shown only when the GST kill-switch is on.
+  const tax = profile.gstEnabled
+    ? {
+        inherited: resolveEffectiveTax({
+          entity: {},
+          category: null,
+          profile: {
+            defaultHsnCode: profile.defaultHsnCode,
+            defaultGstRateBps: profile.defaultGstRateBps,
+            priceEntryMode: profile.priceEntryMode,
+          },
+        }),
+      }
+    : undefined;
 
   return (
     <AdminShell title="New product">
@@ -41,6 +60,7 @@ export default async function NewProductPage() {
           backLabel="Products"
         />
         <ProductEditorForm
+          tax={tax}
           brands={brands}
           categories={categories.map((c) => ({
             id: c.id,

@@ -1,5 +1,8 @@
 import type { Prisma, ProductImage } from "@prisma/client";
 import type { EntityStatus, StockStatus } from "@/lib/schemas/shared";
+import type { TaxTreatment } from "@/lib/gst";
+import { computeLineTax } from "@/lib/gst";
+import type { EffectiveTax } from "@/lib/tax-inherit";
 import {
   toPublicVariant,
   toPricedVariant,
@@ -94,6 +97,12 @@ export interface PublicProduct {
    * Empty when `hasVariants` is false.
    */
   variants: PublicVariant[];
+  /**
+   * NON-MONETARY GST metadata (HSN / rate bps / inclusive flag) — safe for
+   * every viewer. `gstRateBps: null` when the GST kill-switch is off, so the
+   * storefront renders no GST hint. NEVER carries a paise amount.
+   */
+  tax: PublicTaxMeta;
 }
 
 /**
@@ -110,6 +119,12 @@ export interface PricedProduct extends PublicProduct {
   marginPct: number | null;
   /** Variants carrying their own gated price/mrp/margin. Empty when none. */
   variants: PricedVariant[];
+  /**
+   * The paise GST breakdown of the displayed `price`. The ONLY place a tax
+   * amount appears — present only on this Priced projection, reached only by an
+   * approved viewer. `null` when the GST kill-switch is off.
+   */
+  taxBreakdown: PricedTaxBreakdown | null;
 }
 
 /**
@@ -140,6 +155,13 @@ export interface PublicSource {
   updatedAt: Date;
   price?: number;
   mrp?: number | null;
+  /**
+   * GST override fields — NON-MONETARY metadata, so they are safe to select on
+   * the gated path too. Feed the effective-tax resolver; never read as amounts.
+   */
+  hsnCode?: string | null;
+  gstRateBps?: number | null;
+  taxTreatment?: TaxTreatment | null;
   /** Absent / false for the non-variant majority of the catalog. */
   hasVariants?: boolean;
   /** Embedded axis definitions; null/absent when there are no variants. */
@@ -157,6 +179,102 @@ export interface PricedSource extends PublicSource {
   mrp?: number | null;
   /** Priced viewers get variant rows including the money columns. */
   variants?: PricedVariantSource[];
+}
+
+/* ---------------------------------------------------------------------- */
+/* GST projections — the price-gated tax metadata / breakdown             */
+/* ---------------------------------------------------------------------- */
+
+/**
+ * NON-MONETARY GST metadata that is safe for EVERY viewer (anon included).
+ * It carries NO paise: only the HSN code, the effective rate in basis points,
+ * and whether the *shown* price is inclusive of that rate. The storefront uses
+ * it to render a neutral "incl. 18% GST" / "+ 18% GST" hint with no amount.
+ *
+ * When the GST kill-switch is off (or no effective rate resolves) the fields
+ * are null/`gstRateBps: null`, so the UI renders nothing. Because this is pure
+ * metadata (an allow-list, never a paise value), it lives on the PUBLIC shape.
+ */
+export interface PublicTaxMeta {
+  /** Resolved HSN code, or null when none is configured anywhere. */
+  hsnCode: string | null;
+  /** Effective GST rate in basis points (1800 = 18%), or null when GST is off. */
+  gstRateBps: number | null;
+  /** Whether the displayed price already includes the GST above. */
+  taxInclusive: boolean;
+}
+
+/**
+ * The paise tax breakdown of the DISPLAYED price. This is the ONLY place a GST
+ * paise amount appears in a product DTO, and it lives EXCLUSIVELY on the Priced
+ * projection — a gated viewer never receives it (structurally absent). Computed
+ * via {@link computeLineTax} from the stored price and the resolved treatment.
+ *
+ * `taxablePaise + taxPaise === grossPaise` holds exactly (integer-only).
+ */
+export interface PricedTaxBreakdown {
+  /** GST-exclusive taxable base in paise. */
+  taxablePaise: number;
+  /** GST amount in paise for the displayed price. */
+  taxPaise: number;
+  /** Landed, tax-inclusive amount in paise. */
+  grossPaise: number;
+  /** Effective GST rate in basis points. */
+  gstRateBps: number;
+  /** Effective treatment of the stored price. */
+  treatment: TaxTreatment;
+}
+
+/**
+ * Options passed to the mappers when GST is being threaded through. `null`
+ * (the default) means the GST kill-switch is off (or the caller opted out): the
+ * public metadata degrades to `gstRateBps: null` and no priced breakdown is
+ * computed, so every DTO keeps its exact pre-GST shape.
+ */
+export interface TaxMapOptions {
+  /** The fully-resolved effective tax for this product, or null when GST is off. */
+  effective: EffectiveTax | null;
+}
+
+/**
+ * Derives the PUBLIC (amount-free) GST metadata from an effective tax. Returns
+ * the "GST off" shape (`gstRateBps: null`, `taxInclusive: false`) when
+ * `effective` is null. Never carries paise.
+ */
+export function publicTaxMetaOf(effective: EffectiveTax | null): PublicTaxMeta {
+  if (effective === null) {
+    return { hsnCode: null, gstRateBps: null, taxInclusive: false };
+  }
+  return {
+    hsnCode: effective.hsnCode,
+    gstRateBps: effective.gstRateBps,
+    taxInclusive: effective.treatment === "TAX_INCLUSIVE",
+  };
+}
+
+/**
+ * Computes the PRICED tax breakdown for a displayed price. Returns null when
+ * `effective` is null (GST off) so the priced DTO carries `taxBreakdown: null`
+ * and behaves exactly as pre-GST. Pure — delegates the arithmetic to
+ * {@link computeLineTax}.
+ */
+export function pricedTaxBreakdownOf(
+  pricePaise: number,
+  effective: EffectiveTax | null,
+): PricedTaxBreakdown | null {
+  if (effective === null) return null;
+  const line = computeLineTax({
+    amountPaise: pricePaise,
+    gstRateBps: effective.gstRateBps,
+    treatment: effective.treatment,
+  });
+  return {
+    taxablePaise: line.taxablePaise,
+    taxPaise: line.taxPaise,
+    grossPaise: line.grossPaise,
+    gstRateBps: effective.gstRateBps,
+    treatment: effective.treatment,
+  };
 }
 
 /**
@@ -200,7 +318,10 @@ function toOptionTypes(raw: Prisma.JsonValue | undefined): ProductOptionType[] {
  * row cannot leak money through this mapper — including on nested variants,
  * which are mapped through the PUBLIC variant mapper (no money read).
  */
-export function toPublicProduct(row: PublicSource): PublicProduct {
+export function toPublicProduct(
+  row: PublicSource,
+  opts: TaxMapOptions = { effective: null },
+): PublicProduct {
   return {
     id: row.id,
     categoryId: row.categoryId,
@@ -222,7 +343,12 @@ export function toPublicProduct(row: PublicSource): PublicProduct {
     updatedAt: row.updatedAt,
     hasVariants: row.hasVariants ?? false,
     optionTypes: toOptionTypes(row.optionTypes),
-    variants: (row.variants ?? []).map(toPublicVariant),
+    // A gated variant carries only public metadata; the product's effective tax
+    // is the sensible fallback for a variant that resolved no own override.
+    variants: (row.variants ?? []).map((v) =>
+      toPublicVariant(v, { effective: opts.effective }),
+    ),
+    tax: publicTaxMetaOf(opts.effective),
   };
 }
 
@@ -235,18 +361,40 @@ function deriveMarginPct(price: number, mrp: number | null | undefined): number 
 }
 
 /**
+ * Options for the priced product mapper. `effective` is the product's resolved
+ * tax (drives the product-level breakdown and the public metadata); the DAL,
+ * which owns the profile + category, resolves it. `variantEffective` lets the
+ * DAL supply each variant's own resolved tax (variant→product→category→profile)
+ * keyed by variant id — a variant not present in the map falls back to the
+ * product's `effective`. All null ⇒ GST kill-switch off ⇒ pre-GST shapes.
+ */
+export interface PricedTaxMapOptions extends TaxMapOptions {
+  variantEffective?: (variantId: string) => EffectiveTax | null;
+}
+
+/**
  * Maps a Prisma product row to a `PricedProduct`, layering the money fields
  * onto the public projection. Only ever called for price-authorised viewers.
  */
-export function toPricedProduct(row: PricedSource): PricedProduct {
+export function toPricedProduct(
+  row: PricedSource,
+  opts: PricedTaxMapOptions = { effective: null },
+): PricedProduct {
   const price = row.price;
   const mrp = row.mrp ?? null;
+  const resolveVariant = opts.variantEffective;
   return {
-    ...toPublicProduct(row),
+    ...toPublicProduct(row, { effective: opts.effective }),
     price,
     mrp,
     marginPct: deriveMarginPct(price, mrp),
-    // Priced viewers get the money-carrying variant projection.
-    variants: (row.variants ?? []).map(toPricedVariant),
+    // Priced viewers get the money-carrying variant projection, each with its
+    // own resolved effective tax (falling back to the product's).
+    variants: (row.variants ?? []).map((v) =>
+      toPricedVariant(v, {
+        effective: resolveVariant ? resolveVariant(v.id) : opts.effective,
+      }),
+    ),
+    taxBreakdown: pricedTaxBreakdownOf(price, opts.effective),
   };
 }

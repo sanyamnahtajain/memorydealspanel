@@ -9,6 +9,19 @@ import {
   MAX_QTY_PER_LINE,
   MIN_QTY_PER_LINE,
 } from "@/lib/schemas/cart";
+import {
+  computeLineTax,
+  determineSupplyType,
+  splitTax,
+  type SupplyType,
+} from "@/lib/gst";
+import {
+  resolveEffectiveTax,
+  resolveVariantEffectiveTax,
+  type EffectiveTax,
+  type ProfileTaxDefaults,
+} from "@/lib/tax-inherit";
+import { getSellerTaxProfile } from "@/server/services/tax-profile";
 
 /**
  * Cart service — the per-customer purchase-request basket.
@@ -99,6 +112,48 @@ export interface CartLine {
   available: boolean;
   /** Any problems the UI should flag. Empty when fully orderable. */
   issues: CartLineIssue[];
+  /**
+   * The per-line GST breakup for the DISPLAYED line total, or `null` when GST is
+   * off OR the viewer is gated. Amount-bearing (taxable/tax) so it lives only on
+   * a priced line; derived from the server price + the line's frozen effective
+   * rate via the shared core. `null` for blocked lines (excluded from totals).
+   */
+  tax: CartLineTax | null;
+}
+
+/** The per-line GST breakup surfaced on a priced cart line. */
+export interface CartLineTax {
+  /** Effective rate in basis points (1800 = 18%). */
+  gstRateBps: number;
+  /** Whether the displayed line total already includes the GST. */
+  taxInclusive: boolean;
+  /** GST-exclusive taxable base for the line, in paise. */
+  taxablePaise: number;
+  /** GST amount for the line, in paise. */
+  taxPaise: number;
+}
+
+/**
+ * The order-preview GST summary for the cart, over the ORDERABLE lines. Only
+ * present for a priced viewer with the kill-switch on; `null` otherwise (the UI
+ * then renders exactly as pre-GST). Uses the SAME core functions as placement.
+ *
+ * `supplyType === null` ⇒ the buyer has no place of supply: the split fields are
+ * 0 and only `totalTaxPaise` (combined) is meaningful; the UI shows a single
+ * "GST @X%" line + a prompt to add a GSTIN.
+ */
+export interface CartTaxSummary {
+  supplyType: SupplyType | null;
+  totalTaxablePaise: number;
+  totalTaxPaise: number;
+  totalCgstPaise: number;
+  totalSgstPaise: number;
+  totalIgstPaise: number;
+  roundOffPaise: number;
+  /** Final payable incl. GST (and any invoice round-off). */
+  grandTotalPaise: number;
+  /** The seller's rounding mode, so the client preview can re-apply it live. */
+  roundingMode: "LINE" | "INVOICE";
 }
 
 /** The whole cart, gated to the viewer. */
@@ -116,6 +171,11 @@ export interface Cart {
   subtotalPaise: number | null;
   /** Whether the viewer may see prices (drives the UI's price gate). */
   priced: boolean;
+  /**
+   * The GST order-preview over the orderable lines, or `null` when GST is off or
+   * the viewer is gated. Grand total here is what "Place order" will freeze.
+   */
+  tax: CartTaxSummary | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -184,6 +244,11 @@ interface ResolvedUnit {
   pricePaise: number;
   /** Whether the underlying product/variant is orderable right now. */
   active: boolean;
+  /**
+   * The resolved effective tax for this unit (variant→product→category→profile),
+   * or `null` when the GST kill-switch is off. NON-MONETARY (hsn/rate/treatment).
+   */
+  effectiveTax: EffectiveTax | null;
 }
 
 const PRODUCT_SELECT = {
@@ -198,6 +263,12 @@ const PRODUCT_SELECT = {
   status: true,
   deletedAt: true,
   hasVariants: true,
+  // NON-MONETARY GST metadata — safe to select on the gated path; feeds the
+  // effective-tax resolver only, never read as an amount.
+  hsnCode: true,
+  gstRateBps: true,
+  taxTreatment: true,
+  category: { select: { defaultHsnCode: true, defaultGstRateBps: true } },
   images: { select: { url: true, thumbUrl: true, isPrimary: true, sortOrder: true } },
 } satisfies Prisma.ProductSelect;
 
@@ -209,6 +280,9 @@ const VARIANT_SELECT = {
   moq: true,
   stockStatus: true,
   status: true,
+  hsnCode: true,
+  gstRateBps: true,
+  taxTreatment: true,
 } satisfies Prisma.ProductVariantSelect;
 
 type ProductRow = Prisma.ProductGetPayload<{ select: typeof PRODUCT_SELECT }>;
@@ -240,6 +314,73 @@ function firstImageUrl(row: ProductRow): string | null {
   return image?.thumbUrl ?? image?.url ?? null;
 }
 
+// ---------------------------------------------------------------------------
+// GST context (kill-switch aware) — mirrors orders.ts so the live cart preview
+// and the placed order agree to the paisa (both use the same @/lib/gst core).
+// ---------------------------------------------------------------------------
+
+/** Per-request GST context, or `null` when the kill-switch is off. */
+interface CartTaxContext {
+  profile: ProfileTaxDefaults;
+  sellerStateCode: string | null;
+  roundingMode: "LINE" | "INVOICE";
+}
+
+/** Load the GST context from the cached seller profile (null when disabled). */
+async function loadCartTaxContext(): Promise<CartTaxContext | null> {
+  const p = await getSellerTaxProfile();
+  if (!p.gstEnabled) return null;
+  return {
+    profile: {
+      defaultHsnCode: p.defaultHsnCode,
+      defaultGstRateBps: p.defaultGstRateBps,
+      priceEntryMode: p.priceEntryMode,
+    },
+    sellerStateCode: p.stateCode,
+    roundingMode: p.roundingMode,
+  };
+}
+
+/** Resolve the effective tax for a product row (no variant), or null when off. */
+function productEffectiveTax(
+  ctx: CartTaxContext | null,
+  product: ProductRow,
+): EffectiveTax | null {
+  if (!ctx) return null;
+  return resolveEffectiveTax({
+    entity: {
+      hsnCode: product.hsnCode,
+      gstRateBps: product.gstRateBps,
+      taxTreatment: product.taxTreatment,
+    },
+    category: product.category ?? null,
+    profile: ctx.profile,
+  });
+}
+
+/** Resolve the effective tax for a variant row, or null when off. */
+function variantEffectiveTax(
+  ctx: CartTaxContext | null,
+  product: ProductRow,
+  variant: VariantRow,
+): EffectiveTax | null {
+  if (!ctx) return null;
+  return resolveVariantEffectiveTax({
+    variant: {
+      hsnCode: variant.hsnCode,
+      gstRateBps: variant.gstRateBps,
+      taxTreatment: variant.taxTreatment,
+    },
+    product: {
+      hsnCode: product.hsnCode,
+      gstRateBps: product.gstRateBps,
+      taxTreatment: product.taxTreatment,
+    },
+    category: product.category ?? null,
+    profile: ctx.profile,
+  });
+}
+
 /**
  * Resolve the LIVE, authoritative unit for a (product, variant?) pair. Returns
  * null only when the product itself is missing. When the product exists but is
@@ -252,6 +393,7 @@ function firstImageUrl(row: ProductRow): string | null {
 async function resolveUnit(
   productId: string,
   variantId: string | null,
+  ctx: CartTaxContext | null = null,
 ): Promise<ResolvedUnit | null> {
   const product = await prisma.product.findUnique({
     where: { id: productId },
@@ -284,9 +426,11 @@ async function resolveUnit(
         // is inactive anyway (excluded from any order).
         pricePaise: product.price,
         active: false,
+        // Line is inactive/excluded; no tax preview needed.
+        effectiveTax: null,
       };
     }
-    return resolveVariantUnit(product, variant, productActive, baseBrand);
+    return resolveVariantUnit(product, variant, productActive, baseBrand, ctx);
   }
 
   return {
@@ -300,6 +444,7 @@ async function resolveUnit(
     pricePaise: product.price,
     // A variant-based product ordered without a variant is not orderable.
     active: productActive && !product.hasVariants,
+    effectiveTax: productEffectiveTax(ctx, product),
   };
 }
 
@@ -308,6 +453,7 @@ function resolveVariantUnit(
   variant: VariantRow,
   productActive: boolean,
   baseBrand: string | null,
+  ctx: CartTaxContext | null,
 ): ResolvedUnit {
   const variantActive = variant.status === "ACTIVE";
   return {
@@ -319,6 +465,7 @@ function resolveVariantUnit(
     moq: normaliseMoq(variant.moq ?? product.moq),
     stockStatus: variant.stockStatus,
     pricePaise: variant.price,
+    effectiveTax: variantEffectiveTax(ctx, product, variant),
     active: productActive && variantActive,
   };
 }
@@ -364,12 +511,27 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
     select: { productId: true, variantId: true, quantity: true },
   });
 
+  // GST context + the buyer's place of supply — ONLY when the viewer is priced
+  // (a gated viewer never receives any amount, tax included) and the kill-switch
+  // is on. `ctx === null` ⇒ no tax anywhere ⇒ cart looks exactly as pre-GST.
+  const [ctx, placeOfSupply] = priced
+    ? await Promise.all([
+        loadCartTaxContext(),
+        resolveCustomerPlaceOfSupply(viewer.customerId),
+      ])
+    : [null, null];
+
   const lines: CartLine[] = [];
   let itemCount = 0;
   let subtotalPaise = 0;
+  // Order-preview tax accumulators (over ORDERABLE lines).
+  let taxTotalTaxable = 0;
+  let taxTotalTax = 0;
+  let taxTotalGross = 0;
+  let anyTaxed = false;
 
   for (const row of rows) {
-    const unit = await resolveUnit(row.productId, row.variantId ?? null);
+    const unit = await resolveUnit(row.productId, row.variantId ?? null, ctx);
     // Product row vanished entirely — surface as an inactive placeholder so the
     // customer can remove it; never counted toward a total.
     const issues: CartLineIssue[] = [];
@@ -416,6 +578,29 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
     const lineTotalPaise =
       pricePaise === null ? null : pricePaise * row.quantity;
 
+    // Per-line GST breakup for the displayed line total. Only for a priced,
+    // available line with a resolved effective rate (kill-switch on). Blocked
+    // lines carry no tax (they're excluded from the order + totals).
+    let lineTax: CartLineTax | null = null;
+    const eff = unit?.effectiveTax ?? null;
+    if (priced && available && lineTotalPaise !== null && eff) {
+      const t = computeLineTax({
+        amountPaise: lineTotalPaise,
+        gstRateBps: eff.gstRateBps,
+        treatment: eff.treatment,
+      });
+      lineTax = {
+        gstRateBps: eff.gstRateBps,
+        taxInclusive: eff.treatment === "TAX_INCLUSIVE",
+        taxablePaise: t.taxablePaise,
+        taxPaise: t.taxPaise,
+      };
+      taxTotalTaxable += t.taxablePaise;
+      taxTotalTax += t.taxPaise;
+      taxTotalGross += t.grossPaise;
+      anyTaxed = true;
+    }
+
     lines.push({
       productId: row.productId,
       variantId: row.variantId ?? null,
@@ -431,6 +616,7 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
       lineTotalPaise,
       available,
       issues,
+      tax: lineTax,
     });
 
     itemCount += row.quantity;
@@ -439,13 +625,59 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
     }
   }
 
+  // Order-preview GST summary over the orderable lines. Split by supply type
+  // (derived once from seller state vs. the buyer's place of supply). When the
+  // supply type is unknown (no place of supply) the tax stays combined.
+  let tax: CartTaxSummary | null = null;
+  if (ctx && anyTaxed) {
+    const supplyType = determineSupplyType(ctx.sellerStateCode, placeOfSupply);
+    const split =
+      supplyType === null
+        ? { cgstPaise: 0, sgstPaise: 0, igstPaise: 0 }
+        : splitTax(taxTotalTax, supplyType);
+    const grossBeforeRound = taxTotalGross;
+    let roundOffPaise = 0;
+    let grandTotalPaise = grossBeforeRound;
+    if (ctx.roundingMode === "INVOICE") {
+      grandTotalPaise = Math.round(grossBeforeRound / 100) * 100;
+      roundOffPaise = grandTotalPaise - grossBeforeRound;
+    }
+    tax = {
+      supplyType,
+      totalTaxablePaise: taxTotalTaxable,
+      totalTaxPaise: taxTotalTax,
+      totalCgstPaise: split.cgstPaise,
+      totalSgstPaise: split.sgstPaise,
+      totalIgstPaise: split.igstPaise,
+      roundOffPaise,
+      grandTotalPaise,
+      roundingMode: ctx.roundingMode,
+    };
+  }
+
   return {
     lines,
     itemCount,
     lineCount: lines.length,
     subtotalPaise: priced ? subtotalPaise : null,
     priced,
+    tax,
   };
+}
+
+/**
+ * The buyer's place of supply: GSTIN-derived state wins, else the explicit
+ * billing state, else null (no GSTIN → supply type undetermined). IDOR-safe.
+ */
+async function resolveCustomerPlaceOfSupply(
+  customerId: string,
+): Promise<string | null> {
+  const customer = await prisma.customer.findUnique({
+    where: { id: customerId },
+    select: { gstStateCode: true, placeOfSupplyStateCode: true },
+  });
+  if (!customer) return null;
+  return customer.gstStateCode ?? customer.placeOfSupplyStateCode ?? null;
 }
 
 /** How many distinct lines a customer's cart holds (header badge helper). */

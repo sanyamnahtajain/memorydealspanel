@@ -35,6 +35,9 @@ const HEADERS = [
   "stockStatus",
   "status",
   "tags",
+  "hsn_code",
+  "gst_rate",
+  "tax_inclusive",
   "imageCount",
   "primaryImageUrl",
   "createdAt",
@@ -80,6 +83,9 @@ async function loadCatalogRows(): Promise<CatalogRow[]> {
         stockStatus: true,
         status: true,
         tags: true,
+        hsnCode: true,
+        gstRateBps: true,
+        taxTreatment: true,
         images: true,
         createdAt: true,
         updatedAt: true,
@@ -111,6 +117,16 @@ async function loadCatalogRows(): Promise<CatalogRow[]> {
       stockStatus: product.stockStatus,
       status: product.status,
       tags: product.tags.join(", "),
+      // GST override columns — raw stored values, so an export→edit→import round
+      // trips losslessly. Empty when the product inherits (no own override).
+      hsn_code: product.hsnCode ?? "",
+      gst_rate: product.gstRateBps == null ? "" : product.gstRateBps / 100,
+      tax_inclusive:
+        product.taxTreatment == null
+          ? ""
+          : product.taxTreatment === "TAX_INCLUSIVE"
+            ? "true"
+            : "false",
       imageCount: product.images.length,
       primaryImageUrl: primary?.url ?? "",
       createdAt: iso(product.createdAt),

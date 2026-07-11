@@ -383,7 +383,7 @@ export async function listProductsAction(
 
     return {
       ok: true,
-      products: rows.map(toPricedProduct),
+      products: rows.map((row) => toPricedProduct(row)),
       total,
       page: params.page,
       pageCount: Math.max(1, Math.ceil(total / take)),

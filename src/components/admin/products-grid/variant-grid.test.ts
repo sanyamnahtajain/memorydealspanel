@@ -33,6 +33,8 @@ function makeRow(overrides: Partial<ProductRow> = {}): ProductRow {
     images: 0,
     hasVariants: false,
     variantCount: 0,
+    hsnCode: null,
+    gstRatePercent: null,
     ...overrides,
   };
 }

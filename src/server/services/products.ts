@@ -50,6 +50,11 @@ const PRICED_SELECT = {
   images: true,
   price: true,
   mrp: true,
+  // GST override columns — NON-MONETARY metadata, safe on the priced select and
+  // fed to the effective-tax resolver / editor. Never read as a money amount.
+  hsnCode: true,
+  gstRateBps: true,
+  taxTreatment: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.ProductSelect;
@@ -241,6 +246,11 @@ export async function createProduct(
         status: data.status,
         tags: data.tags,
         images: normaliseImages(data.images),
+        // GST overrides — non-monetary. A `null`/absent value stores null so the
+        // effective tax is inherited from the category / seller profile.
+        hsnCode: data.hsnCode ?? null,
+        gstRateBps: data.gstRateBps ?? null,
+        taxTreatment: data.taxTreatment ?? null,
       },
       select: PRICED_SELECT,
     });
@@ -324,6 +334,13 @@ export async function updateProduct(
   if (data.status !== undefined) update.status = data.status;
   if (data.tags !== undefined) update.tags = data.tags;
   if (data.images !== undefined) update.images = normaliseImages(data.images);
+  // GST overrides — present key writes the value (null clears the override back
+  // to "inherit"); an absent key leaves the stored value untouched.
+  if (data.hsnCode !== undefined) update.hsnCode = data.hsnCode ?? null;
+  if (data.gstRateBps !== undefined) update.gstRateBps = data.gstRateBps ?? null;
+  if (data.taxTreatment !== undefined) {
+    update.taxTreatment = data.taxTreatment ?? null;
+  }
 
   try {
     const row = await prisma.product.update({
@@ -380,6 +397,10 @@ export async function duplicateProduct(id: string): Promise<PricedProduct> {
       stockStatus: source.stockStatus,
       status: "INACTIVE",
       tags: source.tags,
+      // Preserve the GST overrides on the clone (non-monetary metadata).
+      hsnCode: source.hsnCode ?? null,
+      gstRateBps: source.gstRateBps ?? null,
+      taxTreatment: source.taxTreatment ?? null,
       images: source.images.map((image) => ({
         url: image.url,
         thumbUrl: image.thumbUrl ?? undefined,

@@ -66,6 +66,21 @@ export default async function OrderDetailPage({
     quantity: line.quantity,
     unitPricePaise: priced ? line.unitPricePaise : null,
     lineTotalPaise: priced ? line.lineTotalPaise : null,
+    // GST amounts are prices — attach ONLY for a priced viewer.
+    tax:
+      priced && line.tax
+        ? {
+            hsnCode: line.tax.hsnCode,
+            gstRateBps: line.tax.gstRateBps,
+            taxInclusive: line.tax.treatment === "TAX_INCLUSIVE",
+            taxablePaise: line.tax.taxablePaise,
+            taxPaise: line.tax.taxPaise,
+            cgstPaise: line.tax.cgstPaise,
+            sgstPaise: line.tax.sgstPaise,
+            igstPaise: line.tax.igstPaise,
+            grossPaise: line.tax.grossPaise,
+          }
+        : null,
   }));
 
   const detail: OrderHistoryDetail = {
@@ -78,6 +93,32 @@ export default async function OrderDetailPage({
     note: order.note,
     items,
     priced,
+    // The whole GST breakup is a price document — gated to a priced viewer.
+    tax:
+      priced && order.tax
+        ? {
+            supplyType: order.tax.supplyType,
+            sellerStateCode: order.tax.sellerStateCode,
+            sellerGstin: order.tax.sellerGstin,
+            placeOfSupplyStateCode: order.tax.placeOfSupplyStateCode,
+            totalTaxablePaise: order.tax.totalTaxablePaise,
+            totalCgstPaise: order.tax.totalCgstPaise,
+            totalSgstPaise: order.tax.totalSgstPaise,
+            totalIgstPaise: order.tax.totalIgstPaise,
+            totalTaxPaise: order.tax.totalTaxPaise,
+            roundOffPaise: order.tax.roundOffPaise,
+            grandTotalPaise: order.tax.grandTotalPaise,
+            hsnSummary: order.tax.hsnSummary.map((r) => ({
+              hsnCode: r.hsnCode,
+              gstRateBps: r.gstRateBps,
+              taxablePaise: r.taxablePaise,
+              taxPaise: r.taxPaise,
+              cgstPaise: r.cgstPaise,
+              sgstPaise: r.sgstPaise,
+              igstPaise: r.igstPaise,
+            })),
+          }
+        : null,
   };
 
   const cartCount = await cartCountForViewer(viewer);

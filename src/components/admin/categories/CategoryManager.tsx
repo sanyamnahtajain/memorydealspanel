@@ -30,6 +30,10 @@ export interface CategoryChild {
   status: "ACTIVE" | "INACTIVE";
   parentId: string | null;
   productCount: number;
+  /** GST default HSN/SAC for this category (null = none). */
+  defaultHsnCode: string | null;
+  /** GST default rate in basis points (null = none). */
+  defaultGstRateBps: number | null;
 }
 
 export interface CategoryNode extends Omit<CategoryChild, "parentId"> {
@@ -41,6 +45,11 @@ export interface CategoryNode extends Omit<CategoryChild, "parentId"> {
 
 interface CategoryManagerProps {
   initialCategories: CategoryNode[];
+  /**
+   * Whether the GST kill-switch is on. When false the category form hides its
+   * HSN / GST-default fields entirely, so the surface behaves exactly as pre-GST.
+   */
+  gstEnabled?: boolean;
 }
 
 type DialogState =
@@ -58,7 +67,10 @@ type DialogState =
  * pointer-draggable) and add / add-sub / edit dialogs. All mutations are
  * optimistic with sonner toasts; on failure the previous state is restored.
  */
-export function CategoryManager({ initialCategories }: CategoryManagerProps) {
+export function CategoryManager({
+  initialCategories,
+  gstEnabled = false,
+}: CategoryManagerProps) {
   const [categories, setCategories] =
     React.useState<CategoryNode[]>(initialCategories);
   const [dialog, setDialog] = React.useState<DialogState>(null);
@@ -240,6 +252,19 @@ export function CategoryManager({ initialCategories }: CategoryManagerProps) {
     async (values: CategoryFormValues): Promise<string | null> => {
       if (!dialog) return "No form open.";
 
+      // Percent → integer basis points; null clears the default. Only sent when
+      // the GST kill-switch is on (fields are hidden otherwise).
+      const defaultGstRateBps =
+        values.defaultGstRatePercent == null
+          ? null
+          : Math.round(values.defaultGstRatePercent * 100);
+      const taxFields = gstEnabled
+        ? {
+            defaultHsnCode: values.defaultHsnCode,
+            defaultGstRateBps,
+          }
+        : {};
+
       if (dialog.mode === "edit") {
         const result = await updateCategoryAction({
           id: dialog.target.id,
@@ -247,6 +272,7 @@ export function CategoryManager({ initialCategories }: CategoryManagerProps) {
             name: values.name,
             image: values.image,
             status: values.status,
+            ...taxFields,
           },
         });
         if (!result.ok) return result.error;
@@ -258,6 +284,7 @@ export function CategoryManager({ initialCategories }: CategoryManagerProps) {
           name: values.name,
           image: values.image ?? undefined,
           status: values.status,
+          ...taxFields,
           ...(parentId ? { parentId } : {}),
         });
         if (!result.ok) return result.error;
@@ -268,7 +295,7 @@ export function CategoryManager({ initialCategories }: CategoryManagerProps) {
       // Server action revalidated the path — fresh props arrive via effect.
       return null;
     },
-    [dialog],
+    [dialog, gstEnabled],
   );
 
   const isEmpty = categories.length === 0;
@@ -414,12 +441,18 @@ export function CategoryManager({ initialCategories }: CategoryManagerProps) {
               : undefined
         }
         submitLabel={dialog?.mode === "edit" ? "Save changes" : "Create"}
+        showTaxDefaults={gstEnabled}
         initial={
           dialog?.mode === "edit"
             ? {
                 name: dialog.target.name,
                 image: dialog.target.image,
                 status: dialog.target.status,
+                defaultHsnCode: dialog.target.defaultHsnCode,
+                defaultGstRatePercent:
+                  dialog.target.defaultGstRateBps == null
+                    ? null
+                    : dialog.target.defaultGstRateBps / 100,
               }
             : undefined
         }

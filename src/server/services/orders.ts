@@ -14,6 +14,21 @@ import { writeAudit } from "@/server/security/audit";
 import { sendPushToAdmin } from "@/server/notify/push";
 import { withPlacementLock } from "@/server/services/placement-lock";
 import type { StockStatus } from "@/lib/schemas/shared";
+import {
+  computeLineTax,
+  determineSupplyType,
+  splitTax,
+  summariseOrderTax,
+  type SupplyType,
+  type TaxTreatment,
+} from "@/lib/gst";
+import {
+  resolveEffectiveTax,
+  resolveVariantEffectiveTax,
+  type EffectiveTax,
+  type ProfileTaxDefaults,
+} from "@/lib/tax-inherit";
+import { getSellerTaxProfile } from "@/server/services/tax-profile";
 
 /**
  * Orders service — the anti-cheat heart of Cart & Orders (Phase 12).
@@ -147,6 +162,14 @@ export interface PricedCartLine {
   orderable: boolean;
   /** Non-fatal warnings (e.g. below-moq clamp, low stock) + fatal reasons. */
   issues: CartLineIssue[];
+  /**
+   * The resolved effective tax (variant→product→category→profile) for THIS
+   * line, or `null` when the GST kill-switch is off. Used to freeze the per-line
+   * tax into the order snapshot and to build the live cart tax preview. NON-
+   * MONETARY (hsn / rate / treatment) — the paise breakup is derived from it and
+   * the server unit price at the point of use, never trusted from the client.
+   */
+  effectiveTax: EffectiveTax | null;
 }
 
 /** The fully-priced cart for a customer, ready to render or place. */
@@ -160,9 +183,45 @@ export interface PricedCart {
   itemCount: number;
   /** Distinct orderable line count. */
   lineCount: number;
+  /**
+   * The order-preview GST summary over the ORDERABLE lines, or `null` when the
+   * GST kill-switch is off. Computed with the SAME core functions as placement,
+   * so the "Place order" grand total the customer sees is exactly what the
+   * placed order will freeze. NON-authoritative (a live preview) — placement
+   * re-derives it.
+   */
+  taxPreview: CartTaxPreview | null;
 }
 
-/** Product row shape we need to price + validate a line (money INCLUDED). */
+/**
+ * A live, gated GST preview of the cart. Only ever produced for a price-
+ * authorised viewer with the kill-switch on. All *Paise are integer paise.
+ *
+ * `supplyType` is `null` when the customer has no place of supply — the split
+ * fields are then all 0 and only `totalTaxPaise` (combined) is meaningful; the
+ * UI shows a single "GST @X%" line + a prompt to add a GSTIN.
+ */
+export interface CartTaxPreview {
+  supplyType: SupplyType | null;
+  totalTaxablePaise: number;
+  totalTaxPaise: number;
+  totalCgstPaise: number;
+  totalSgstPaise: number;
+  totalIgstPaise: number;
+  roundOffPaise: number;
+  /** Final payable incl. GST (and any invoice round-off). */
+  grandTotalPaise: number;
+}
+
+/**
+ * Product row shape we need to price + validate a line (money INCLUDED).
+ *
+ * The GST columns (`hsnCode`/`gstRateBps`/`taxTreatment` + the joined category
+ * defaults, plus the same per-variant columns) are NON-MONETARY metadata; they
+ * feed the effective-tax resolver at placement so the frozen order snapshot can
+ * carry a rate that a later catalog edit can never alter. When the GST
+ * kill-switch is off they are simply never read.
+ */
 const CART_PRODUCT_SELECT = {
   id: true,
   name: true,
@@ -176,6 +235,10 @@ const CART_PRODUCT_SELECT = {
   status: true,
   deletedAt: true,
   hasVariants: true,
+  hsnCode: true,
+  gstRateBps: true,
+  taxTreatment: true,
+  category: { select: { defaultHsnCode: true, defaultGstRateBps: true } },
   images: { select: { url: true, thumbUrl: true, isPrimary: true } },
   variants: {
     select: {
@@ -186,6 +249,9 @@ const CART_PRODUCT_SELECT = {
       moq: true,
       stockStatus: true,
       status: true,
+      hsnCode: true,
+      gstRateBps: true,
+      taxTreatment: true,
     },
   },
 } satisfies Prisma.ProductSelect;
@@ -226,6 +292,83 @@ function primaryImageUrl(images: CartProductRow["images"]): string | null {
   return primary ? primary.thumbUrl ?? primary.url : null;
 }
 
+// ---------------------------------------------------------------------------
+// GST context (kill-switch aware)
+// ---------------------------------------------------------------------------
+
+/**
+ * The per-placement GST context: the seller identity/state + the inheritance
+ * backstop, plus whether the kill-switch is on. `enabled: false` ⇒ every tax
+ * resolution short-circuits to `null` and the order behaves EXACTLY as pre-GST.
+ */
+interface TaxContext {
+  enabled: boolean;
+  profile: ProfileTaxDefaults;
+  sellerStateCode: string | null;
+  sellerGstin: string | null;
+  roundingMode: "LINE" | "INVOICE";
+}
+
+/**
+ * Load the GST context from the (React-`cache()`d) singleton seller profile.
+ * Returns `null` when GST is disabled so callers can cheaply skip all tax work.
+ */
+async function loadTaxContext(): Promise<TaxContext | null> {
+  const p = await getSellerTaxProfile();
+  if (!p.gstEnabled) return null;
+  return {
+    enabled: true,
+    profile: {
+      defaultHsnCode: p.defaultHsnCode,
+      defaultGstRateBps: p.defaultGstRateBps,
+      priceEntryMode: p.priceEntryMode,
+    },
+    sellerStateCode: p.stateCode,
+    sellerGstin: p.gstin,
+    roundingMode: p.roundingMode,
+  };
+}
+
+/**
+ * Resolve the effective tax for a (product, variant?) pair against the tax
+ * context, honouring the full inheritance chain. Returns `null` when GST is off.
+ */
+function resolveLineEffectiveTax(
+  ctx: TaxContext | null,
+  product: CartProductRow,
+  variant: CartProductRow["variants"][number] | null,
+): EffectiveTax | null {
+  if (!ctx) return null;
+  const productEntity = {
+    hsnCode: product.hsnCode,
+    gstRateBps: product.gstRateBps,
+    taxTreatment: product.taxTreatment,
+  };
+  const category = product.category
+    ? {
+        defaultHsnCode: product.category.defaultHsnCode,
+        defaultGstRateBps: product.category.defaultGstRateBps,
+      }
+    : null;
+  if (variant) {
+    return resolveVariantEffectiveTax({
+      variant: {
+        hsnCode: variant.hsnCode,
+        gstRateBps: variant.gstRateBps,
+        taxTreatment: variant.taxTreatment,
+      },
+      product: productEntity,
+      category,
+      profile: ctx.profile,
+    });
+  }
+  return resolveEffectiveTax({
+    entity: productEntity,
+    category,
+    profile: ctx.profile,
+  });
+}
+
 /**
  * Price + validate ONE cart line against its live product/variant row. Returns
  * a fully-priced line; `orderable` is false (with a fatal issue) when the line
@@ -236,6 +379,7 @@ function priceLine(
   product: CartProductRow | undefined,
   variantId: string | null,
   requestedQuantity: number,
+  ctx: TaxContext | null,
 ): PricedCartLine | null {
   // Product vanished entirely (hard-deleted) — drop the line silently; it can
   // no longer be represented. (Soft-delete is handled below as "unavailable".)
@@ -243,7 +387,7 @@ function priceLine(
     return null;
   }
 
-  const base: Omit<PricedCartLine, "unitPricePaise" | "lineTotalPaise" | "orderable" | "quantity" | "issues"> & {
+  const base: Omit<PricedCartLine, "unitPricePaise" | "lineTotalPaise" | "orderable" | "quantity" | "issues" | "effectiveTax"> & {
     quantity: number;
   } = {
     productId: product.id,
@@ -269,6 +413,7 @@ function priceLine(
   let sku = product.sku;
   let vLabel: string | null = null;
   let variantMissing = false;
+  let resolvedVariant: CartProductRow["variants"][number] | null = null;
 
   if (variantId) {
     const variant = product.variants.find((v) => v.id === variantId);
@@ -280,6 +425,7 @@ function priceLine(
       moq = variant.moq ?? product.moq ?? MIN_QTY_PER_LINE;
       sku = variant.sku;
       vLabel = variantLabel(variant.optionValues);
+      resolvedVariant = variant;
     }
   } else if (product.hasVariants) {
     // A variant product with no variant pinned is not orderable as-is.
@@ -287,6 +433,10 @@ function priceLine(
   }
 
   const { quantity, issues } = clampQuantity(requestedQuantity, moq);
+
+  // Effective GST for THIS unit (null when the kill-switch is off). The paise
+  // breakup is derived later from this + the SERVER unit price — never trusted.
+  const effectiveTax = resolveLineEffectiveTax(ctx, product, resolvedVariant);
 
   // Guard the server price itself; a corrupt row must never produce a bogus total.
   assertPaise(unitPricePaise, "unitPricePaise");
@@ -313,6 +463,7 @@ function priceLine(
     lineTotalPaise: orderable ? lineTotalPaise : 0,
     orderable,
     issues: [...fatal, ...issues],
+    effectiveTax,
   };
 }
 
@@ -367,6 +518,8 @@ export async function priceCartForCustomer(customerId: string): Promise<PricedCa
     select: { productId: true, variantId: true, quantity: true },
   });
 
+  // Load the GST context once (null when the kill-switch is off). Fetched even
+  // for an empty cart is wasteful, so short-circuit that case first.
   if (cartItems.length === 0) {
     return {
       lines: [],
@@ -375,8 +528,14 @@ export async function priceCartForCustomer(customerId: string): Promise<PricedCa
       subtotalPaise: 0,
       itemCount: 0,
       lineCount: 0,
+      taxPreview: null,
     };
   }
+
+  const [ctx, placeOfSupply] = await Promise.all([
+    loadTaxContext(),
+    resolvePlaceOfSupply(customerId),
+  ]);
 
   const productIds = [...new Set(cartItems.map((c) => c.productId))];
   const products = await prisma.product.findMany({
@@ -387,7 +546,7 @@ export async function priceCartForCustomer(customerId: string): Promise<PricedCa
 
   const lines: PricedCartLine[] = [];
   for (const item of cartItems) {
-    const line = priceLine(byId.get(item.productId), item.variantId, item.quantity);
+    const line = priceLine(byId.get(item.productId), item.variantId, item.quantity, ctx);
     if (line) lines.push(line);
   }
 
@@ -396,6 +555,21 @@ export async function priceCartForCustomer(customerId: string): Promise<PricedCa
   const subtotalPaise = orderableLines.reduce((sum, l) => sum + l.lineTotalPaise, 0);
   const itemCount = orderableLines.reduce((sum, l) => sum + l.quantity, 0);
 
+  // GST preview over the orderable lines (null when the kill-switch is off).
+  const computed = computeOrderTax(orderableLines, ctx, placeOfSupply);
+  const taxPreview: CartTaxPreview | null = computed
+    ? {
+        supplyType: computed.order.supplyType,
+        totalTaxablePaise: computed.order.totalTaxablePaise,
+        totalTaxPaise: computed.order.totalTaxPaise,
+        totalCgstPaise: computed.order.totalCgstPaise,
+        totalSgstPaise: computed.order.totalSgstPaise,
+        totalIgstPaise: computed.order.totalIgstPaise,
+        roundOffPaise: computed.order.roundOffPaise,
+        grandTotalPaise: computed.order.grandTotalPaise,
+      }
+    : null;
+
   return {
     lines,
     orderableLines,
@@ -403,12 +577,60 @@ export async function priceCartForCustomer(customerId: string): Promise<PricedCa
     subtotalPaise,
     itemCount,
     lineCount: orderableLines.length,
+    taxPreview,
   };
+}
+
+/**
+ * The customer's place of supply for GST: the GSTIN-derived state wins for a
+ * registered buyer, else the explicit billing state. `null` when neither is set
+ * (the buyer hasn't provided a GSTIN) — supply type is then undetermined and the
+ * tax is shown combined, with a prompt to add a GSTIN. IDOR-safe: `customerId`
+ * comes only from the resolved viewer.
+ */
+async function resolvePlaceOfSupply(customerId: string): Promise<string | null> {
+  const customer = await prisma.customer.findUnique({
+    where: { id: customerId },
+    select: { gstStateCode: true, placeOfSupplyStateCode: true },
+  });
+  if (!customer) return null;
+  return customer.gstStateCode ?? customer.placeOfSupplyStateCode ?? null;
 }
 
 // ---------------------------------------------------------------------------
 // Order snapshot items
 // ---------------------------------------------------------------------------
+
+/**
+ * The frozen per-line GST breakup stored inside an `Order.items` line. Present
+ * ONLY when GST was enabled at placement; absent (undefined) for a pre-GST /
+ * kill-switch-off order so those orders keep their exact historical shape.
+ *
+ * `lineTotalPaise` on the snapshot is `qty × unitPrice` (the taxable base for an
+ * exclusive price, or the gross for an inclusive one — matching `subtotalPaise`,
+ * which is unchanged). These GST fields are ADDITIVE and computed off the same
+ * server figures via {@link computeLineTax}; `taxablePaise + taxPaise ===
+ * grossPaise` holds exactly. The rate is FROZEN — a later catalog change never
+ * mutates a placed order.
+ */
+export interface OrderItemTaxSnapshot {
+  hsnCode: string | null;
+  /** Rate in basis points frozen at placement (1800 = 18%). */
+  gstRateBps: number;
+  treatment: TaxTreatment;
+  /** GST-exclusive taxable base for the whole line (qty applied). */
+  taxablePaise: number;
+  /** Total GST for the whole line. */
+  taxPaise: number;
+  /** CGST for the line (0 for INTER / combined). */
+  cgstPaise: number;
+  /** SGST for the line (0 for INTER / combined). */
+  sgstPaise: number;
+  /** IGST for the line (0 for INTRA / combined). */
+  igstPaise: number;
+  /** Landed, tax-inclusive amount for the whole line. */
+  grossPaise: number;
+}
 
 /** One snapshotted line stored on the Order (immune to later catalog changes). */
 export interface OrderItemSnapshot {
@@ -423,9 +645,11 @@ export interface OrderItemSnapshot {
   quantity: number;
   unitPricePaise: number;
   lineTotalPaise: number;
+  /** Frozen per-line GST breakup; absent when GST was off at placement. */
+  tax?: OrderItemTaxSnapshot;
 }
 
-function toSnapshot(line: PricedCartLine): OrderItemSnapshot {
+function toSnapshot(line: PricedCartLine, tax?: OrderItemTaxSnapshot): OrderItemSnapshot {
   return {
     productId: line.productId,
     variantId: line.variantId,
@@ -438,6 +662,195 @@ function toSnapshot(line: PricedCartLine): OrderItemSnapshot {
     quantity: line.quantity,
     unitPricePaise: line.unitPricePaise,
     lineTotalPaise: line.lineTotalPaise,
+    ...(tax ? { tax } : {}),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Order tax computation — the single source of truth shared by the live cart
+// preview and the frozen placement snapshot. Given the orderable lines and the
+// GST context, it computes the per-line breakup + the order-level totals with
+// the SAME core functions, so preview and placement agree to the paisa.
+// ---------------------------------------------------------------------------
+
+/** The order-level tax totals + supply context frozen onto an Order. */
+export interface OrderTaxSnapshot {
+  supplyType: SupplyType | null;
+  sellerStateCode: string | null;
+  sellerGstin: string | null;
+  placeOfSupplyStateCode: string | null;
+  totalTaxablePaise: number;
+  totalCgstPaise: number;
+  totalSgstPaise: number;
+  totalIgstPaise: number;
+  totalTaxPaise: number;
+  roundOffPaise: number;
+  grandTotalPaise: number;
+  hsnSummary: HsnSummaryRow[];
+}
+
+/** One HSN summary row (grouped by hsn + rate) frozen onto the order. */
+export interface HsnSummaryRow {
+  hsnCode: string | null;
+  gstRateBps: number;
+  taxablePaise: number;
+  taxPaise: number;
+  cgstPaise: number;
+  sgstPaise: number;
+  igstPaise: number;
+}
+
+/** Result of {@link computeOrderTax}: per-line breakups + order-level totals. */
+interface ComputedOrderTax {
+  perLine: (OrderItemTaxSnapshot | undefined)[];
+  order: OrderTaxSnapshot;
+}
+
+/**
+ * Compute the whole-order GST breakup from the orderable lines + the GST
+ * context. For each line the whole-line amount (`unitPrice × qty`) is run
+ * through {@link computeLineTax} at the line's FROZEN effective rate/treatment,
+ * then split by the order's supply type.
+ *
+ * Supply type is derived ONCE from the seller state vs. the customer's place of
+ * supply. When it is `null` (no place of supply) the tax is still computed
+ * (combined) so the grand total is correct, but NOT split — cgst/sgst/igst stay
+ * 0 and only `totalTaxPaise` carries the combined GST.
+ *
+ * Returns `null` when GST is off (no context) so callers keep the pre-GST path.
+ */
+function computeOrderTax(
+  lines: PricedCartLine[],
+  ctx: TaxContext | null,
+  placeOfSupplyStateCode: string | null,
+): ComputedOrderTax | null {
+  if (!ctx) return null;
+
+  const supplyType = determineSupplyType(ctx.sellerStateCode, placeOfSupplyStateCode);
+
+  // Per-line breakup at each line's frozen rate/treatment.
+  const perLine = lines.map((line): OrderItemTaxSnapshot | undefined => {
+    const eff = line.effectiveTax;
+    if (!eff) return undefined;
+    const base = computeLineTax({
+      amountPaise: line.lineTotalPaise,
+      gstRateBps: eff.gstRateBps,
+      treatment: eff.treatment,
+    });
+    const split =
+      supplyType === null
+        ? { cgstPaise: 0, sgstPaise: 0, igstPaise: 0 }
+        : splitTax(base.taxPaise, supplyType);
+    return {
+      hsnCode: eff.hsnCode,
+      gstRateBps: eff.gstRateBps,
+      treatment: eff.treatment,
+      taxablePaise: base.taxablePaise,
+      taxPaise: base.taxPaise,
+      cgstPaise: split.cgstPaise,
+      sgstPaise: split.sgstPaise,
+      igstPaise: split.igstPaise,
+      grossPaise: base.grossPaise,
+    };
+  });
+
+  // Order-level totals + HSN summary. When a supply type is known we reuse
+  // summariseOrderTax (per-line split → drift-free totals). When it is unknown
+  // we sum the combined tax ourselves (no split) so the grand total is still
+  // correct; the invoice round-off is applied identically either way.
+  const order = supplyType === null
+    ? summariseCombined(perLine, ctx, placeOfSupplyStateCode)
+    : (() => {
+        const s = summariseOrderTax(
+          perLine
+            .filter((t): t is OrderItemTaxSnapshot => t !== undefined)
+            .map((t) => ({
+              taxablePaise: t.taxablePaise,
+              taxPaise: t.taxPaise,
+              grossPaise: t.grossPaise,
+              gstRateBps: t.gstRateBps,
+              hsnCode: t.hsnCode,
+            })),
+          { supplyType, roundingMode: ctx.roundingMode },
+        );
+        return {
+          supplyType,
+          sellerStateCode: ctx.sellerStateCode,
+          sellerGstin: ctx.sellerGstin,
+          placeOfSupplyStateCode,
+          totalTaxablePaise: s.totalTaxablePaise,
+          totalCgstPaise: s.totalCgstPaise,
+          totalSgstPaise: s.totalSgstPaise,
+          totalIgstPaise: s.totalIgstPaise,
+          totalTaxPaise: s.totalTaxPaise,
+          roundOffPaise: s.roundOffPaise,
+          grandTotalPaise: s.grandTotalPaise,
+          hsnSummary: s.hsnSummary,
+        } satisfies OrderTaxSnapshot;
+      })();
+
+  return { perLine, order };
+}
+
+/**
+ * Combined-tax summary for the `supplyType === null` case (customer has no
+ * place of supply): sum the per-line taxable/tax/gross with NO CGST/SGST/IGST
+ * split, group the HSN rows, and apply the invoice round-off identically.
+ */
+function summariseCombined(
+  perLine: (OrderItemTaxSnapshot | undefined)[],
+  ctx: TaxContext,
+  placeOfSupplyStateCode: string | null,
+): OrderTaxSnapshot {
+  const roundingMode = ctx.roundingMode;
+  let totalTaxablePaise = 0;
+  let totalTaxPaise = 0;
+  let totalGrossPaise = 0;
+  const groups = new Map<string, HsnSummaryRow>();
+
+  for (const t of perLine) {
+    if (!t) continue;
+    totalTaxablePaise += t.taxablePaise;
+    totalTaxPaise += t.taxPaise;
+    totalGrossPaise += t.grossPaise;
+    const key = `${t.hsnCode ?? ""}|${t.gstRateBps}`;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.taxablePaise += t.taxablePaise;
+      existing.taxPaise += t.taxPaise;
+    } else {
+      groups.set(key, {
+        hsnCode: t.hsnCode,
+        gstRateBps: t.gstRateBps,
+        taxablePaise: t.taxablePaise,
+        taxPaise: t.taxPaise,
+        cgstPaise: 0,
+        sgstPaise: 0,
+        igstPaise: 0,
+      });
+    }
+  }
+
+  let roundOffPaise = 0;
+  let grandTotalPaise = totalGrossPaise;
+  if (roundingMode === "INVOICE") {
+    grandTotalPaise = Math.round(totalGrossPaise / 100) * 100;
+    roundOffPaise = grandTotalPaise - totalGrossPaise;
+  }
+
+  return {
+    supplyType: null,
+    sellerStateCode: ctx.sellerStateCode,
+    sellerGstin: ctx.sellerGstin,
+    placeOfSupplyStateCode,
+    totalTaxablePaise,
+    totalCgstPaise: 0,
+    totalSgstPaise: 0,
+    totalIgstPaise: 0,
+    totalTaxPaise,
+    roundOffPaise,
+    grandTotalPaise,
+    hsnSummary: [...groups.values()],
   };
 }
 
@@ -454,6 +867,12 @@ export interface CustomerOrder {
   itemCount: number;
   note: string | null;
   placedAt: Date;
+  /**
+   * The frozen order-level GST snapshot, or `null` when GST was off at
+   * placement (pre-GST parity: subtotalPaise is the total). Read verbatim — a
+   * later catalog / profile change never mutates it.
+   */
+  tax: OrderTaxSnapshot | null;
 }
 
 /** A random, non-enumerable public order reference, e.g. "MD-4F8K2Q7ZX1AB". */
@@ -601,7 +1020,20 @@ async function placeOrderLocked(
     return { ok: false, error: "rate-limit", message: new OrderRateLimitError().message };
   }
 
-  const items = cart.orderableLines.map(toSnapshot);
+  // GST snapshot — FROZEN at placement. Re-resolve the context + the customer's
+  // place of supply and compute the whole-order breakup with the same core
+  // functions as the live preview, so the placed order matches to the paisa.
+  // `computed` is null when the kill-switch is off ⇒ every tax field stays null
+  // and the order behaves exactly as pre-GST.
+  const [ctx, placeOfSupply] = await Promise.all([
+    loadTaxContext(),
+    resolvePlaceOfSupply(customerId),
+  ]);
+  const computed = computeOrderTax(cart.orderableLines, ctx, placeOfSupply);
+
+  const items = cart.orderableLines.map((line, i) =>
+    toSnapshot(line, computed?.perLine[i]),
+  );
 
   // (6) ONE transaction: create the order (server-priced snapshot) and clear the
   // cart. Both blocked and ordered lines are removed so a placed cart empties
@@ -616,7 +1048,14 @@ async function placeOrderLocked(
   let order: OrderRow;
   const orderNumber = generateOrderNumber();
   try {
-    order = await placeOrderTransaction(customerId, orderNumber, items, cart, note);
+    order = await placeOrderTransaction(
+      customerId,
+      orderNumber,
+      items,
+      cart,
+      note,
+      computed?.order ?? null,
+    );
   } catch (error) {
     if (isWriteConflict(error)) {
       const winner = await prisma.order.findFirst({
@@ -667,7 +1106,29 @@ function placeOrderTransaction(
   items: OrderItemSnapshot[],
   cart: PricedCart,
   note: string | null,
+  tax: OrderTaxSnapshot | null,
 ): Promise<OrderRow> {
+  // The order-level GST columns. When `tax` is null (kill-switch off) they are
+  // ALL left at their schema defaults/null and `taxApplied` is false — the order
+  // is byte-for-byte a pre-GST order (subtotalPaise remains the effective total).
+  const taxFields: Partial<Prisma.OrderUncheckedCreateInput> = tax
+    ? {
+        taxApplied: true,
+        supplyType: tax.supplyType,
+        sellerStateCode: tax.sellerStateCode,
+        sellerGstin: tax.sellerGstin,
+        placeOfSupplyStateCode: tax.placeOfSupplyStateCode,
+        totalTaxablePaise: tax.totalTaxablePaise,
+        totalCgstPaise: tax.supplyType === "INTRA" ? tax.totalCgstPaise : null,
+        totalSgstPaise: tax.supplyType === "INTRA" ? tax.totalSgstPaise : null,
+        totalIgstPaise: tax.supplyType === "INTER" ? tax.totalIgstPaise : null,
+        totalTaxPaise: tax.totalTaxPaise,
+        roundOffPaise: tax.roundOffPaise,
+        grandTotalPaise: tax.grandTotalPaise,
+        hsnSummary: tax.hsnSummary as unknown as Prisma.InputJsonValue,
+      }
+    : {};
+
   return prisma.$transaction(async (tx) => {
     const created = await tx.order.create({
       data: {
@@ -678,6 +1139,7 @@ function placeOrderTransaction(
         subtotalPaise: cart.subtotalPaise,
         itemCount: cart.itemCount,
         note,
+        ...taxFields,
       },
     });
     await tx.cartItem.deleteMany({ where: { customerId } });
@@ -736,6 +1198,55 @@ async function notifyAdminsOfOrder(
 
 type OrderRow = Prisma.OrderGetPayload<Record<string, never>>;
 
+/**
+ * The Order columns {@link toOrderTaxSnapshot} reads. Declared structurally so a
+ * partial Prisma select (admin/customer detail reads) satisfies it without the
+ * full row.
+ */
+export interface OrderTaxColumns {
+  taxApplied: boolean;
+  supplyType: SupplyType | null;
+  sellerStateCode: string | null;
+  sellerGstin: string | null;
+  placeOfSupplyStateCode: string | null;
+  totalTaxablePaise: number | null;
+  totalCgstPaise: number | null;
+  totalSgstPaise: number | null;
+  totalIgstPaise: number | null;
+  totalTaxPaise: number | null;
+  roundOffPaise: number | null;
+  grandTotalPaise: number | null;
+  hsnSummary: Prisma.JsonValue;
+  subtotalPaise: number;
+}
+
+/**
+ * Rebuild the frozen {@link OrderTaxSnapshot} from a persisted Order row.
+ * Returns `null` when `taxApplied` is false (a pre-GST / kill-switch-off order),
+ * so those orders present exactly as before. The stored HSN summary JSON is
+ * coerced defensively.
+ */
+export function toOrderTaxSnapshot(order: OrderTaxColumns): OrderTaxSnapshot | null {
+  if (!order.taxApplied) return null;
+  const hsnSummary: HsnSummaryRow[] = Array.isArray(order.hsnSummary)
+    ? (order.hsnSummary as unknown as HsnSummaryRow[])
+    : [];
+  return {
+    supplyType: order.supplyType ?? null,
+    sellerStateCode: order.sellerStateCode ?? null,
+    sellerGstin: order.sellerGstin ?? null,
+    placeOfSupplyStateCode: order.placeOfSupplyStateCode ?? null,
+    totalTaxablePaise: order.totalTaxablePaise ?? 0,
+    totalCgstPaise: order.totalCgstPaise ?? 0,
+    totalSgstPaise: order.totalSgstPaise ?? 0,
+    totalIgstPaise: order.totalIgstPaise ?? 0,
+    totalTaxPaise: order.totalTaxPaise ?? 0,
+    roundOffPaise: order.roundOffPaise ?? 0,
+    grandTotalPaise: order.grandTotalPaise ?? order.subtotalPaise,
+    hsnSummary,
+  };
+}
+
 function toCustomerOrder(order: OrderRow): CustomerOrder {
   const items = Array.isArray(order.items)
     ? (order.items as unknown as OrderItemSnapshot[])
@@ -749,6 +1260,7 @@ function toCustomerOrder(order: OrderRow): CustomerOrder {
     itemCount: order.itemCount,
     note: order.note,
     placedAt: order.placedAt,
+    tax: toOrderTaxSnapshot(order),
   };
 }
 

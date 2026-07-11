@@ -497,3 +497,84 @@ describe("performance", () => {
     expect(elapsed).toBeLessThan(4000);
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* validateRows — GST columns (hsn_code / gst_rate / tax_inclusive)    */
+/* ------------------------------------------------------------------ */
+
+describe("validateRows — GST columns", () => {
+  const GST_HEADER = [...FULL_HEADER, "HSN code", "GST rate (%)", "Tax inclusive"];
+  const mapping = mapFor(GST_HEADER);
+
+  const rowWith = (over: Record<string, string>): RawRow => ({
+    Name: "Kingston 16GB",
+    SKU: "K16",
+    Brand: "Kingston",
+    Category: "RAM",
+    "Price (₹)": "4999",
+    "MRP (₹)": "",
+    MOQ: "",
+    "Stock status": "",
+    Status: "",
+    Tags: "",
+    Description: "",
+    "HSN code": "",
+    "GST rate (%)": "",
+    "Tax inclusive": "",
+    ...over,
+  });
+
+  it("auto-maps the GST headers to their canonical fields", () => {
+    expect(mapping.hsnCode).toBe("HSN code");
+    expect(mapping.gstRate).toBe("GST rate (%)");
+    expect(mapping.taxInclusive).toBe("Tax inclusive");
+  });
+
+  it("coerces a percent GST rate to integer basis points", () => {
+    const res = validateRows(
+      [rowWith({ "HSN code": "8523", "GST rate (%)": "18" })],
+      mapping,
+      [],
+      CATEGORIES,
+    );
+    expect(res.rows[0].errors).toEqual([]);
+    expect(res.rows[0].values.hsnCode).toBe("8523");
+    expect(res.rows[0].values.gstRateBps).toBe(1800);
+  });
+
+  it("accepts a fractional percent and a trailing % sign", () => {
+    const res = validateRows(
+      [rowWith({ "GST rate (%)": "2.5%" })],
+      mapping,
+      [],
+      CATEGORIES,
+    );
+    expect(res.rows[0].values.gstRateBps).toBe(250);
+  });
+
+  it("maps a truthy tax_inclusive cell to TAX_INCLUSIVE and falsy to TAX_EXCLUSIVE", () => {
+    const incl = validateRows([rowWith({ "Tax inclusive": "yes" })], mapping, [], CATEGORIES);
+    expect(incl.rows[0].values.taxTreatment).toBe("TAX_INCLUSIVE");
+    const excl = validateRows([rowWith({ "Tax inclusive": "no" })], mapping, [], CATEGORIES);
+    expect(excl.rows[0].values.taxTreatment).toBe("TAX_EXCLUSIVE");
+  });
+
+  it("flags an invalid GST rate with a per-cell error", () => {
+    const res = validateRows(
+      [rowWith({ "GST rate (%)": "abc" })],
+      mapping,
+      [],
+      CATEGORIES,
+    );
+    expect(res.rows[0].errors.some((e) => e.field === "gstRate")).toBe(true);
+    expect(res.rows[0].operation).toBe("invalid");
+  });
+
+  it("leaves GST fields unset when the cells are blank (inherit)", () => {
+    const res = validateRows([rowWith({})], mapping, [], CATEGORIES);
+    expect(res.rows[0].errors).toEqual([]);
+    expect(res.rows[0].values.hsnCode).toBeUndefined();
+    expect(res.rows[0].values.gstRateBps).toBeUndefined();
+    expect(res.rows[0].values.taxTreatment).toBeUndefined();
+  });
+});

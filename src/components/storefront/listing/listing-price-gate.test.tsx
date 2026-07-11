@@ -83,6 +83,8 @@ const publicProduct: PublicProduct = {
   hasVariants: false,
   optionTypes: [],
   variants: [],
+  // GST kill-switch off ⇒ no rate ⇒ the storefront shows no GST hint.
+  tax: { hsnCode: null, gstRateBps: null, taxInclusive: false },
 };
 
 const pricedProduct: PricedProduct = {
@@ -92,6 +94,7 @@ const pricedProduct: PricedProduct = {
   mrp: 159900,
   marginPct: 19,
   variants: [],
+  taxBreakdown: null,
 };
 
 /** Any rupee amount or bare price digit that must NOT appear when gated. */

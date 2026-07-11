@@ -25,6 +25,7 @@ export const PERMISSIONS = {
   USERS_MANAGE: "users.manage",
   ROLES_MANAGE: "roles.manage",
   SETTINGS_MANAGE: "settings.manage",
+  SETTINGS_TAX_MANAGE: "settings.tax.manage",
 } as const;
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -66,6 +67,7 @@ export const PERMISSION_GROUPS: {
       { key: PERMISSIONS.USERS_MANAGE, label: "Manage users", description: "Create, edit, deactivate admin users and assign roles." },
       { key: PERMISSIONS.ROLES_MANAGE, label: "Manage roles", description: "Create and edit roles and their permissions." },
       { key: PERMISSIONS.SETTINGS_MANAGE, label: "Manage settings", description: "Change business/app settings." },
+      { key: PERMISSIONS.SETTINGS_TAX_MANAGE, label: "Manage tax settings", description: "Configure the GST / tax profile (rates, GSTIN, display)." },
     ],
   },
 ];

@@ -282,7 +282,7 @@ export async function discoverProducts(
     const hasMore = rows.length > take;
     const page = hasMore ? rows.slice(0, take) : rows;
     return {
-      items: page.map(toPricedProduct),
+      items: page.map((row) => toPricedProduct(row)),
       nextCursor: hasMore ? page[page.length - 1]!.id : null,
       total,
       priceApplied,
@@ -302,7 +302,7 @@ export async function discoverProducts(
   const hasMore = rows.length > take;
   const page = hasMore ? rows.slice(0, take) : rows;
   return {
-    items: page.map(toPublicProduct),
+    items: page.map((row) => toPublicProduct(row)),
     nextCursor: hasMore ? page[page.length - 1]!.id : null,
     total,
     priceApplied: false,

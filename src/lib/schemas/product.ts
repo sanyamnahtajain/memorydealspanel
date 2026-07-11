@@ -6,6 +6,30 @@ import {
   stockStatusSchema,
 } from "./shared";
 
+/**
+ * GST rate in basis points (1800 === 18.00%). A non-negative integer, capped at
+ * 100_000 bps (1000%) as a sanity guard — the same bound the seller-profile
+ * service enforces. Nullable/absent means "inherit" (defer to category/profile).
+ */
+export const gstRateBpsSchema = z
+  .number("GST rate must be a number")
+  .int("GST rate must be whole basis points")
+  .min(0, "GST rate must not be negative")
+  .max(100_000, "GST rate is too high");
+
+/**
+ * HSN/SAC classification code — a short alphanumeric string. Non-monetary
+ * metadata; nullable/absent means "inherit".
+ */
+export const hsnCodeSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(16, "HSN code is too long (max 16)");
+
+/** Storage/entry treatment override; null/absent means inherit the profile default. */
+export const taxTreatmentSchema = z.enum(["TAX_EXCLUSIVE", "TAX_INCLUSIVE"]);
+
 /** Positive integer paise (₹499.50 === 49950). Money is never a float. */
 export const paiseSchema = z
   .number("price must be a number")
@@ -58,6 +82,12 @@ const productCoreSchema = z.object({
   status: entityStatusSchema,
   tags: z.array(z.string().trim().min(1)).max(20),
   images: imagesSchema,
+  // GST overrides — all NON-MONETARY metadata. `null` explicitly clears an
+  // override back to "inherit" (category → seller profile); `undefined` in an
+  // update leaves the stored value unchanged.
+  hsnCode: hsnCodeSchema.nullish(),
+  gstRateBps: gstRateBpsSchema.nullish(),
+  taxTreatment: taxTreatmentSchema.nullish(),
 });
 
 const mrpNotBelowPrice: { message: string; path: string[] } = {

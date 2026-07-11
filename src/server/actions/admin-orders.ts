@@ -67,6 +67,18 @@ export interface OrderRowDTO {
   customer: OrderCustomerDTO | null;
 }
 
+export interface OrderLineTaxDTO {
+  hsnCode: string | null;
+  gstRateBps: number;
+  taxInclusive: boolean;
+  taxablePaise: number;
+  taxPaise: number;
+  cgstPaise: number;
+  sgstPaise: number;
+  igstPaise: number;
+  grossPaise: number;
+}
+
 export interface OrderLineDTO {
   productId: string;
   variantId: string | null;
@@ -78,12 +90,43 @@ export interface OrderLineDTO {
   quantity: number;
   unitPricePaise: number;
   lineTotalPaise: number;
+  /** Frozen per-line GST breakup; null for a pre-GST order. */
+  tax: OrderLineTaxDTO | null;
+}
+
+/** One HSN summary row for the invoice-style tax table. */
+export interface OrderHsnRowDTO {
+  hsnCode: string | null;
+  gstRateBps: number;
+  taxablePaise: number;
+  taxPaise: number;
+  cgstPaise: number;
+  sgstPaise: number;
+  igstPaise: number;
+}
+
+/** The frozen order-level GST snapshot, serialized for the admin view. */
+export interface OrderTaxDTO {
+  supplyType: "INTRA" | "INTER" | null;
+  sellerStateCode: string | null;
+  sellerGstin: string | null;
+  placeOfSupplyStateCode: string | null;
+  totalTaxablePaise: number;
+  totalCgstPaise: number;
+  totalSgstPaise: number;
+  totalIgstPaise: number;
+  totalTaxPaise: number;
+  roundOffPaise: number;
+  grandTotalPaise: number;
+  hsnSummary: OrderHsnRowDTO[];
 }
 
 export interface OrderDetailDTO extends OrderRowDTO {
   items: OrderLineDTO[];
   note: string | null;
   adminNote: string | null;
+  /** Frozen order-level GST snapshot, or null for a pre-GST order. */
+  tax: OrderTaxDTO | null;
 }
 
 function toRowDTO(item: OrderListItem): OrderRowDTO {
@@ -110,9 +153,57 @@ function toRowDTO(item: OrderListItem): OrderRowDTO {
 function toDetailDTO(detail: OrderDetail): OrderDetailDTO {
   return {
     ...toRowDTO(detail),
-    items: detail.items,
+    items: detail.items.map((line) => ({
+      productId: line.productId,
+      variantId: line.variantId,
+      name: line.name,
+      sku: line.sku,
+      brand: line.brand,
+      variantLabel: line.variantLabel,
+      imageUrl: line.imageUrl,
+      quantity: line.quantity,
+      unitPricePaise: line.unitPricePaise,
+      lineTotalPaise: line.lineTotalPaise,
+      tax: line.tax
+        ? {
+            hsnCode: line.tax.hsnCode,
+            gstRateBps: line.tax.gstRateBps,
+            taxInclusive: line.tax.treatment === "TAX_INCLUSIVE",
+            taxablePaise: line.tax.taxablePaise,
+            taxPaise: line.tax.taxPaise,
+            cgstPaise: line.tax.cgstPaise,
+            sgstPaise: line.tax.sgstPaise,
+            igstPaise: line.tax.igstPaise,
+            grossPaise: line.tax.grossPaise,
+          }
+        : null,
+    })),
     note: detail.note,
     adminNote: detail.adminNote,
+    tax: detail.tax
+      ? {
+          supplyType: detail.tax.supplyType,
+          sellerStateCode: detail.tax.sellerStateCode,
+          sellerGstin: detail.tax.sellerGstin,
+          placeOfSupplyStateCode: detail.tax.placeOfSupplyStateCode,
+          totalTaxablePaise: detail.tax.totalTaxablePaise,
+          totalCgstPaise: detail.tax.totalCgstPaise,
+          totalSgstPaise: detail.tax.totalSgstPaise,
+          totalIgstPaise: detail.tax.totalIgstPaise,
+          totalTaxPaise: detail.tax.totalTaxPaise,
+          roundOffPaise: detail.tax.roundOffPaise,
+          grandTotalPaise: detail.tax.grandTotalPaise,
+          hsnSummary: detail.tax.hsnSummary.map((r) => ({
+            hsnCode: r.hsnCode,
+            gstRateBps: r.gstRateBps,
+            taxablePaise: r.taxablePaise,
+            taxPaise: r.taxPaise,
+            cgstPaise: r.cgstPaise,
+            sgstPaise: r.sgstPaise,
+            igstPaise: r.igstPaise,
+          })),
+        }
+      : null,
   };
 }
 

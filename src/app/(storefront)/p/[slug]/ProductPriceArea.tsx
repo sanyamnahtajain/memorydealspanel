@@ -5,6 +5,7 @@ import { LockKeyhole } from "lucide-react";
 
 import type { PublicProduct, PricedProduct } from "@/server/dto/product";
 import type { CustomerStatus } from "@/lib/schemas/shared";
+import type { GstView } from "@/server/prefs/gst-view";
 import { PricePill, formatPaise } from "@/components/common";
 import { StatusChip } from "@/components/common/StatusChip";
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,62 @@ export interface ProductPriceAreaProps {
   showPrices: boolean;
   /** Present when the viewer is a logged-in customer; drives the gated copy. */
   status?: CustomerStatus;
+  /**
+   * The retailer's incl/excl display preference (from `getGstViewPreference()`).
+   * Only affects the wording of the tax line, never the figure. Ignored while
+   * GST is off (the line renders nothing then).
+   */
+  gstView?: GstView;
+}
+
+/** Formats basis points as a trimmed percentage: 1800 → "18", 1250 → "12.5". */
+function formatRate(bps: number): string {
+  const pct = bps / 100;
+  return Number.isInteger(pct) ? String(pct) : String(Number(pct.toFixed(2)));
+}
+
+/**
+ * The clear tax-treatment line beneath the detail price.
+ *
+ * PRICE-GATE SAFETY: `tax` ({@link PublicProduct.tax}) is NON-MONETARY and drives
+ * the "incl./+ X% GST" label for EVERY viewer. `taxPaise` is the paise amount
+ * from a Priced DTO — only ever passed for an approved viewer — and adds the
+ * "(incl. ₹X GST)" figure. When GST is off (`gstRateBps` null/zero) this renders
+ * nothing, exactly as the pre-GST detail page.
+ */
+function TaxTreatmentLine({
+  gstRateBps,
+  taxInclusive,
+  taxPaise,
+  view,
+}: {
+  gstRateBps: number | null;
+  taxInclusive: boolean;
+  /** Priced-only GST amount in paise; omit for a gated viewer. */
+  taxPaise?: number | null;
+  view?: GstView;
+}) {
+  if (gstRateBps === null || gstRateBps <= 0) return null;
+
+  const ratePct = formatRate(gstRateBps);
+  // The displayed price is inclusive when the effective treatment is inclusive;
+  // the retailer's view preference flips only the wording, not the figure.
+  const preferInclusive = view === undefined ? taxInclusive : view === "incl";
+  const label = preferInclusive
+    ? `Price incl. ${ratePct}% GST`
+    : `+ ${ratePct}% GST`;
+
+  return (
+    <p className="mt-1 text-xs text-muted-foreground">
+      {label}
+      {typeof taxPaise === "number" && taxPaise > 0 ? (
+        <span className="text-muted-foreground/80">
+          {" "}
+          ({taxInclusive ? "incl." : "+"} {formatPaise(taxPaise)} GST)
+        </span>
+      ) : null}
+    </p>
+  );
 }
 
 function hasPrice(
@@ -90,8 +147,11 @@ export function ProductPriceArea({
   product,
   showPrices,
   status,
+  gstView,
 }: ProductPriceAreaProps) {
   const [open, setOpen] = React.useState(false);
+  // NON-MONETARY GST metadata — present on every viewer's DTO, carries no paise.
+  const tax = product.tax;
 
   if (showPrices && hasPrice(product)) {
     const priced = product;
@@ -115,9 +175,21 @@ export function ProductPriceArea({
             </span>
           ) : null}
         </div>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Inclusive of applicable taxes.
-        </p>
+        {/* Clear GST treatment line. For an approved viewer we also surface the
+            paise amount from the priced taxBreakdown. Renders nothing when GST
+            is off. */}
+        {tax.gstRateBps !== null && tax.gstRateBps > 0 ? (
+          <TaxTreatmentLine
+            gstRateBps={tax.gstRateBps}
+            taxInclusive={tax.taxInclusive}
+            taxPaise={priced.taxBreakdown?.taxPaise ?? null}
+            view={gstView}
+          />
+        ) : (
+          <p className="mt-1 text-xs text-muted-foreground">
+            Inclusive of applicable taxes.
+          </p>
+        )}
       </div>
     );
   }
@@ -144,6 +216,12 @@ export function ProductPriceArea({
           <StatusChip variant={gatedReason.variant} label={gatedReason.status} />
         </div>
         <p className="mt-2 text-sm text-muted-foreground">{gatedReason.hint}</p>
+        {/* Label only — never a paise amount for a gated viewer. */}
+        <TaxTreatmentLine
+          gstRateBps={tax.gstRateBps}
+          taxInclusive={tax.taxInclusive}
+          view={gstView}
+        />
       </div>
     );
   }
@@ -175,6 +253,12 @@ export function ProductPriceArea({
       >
         Request access
       </Button>
+      {/* Label only — a gated viewer sees the GST treatment, never an amount. */}
+      <TaxTreatmentLine
+        gstRateBps={tax.gstRateBps}
+        taxInclusive={tax.taxInclusive}
+        view={gstView}
+      />
       <RequestAccessSheet open={open} onOpenChange={setOpen} />
     </div>
   );

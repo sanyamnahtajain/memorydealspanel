@@ -2,7 +2,12 @@ import type { Prisma, ProductImage } from "@prisma/client";
 import type { StockStatus } from "@/lib/schemas/shared";
 import {
   toPublicImages,
+  publicTaxMetaOf,
+  pricedTaxBreakdownOf,
   type PublicProductImage,
+  type PublicTaxMeta,
+  type PricedTaxBreakdown,
+  type TaxMapOptions,
 } from "./product";
 
 /**
@@ -45,6 +50,12 @@ export interface PublicVariant {
   sortOrder: number;
   /** Variant-specific images. Empty when the variant reuses product images. */
   images: PublicProductImage[];
+  /**
+   * NON-MONETARY GST metadata for this variant (HSN / rate bps / inclusive
+   * flag) — safe for every viewer. `gstRateBps: null` when GST is off. NEVER a
+   * paise amount.
+   */
+  tax: PublicTaxMeta;
 }
 
 /**
@@ -59,6 +70,12 @@ export interface PricedVariant extends PublicVariant {
   mrp: number | null;
   /** Whole-number discount margin percentage vs. mrp, when mrp is set. */
   marginPct: number | null;
+  /**
+   * The paise GST breakdown of this variant's displayed `price`. The ONLY place
+   * a variant tax amount appears — present only on this Priced projection,
+   * reached only by an approved viewer. `null` when the GST kill-switch is off.
+   */
+  taxBreakdown: PricedTaxBreakdown | null;
 }
 
 /**
@@ -104,9 +121,14 @@ function toOptionValues(raw: Prisma.JsonValue): VariantOptionValues {
 /**
  * Maps a Prisma variant row to a `PublicVariant`, copying an explicit
  * allow-list of fields. Price fields are NEVER read here, so even a full row
- * cannot leak money through this mapper.
+ * cannot leak money through this mapper. The optional `opts.effective` supplies
+ * the NON-MONETARY GST metadata (HSN / rate bps / inclusive flag); it defaults
+ * to the "GST off" shape so a caller that omits it keeps the exact pre-GST shape.
  */
-export function toPublicVariant(row: PublicVariantSource): PublicVariant {
+export function toPublicVariant(
+  row: PublicVariantSource,
+  opts: TaxMapOptions = { effective: null },
+): PublicVariant {
   return {
     id: row.id,
     sku: row.sku,
@@ -115,6 +137,7 @@ export function toPublicVariant(row: PublicVariantSource): PublicVariant {
     isDefault: row.isDefault,
     sortOrder: row.sortOrder,
     images: toPublicImages(row.images ?? []),
+    tax: publicTaxMetaOf(opts.effective),
   };
 }
 
@@ -132,14 +155,21 @@ function deriveMarginPct(
 /**
  * Maps a Prisma variant row to a `PricedVariant`, layering the money fields
  * onto the public projection. Only ever called for price-authorised viewers.
+ * `opts.effective` (the variant's resolved effective tax) drives BOTH the public
+ * metadata and the priced paise breakdown; `null` (the default) ⇒ GST off ⇒
+ * pre-GST shape (`taxBreakdown: null`).
  */
-export function toPricedVariant(row: PricedVariantSource): PricedVariant {
+export function toPricedVariant(
+  row: PricedVariantSource,
+  opts: TaxMapOptions = { effective: null },
+): PricedVariant {
   const price = row.price;
   const mrp = row.mrp ?? null;
   return {
-    ...toPublicVariant(row),
+    ...toPublicVariant(row, opts),
     price,
     mrp,
     marginPct: deriveMarginPct(price, mrp),
+    taxBreakdown: pricedTaxBreakdownOf(price, opts.effective),
   };
 }

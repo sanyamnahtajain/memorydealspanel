@@ -40,18 +40,28 @@ export interface ProductGridProps {
   categories: CategoryDTO[];
   /** Active brands (Brand master) for the brand select column. */
   brands: BrandOption[];
+  /**
+   * Whether the GST kill-switch is on. When false the HSN / GST% columns are
+   * omitted, so the grid is byte-for-byte the pre-GST layout. Defaults false.
+   */
+  gstEnabled?: boolean;
 }
 
 /** Stable grid id — namespaces saved views in localStorage. */
 const GRID_ID = "products";
 
-export function ProductGrid({ rows, categories, brands }: ProductGridProps) {
+export function ProductGrid({
+  rows,
+  categories,
+  brands,
+  gstEnabled = false,
+}: ProductGridProps) {
   const router = useRouter();
   const isMobile = useIsMobile();
 
   const columns = React.useMemo(
-    () => buildProductColumns(categories, brands),
-    [categories, brands],
+    () => buildProductColumns(categories, brands, gstEnabled),
+    [categories, brands, gstEnabled],
   );
 
   /**

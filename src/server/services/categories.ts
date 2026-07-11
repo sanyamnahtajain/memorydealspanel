@@ -26,6 +26,10 @@ export interface CategoryRecord {
   sortOrder: number;
   status: EntityStatus;
   parentId: string | null;
+  /** GST default HSN/SAC code for products in this category (null = none). */
+  defaultHsnCode: string | null;
+  /** GST default rate in basis points for this category (null = none). */
+  defaultGstRateBps: number | null;
 }
 
 const CATEGORY_SELECT = {
@@ -36,6 +40,8 @@ const CATEGORY_SELECT = {
   sortOrder: true,
   status: true,
   parentId: true,
+  defaultHsnCode: true,
+  defaultGstRateBps: true,
 } satisfies Prisma.CategorySelect;
 
 type CategoryRow = Prisma.CategoryGetPayload<{ select: typeof CATEGORY_SELECT }>;
@@ -49,6 +55,8 @@ function toRecord(row: CategoryRow): CategoryRecord {
     sortOrder: row.sortOrder,
     status: row.status,
     parentId: row.parentId ?? null,
+    defaultHsnCode: row.defaultHsnCode ?? null,
+    defaultGstRateBps: row.defaultGstRateBps ?? null,
   };
 }
 
@@ -79,6 +87,8 @@ export interface CreateCategoryData {
   sortOrder: number;
   status: EntityStatus;
   parentId?: string | null;
+  defaultHsnCode?: string | null;
+  defaultGstRateBps?: number | null;
 }
 
 /**
@@ -103,6 +113,8 @@ export async function createCategory(
       sortOrder,
       status: data.status,
       parentId,
+      defaultHsnCode: data.defaultHsnCode ?? null,
+      defaultGstRateBps: data.defaultGstRateBps ?? null,
     },
     select: CATEGORY_SELECT,
   });
@@ -137,6 +149,8 @@ export interface UpdateCategoryData {
   sortOrder?: number;
   status?: EntityStatus;
   parentId?: string | null;
+  defaultHsnCode?: string | null;
+  defaultGstRateBps?: number | null;
 }
 
 /**
@@ -180,6 +194,14 @@ export async function updateCategory(
       data.parentId === null
         ? { disconnect: true }
         : { connect: { id: data.parentId } };
+  }
+  // GST defaults: a present key writes the value (null clears the default); an
+  // absent key leaves the stored value untouched.
+  if (data.defaultHsnCode !== undefined) {
+    patch.defaultHsnCode = data.defaultHsnCode ?? null;
+  }
+  if (data.defaultGstRateBps !== undefined) {
+    patch.defaultGstRateBps = data.defaultGstRateBps ?? null;
   }
 
   const row = await prisma.category.update({

@@ -24,6 +24,8 @@ import { AddToCartButton } from "@/components/storefront/cart/AddToCartButton";
 import { wishlistProductIds } from "@/server/services/wishlist";
 import { cartCountForViewer } from "@/server/services/cart";
 import { recordProductView } from "@/server/services/pageviews";
+import { getSellerTaxProfile } from "@/server/services/tax-profile";
+import { getGstViewPreference } from "@/server/prefs/gst-view";
 import {
   ProductBreadcrumb,
   type ProductBreadcrumbCategory,
@@ -128,6 +130,12 @@ export default async function ProductDetailPage({ params }: PageParams) {
 
   const showPrices = canSeePrices(viewer);
   const customerStatus = isCustomer(viewer) ? viewer.status : undefined;
+
+  // GST view preference — only wording of the tax line; inert while GST is off.
+  const taxProfile = await getSellerTaxProfile();
+  const gstView = taxProfile.gstEnabled
+    ? await getGstViewPreference()
+    : undefined;
 
   // Record the view for the dashboard's "Most viewed" aggregation. Best-effort
   // analytics: never throws, not awaited into render, reads nothing gated.
@@ -309,6 +317,7 @@ export default async function ProductDetailPage({ params }: PageParams) {
                   product={product as PublicProduct | PricedProduct}
                   showPrices={showPrices}
                   status={customerStatus}
+                  gstView={gstView}
                 />
 
                 {/* Add to cart — approved-only. The button self-gates: an
@@ -399,6 +408,9 @@ function toPublicShape(p: PublicProduct | PricedProduct): PublicProduct {
     hasVariants: p.hasVariants,
     optionTypes: p.optionTypes,
     variants: [],
+    // NON-MONETARY GST metadata (HSN / rate bps / inclusive flag) — carries no
+    // paise, so it is safe to keep on the public shape crossing into the client.
+    tax: p.tax,
   };
 }
 

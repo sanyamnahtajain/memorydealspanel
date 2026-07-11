@@ -25,6 +25,7 @@ import {
 import { OrderStatusControl } from "./OrderStatusControl";
 import { AdminNoteEditor } from "./AdminNoteEditor";
 import { OrderCsvButton } from "./OrderCsvButton";
+import { OrderTaxBreakup } from "@/components/storefront/orders/OrderTaxBreakup";
 import type { OrderDetailDTO, OrderLineDTO } from "@/server/actions/admin-orders";
 
 function formatDateTime(iso: string): string {
@@ -75,12 +76,15 @@ export function OrderDetailPanel({ order }: { order: OrderDetailDTO }) {
 
           <div className="flex items-center justify-between rounded-2xl border border-border bg-card p-4">
             <span className="text-sm font-medium text-muted-foreground">
-              Subtotal
+              {order.tax ? "Taxable subtotal" : "Subtotal"}
             </span>
             <span className="text-base font-semibold tabular-nums text-foreground">
               {formatPaise(order.subtotalPaise)}
             </span>
           </div>
+
+          {/* Frozen GST breakup (admins always see amounts). */}
+          {order.tax ? <OrderTaxBreakup tax={order.tax} /> : null}
 
           {order.note ? (
             <div className="rounded-2xl border border-border bg-muted/40 p-4">
@@ -178,6 +182,12 @@ function OrderLineRow({ line }: { line: OrderLineDTO }) {
         <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
           Qty {line.quantity} · {formatPaise(line.unitPricePaise)} each
         </p>
+        {line.tax ? (
+          <p className="mt-0.5 text-[0.65rem] text-muted-foreground">
+            {line.tax.taxInclusive ? "incl." : "+"} {line.tax.gstRateBps / 100}% GST
+            {line.tax.hsnCode ? ` · HSN ${line.tax.hsnCode}` : ""}
+          </p>
+        ) : null}
       </div>
       <span className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
         {formatPaise(line.lineTotalPaise)}

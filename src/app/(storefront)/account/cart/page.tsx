@@ -75,6 +75,11 @@ export default async function CartPage() {
     lineTotalPaise: l.lineTotalPaise,
     available: l.available,
     issues: l.issues,
+    // NON-MONETARY rate + treatment so the client can keep the GST preview live
+    // across optimistic quantity changes. Amounts are re-derived client-side
+    // with the same integer formula; the server re-freezes at placement.
+    gstRateBps: l.tax?.gstRateBps ?? null,
+    taxInclusive: l.tax?.taxInclusive ?? false,
   }));
 
   return (
@@ -119,6 +124,7 @@ export default async function CartPage() {
                 initialSubtotalPaise={cart.subtotalPaise}
                 priced={cart.priced}
                 canOrder={canOrder}
+                initialTax={cart.tax}
               />
             </FadeUp>
           )}

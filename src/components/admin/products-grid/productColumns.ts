@@ -60,6 +60,17 @@ export interface ProductRow extends GridRow {
   stockStatus: StockStatus;
   status: EntityStatus;
   tags: string[];
+  /**
+   * GST HSN/SAC override, or null to inherit. NON-MONETARY metadata. Editable
+   * for every row (including variant products) — it is the product-level
+   * fallback in the effective-tax chain, not a price.
+   */
+  hsnCode: string | null;
+  /**
+   * GST rate override as a PERCENT (e.g. 18), or null to inherit. Stored as
+   * integer basis points server-side; the adapter converts percent → bps.
+   */
+  gstRatePercent: number | null;
   /** Count of attached images — rendered read-only, click opens the editor. */
   images: number;
   /**
@@ -170,6 +181,11 @@ function validatePatch(
 export function buildProductColumns(
   categories: readonly CategoryDTO[],
   brands: readonly BrandOption[] = [],
+  /**
+   * Whether the GST kill-switch is on. When false the HSN / GST% columns are
+   * omitted entirely, so the grid is byte-for-byte the pre-GST layout.
+   */
+  gstEnabled = false,
 ): ColumnDef<ProductRow>[] {
   const categoryOptions = categories.map((category, index) => ({
     value: category.id,
@@ -289,6 +305,42 @@ export function buildProductColumns(
       width: 220,
       validate: (value) => validatePatch({ tags: value as string[] }, "tags"),
     },
+    // GST columns — only present when the kill-switch is on. HSN is a short
+    // string; GST% is a non-negative percentage converted to bps on save.
+    // Editable on variant rows too (product-level tax fallback, not a price).
+    ...(gstEnabled
+      ? ([
+          {
+            key: "hsnCode",
+            header: "HSN",
+            type: "text",
+            width: 120,
+            // Empty clears the override (inherit); a value validates as a short
+            // HSN string via the shared server schema.
+            validate: (value) => {
+              if (value === "" || value == null) return null;
+              return validatePatch({ hsnCode: value as string }, "hsnCode");
+            },
+          },
+          {
+            key: "gstRatePercent",
+            header: "GST %",
+            type: "percent",
+            width: 100,
+            // Empty clears the override (inherit). A percent maps to integer bps
+            // for the server schema, mirroring the editor/category conversion.
+            validate: (value) => {
+              if (value === "" || value == null) return null;
+              const pct = Number(value);
+              if (!Number.isFinite(pct)) return "Enter a valid GST %";
+              return validatePatch(
+                { gstRateBps: Math.round(pct * 100) },
+                "gstRateBps",
+              );
+            },
+          },
+        ] as ColumnDef<ProductRow>[])
+      : []),
     {
       key: "margin",
       header: "Margin",

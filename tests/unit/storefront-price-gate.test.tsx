@@ -69,6 +69,8 @@ const publicProduct: PublicProduct = {
   hasVariants: false,
   optionTypes: [],
   variants: [],
+  // GST kill-switch off ⇒ no rate ⇒ the storefront shows no GST hint.
+  tax: { hsnCode: null, gstRateBps: null, taxInclusive: false },
 };
 
 /** The same product WITH pricing, as served to a price-authorised viewer. */
@@ -79,6 +81,7 @@ const pricedProduct: PricedProduct = {
   mrp: 159900, // ₹1,599.00
   marginPct: 19,
   variants: [],
+  taxBreakdown: null,
 };
 
 /** Any Indian-rupee amount or bare price digit that must NOT appear when gated. */

@@ -14,6 +14,7 @@ import { StorefrontShell } from "@/components/shell/StorefrontShell";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Button } from "@/components/ui/button";
 import { FadeUp } from "@/components/motion/primitives";
+import { OrderTaxBreakup } from "@/components/storefront/orders/OrderTaxBreakup";
 
 /**
  * Order confirmation page.
@@ -164,6 +165,15 @@ export default async function OrderConfirmationPage({
             </div>
           </div>
         </FadeUp>
+
+        {/* Frozen GST breakup (proforma) — only for a priced viewer. */}
+        {priced && order.tax ? (
+          <FadeUp delay={0.07}>
+            <div className="mt-4">
+              <OrderTaxBreakup tax={order.tax} proforma />
+            </div>
+          </FadeUp>
+        ) : null}
 
         {order.note ? (
           <FadeUp delay={0.08}>

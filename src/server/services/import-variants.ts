@@ -149,6 +149,10 @@ export interface VariantColumnContext {
   moq?: string;
   stock?: string;
   status?: string;
+  /** GST override headers (product-level; applied to the parent product). */
+  hsnCode?: string;
+  gstRate?: string;
+  taxInclusive?: string;
   /**
    * Every source header that is NOT a canonical import field and NOT the
    * `variantOf` column — i.e. the OPTION AXIS columns (Capacity, Color, …), in
@@ -201,6 +205,10 @@ export interface VariantGroup {
     brand?: string;
     description?: string;
     tags?: string[];
+    /** GST overrides applied to the parent product (non-monetary). */
+    hsnCode?: string | null;
+    gstRateBps?: number | null;
+    taxTreatment?: "TAX_EXCLUSIVE" | "TAX_INCLUSIVE";
   };
   /** Axes inferred from the distinct option columns/values, first-seen order. */
   optionTypes: OptionTypesInput;
@@ -380,6 +388,39 @@ function validateGroup(
 
   const tagsPick = pick(ctx.tags);
   if (tagsPick) product.tags = parseTags(tagsPick.value);
+
+  /* ---- GST overrides (product-level; applied to the parent) ---- */
+  const hsnPick = pick(ctx.hsnCode);
+  if (hsnPick) {
+    if (hsnPick.value.length > 16) {
+      pushErr(hsnPick.rowNumber, ctx.hsnCode!, "HSN code is too long (max 16).");
+    } else {
+      product.hsnCode = hsnPick.value;
+    }
+  }
+
+  const gstPick = pick(ctx.gstRate);
+  if (gstPick) {
+    const cleaned = gstPick.value.replace(/%/g, "").replace(/,/g, "");
+    const pct = Number(cleaned);
+    if (!Number.isFinite(pct) || pct < 0) {
+      pushErr(gstPick.rowNumber, ctx.gstRate!, `"${gstPick.value}" is not a valid GST rate.`);
+    } else {
+      product.gstRateBps = Math.round(pct * 100);
+    }
+  }
+
+  const inclPick = pick(ctx.taxInclusive);
+  if (inclPick) {
+    const norm = inclPick.value.trim().toLowerCase();
+    if (["true", "yes", "y", "1", "incl", "inclusive"].includes(norm)) {
+      product.taxTreatment = "TAX_INCLUSIVE";
+    } else if (["false", "no", "n", "0", "excl", "exclusive"].includes(norm)) {
+      product.taxTreatment = "TAX_EXCLUSIVE";
+    } else {
+      pushErr(inclPick.rowNumber, ctx.taxInclusive!, `"${inclPick.value}" is not a valid yes/no value.`);
+    }
+  }
 
   /* ---- per-variant rows ---- */
   const variants: CoercedVariant[] = [];

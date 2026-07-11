@@ -58,6 +58,9 @@ export type ImportField =
   | "status"
   | "tags"
   | "description"
+  | "hsnCode"
+  | "gstRate"
+  | "taxInclusive"
   | "variantOf";
 
 export interface ImportColumn {
@@ -68,7 +71,15 @@ export interface ImportColumn {
   /** Whether a value is required for a *create* (updates need only sku). */
   required: boolean;
   /** How the cell is coerced/validated. */
-  kind: "text" | "currency" | "int" | "enum-stock" | "enum-status" | "tags";
+  kind:
+    | "text"
+    | "currency"
+    | "int"
+    | "enum-stock"
+    | "enum-status"
+    | "tags"
+    | "percent"
+    | "bool";
   /** Header aliases used for auto-matching (case/space/punct-insensitive). */
   aliases: string[];
 }
@@ -154,6 +165,27 @@ export const IMPORT_COLUMNS: readonly ImportColumn[] = [
     required: false,
     kind: "text",
     aliases: ["description", "desc", "details", "notes"],
+  },
+  {
+    key: "hsnCode",
+    label: "HSN code",
+    required: false,
+    kind: "text",
+    aliases: ["hsncode", "hsn", "hsnsac", "sac", "saccode"],
+  },
+  {
+    key: "gstRate",
+    label: "GST rate (%)",
+    required: false,
+    kind: "percent",
+    aliases: ["gstrate", "gst", "gstpercent", "taxrate", "gstpct"],
+  },
+  {
+    key: "taxInclusive",
+    label: "Tax inclusive",
+    required: false,
+    kind: "bool",
+    aliases: ["taxinclusive", "inclusive", "priceinclusive", "gstinclusive"],
   },
   {
     // OPTIONAL variant column. When a row carries a value here — the PARENT
@@ -289,6 +321,12 @@ export interface CoercedRow {
   status?: EntityStatus;
   tags?: string[];
   description?: string;
+  /** GST override HSN/SAC code (null = explicit clear). */
+  hsnCode?: string | null;
+  /** GST override rate in integer basis points (percent × 100). */
+  gstRateBps?: number | null;
+  /** GST treatment override, when a truthy `tax_inclusive` cell was supplied. */
+  taxTreatment?: "TAX_EXCLUSIVE" | "TAX_INCLUSIVE";
 }
 
 export interface ValidateResult {
@@ -532,6 +570,30 @@ function parseIntSafe(value: string): number | null {
   return Number.isSafeInteger(n) ? n : null;
 }
 
+/**
+ * Parses a GST-rate percent cell ("18", "18.5", "18%") to integer basis points
+ * (1800). Returns null for blank/invalid. Mirrors the editor/grid conversion.
+ */
+function parsePercentToBps(value: string): number | null {
+  const cleaned = value.trim().replace(/%/g, "").replace(/,/g, "");
+  if (cleaned === "") return null;
+  const pct = Number(cleaned);
+  if (!Number.isFinite(pct) || pct < 0) return null;
+  return Math.round(pct * 100);
+}
+
+const TRUTHY = new Set(["true", "yes", "y", "1", "incl", "inclusive"]);
+const FALSY = new Set(["false", "no", "n", "0", "excl", "exclusive"]);
+
+/** Parses a boolean-ish cell; returns true/false, or null when unrecognised. */
+function parseBool(value: string): boolean | null {
+  const norm = value.trim().toLowerCase();
+  if (norm === "") return null;
+  if (TRUTHY.has(norm)) return true;
+  if (FALSY.has(norm)) return false;
+  return null;
+}
+
 /** Splits a tag cell on commas / semicolons / pipes; trims & dedupes. */
 function parseTags(value: string): string[] {
   const parts = value
@@ -585,6 +647,9 @@ export function resolveVariantContext(
     moq: mapping.moq,
     stock: mapping.stock,
     status: mapping.status,
+    hsnCode: mapping.hsnCode,
+    gstRate: mapping.gstRate,
+    taxInclusive: mapping.taxInclusive,
     optionHeaders,
   };
 }
@@ -807,6 +872,34 @@ export function validateRows(
       }
     }
 
+    // hsn_code — optional GST override; short string.
+    if (raw.hsnCode) {
+      if (raw.hsnCode.length > 16) {
+        push("hsnCode", "HSN code is too long (max 16).");
+      } else {
+        values.hsnCode = raw.hsnCode;
+      }
+    }
+
+    // gst_rate — optional GST override; percent → integer bps.
+    const gstRaw = raw.gstRate;
+    if (gstRaw) {
+      const bps = parsePercentToBps(gstRaw);
+      if (bps === null) push("gstRate", `"${gstRaw}" is not a valid GST rate.`);
+      else values.gstRateBps = bps;
+    }
+
+    // tax_inclusive — optional; truthy ⇒ TAX_INCLUSIVE, falsy ⇒ TAX_EXCLUSIVE.
+    const inclRaw = raw.taxInclusive;
+    if (inclRaw) {
+      const bool = parseBool(inclRaw);
+      if (bool === null) {
+        push("taxInclusive", `"${inclRaw}" is not a valid yes/no value.`);
+      } else {
+        values.taxTreatment = bool ? "TAX_INCLUSIVE" : "TAX_EXCLUSIVE";
+      }
+    }
+
     const operation: RowOperation =
       errors.length > 0 ? "invalid" : isUpdate ? "update" : "create";
 
@@ -982,6 +1075,10 @@ function toCreateInput(values: CoercedRow): CreateProductInput {
     status: values.status ?? "ACTIVE",
     tags: values.tags ?? [],
     images: [],
+    // GST overrides — non-monetary. Absent cells stay null (inherit).
+    hsnCode: values.hsnCode ?? null,
+    gstRateBps: values.gstRateBps ?? null,
+    taxTreatment: values.taxTreatment ?? null,
   };
 }
 
@@ -998,6 +1095,11 @@ function toUpdatePatch(values: CoercedRow): UpdateProductInput {
   if (values.stockStatus !== undefined) patch.stockStatus = values.stockStatus;
   if (values.status !== undefined) patch.status = values.status;
   if (values.tags !== undefined) patch.tags = values.tags;
+  // GST overrides — only patch a field the row actually carried, so an update
+  // that omits these columns leaves the stored override untouched.
+  if (values.hsnCode !== undefined) patch.hsnCode = values.hsnCode;
+  if (values.gstRateBps !== undefined) patch.gstRateBps = values.gstRateBps;
+  if (values.taxTreatment !== undefined) patch.taxTreatment = values.taxTreatment;
   return patch;
 }
 
@@ -1087,6 +1189,9 @@ export function buildTemplateWorkbook(): Uint8Array {
     "ACTIVE",
     "ddr4,gaming",
     "16GB 3200MHz desktop memory",
+    "8471", // HSN code (blank ⇒ inherit from category / profile)
+    "18", // GST rate % (blank ⇒ inherit)
+    "false", // Tax inclusive? (blank ⇒ inherit the profile default)
     "", // Variant Of — blank ⇒ a plain single product
   ];
   const ws = XLSX.utils.aoa_to_sheet([headers, example]);
@@ -1429,6 +1534,10 @@ async function resolveOrCreateVariantParent(
     status: "ACTIVE",
     tags: group.product.tags ?? [],
     images: [],
+    // GST overrides applied at the parent product level (non-monetary).
+    hsnCode: group.product.hsnCode ?? null,
+    gstRateBps: group.product.gstRateBps ?? null,
+    taxTreatment: group.product.taxTreatment ?? null,
   });
   return { id: product.id, created: true };
 }

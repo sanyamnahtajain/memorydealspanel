@@ -13,6 +13,10 @@ import { ExpiryBanner } from "@/components/storefront/ExpiryBanner";
 import { PreferencesPanel } from "@/components/preferences/PreferencesPanel";
 import { AccountLogoutButton } from "./AccountLogoutButton";
 import { AccountRenewalButton } from "./AccountRenewalButton";
+import { getSellerTaxProfile } from "@/server/services/tax-profile";
+import { getGstViewPreference } from "@/server/prefs/gst-view";
+import { GstViewToggle } from "@/components/storefront/GstViewToggle";
+import { BusinessProfileForm } from "@/components/storefront/account/BusinessProfileForm";
 
 export const metadata: Metadata = {
   title: "Your account — MemoryDeals",
@@ -55,6 +59,8 @@ export default async function AccountPage() {
       businessName: true,
       contactName: true,
       phone: true,
+      gstNumber: true,
+      placeOfSupplyStateCode: true,
       accessGrants: {
         where: {
           revokedAt: null,
@@ -77,6 +83,15 @@ export default async function AccountPage() {
 
   // Header cart badge — a count only for an approved customer, else undefined.
   const cartCount = await cartCountForViewer(viewer);
+
+  // GST surfaces. When the seller's kill-switch is off we render NOTHING
+  // GST-related here — no toggle, no GSTIN capture — so the page is exactly the
+  // pre-GST account page. The view toggle only matters to a viewer who can see
+  // prices; the business-profile capture is shown to every logged-in customer
+  // (an unregistered buyer still benefits from setting their place of supply).
+  const taxProfile = await getSellerTaxProfile();
+  const gstEnabled = taxProfile.gstEnabled;
+  const gstView = gstEnabled ? await getGstViewPreference() : null;
 
   return (
     <StorefrontShell cartCount={cartCount}>
@@ -150,8 +165,55 @@ export default async function AccountPage() {
               </p>
             </div>
             <PreferencesPanel />
+
+            {/* GST price view — flip the whole catalogue between inclusive and
+                exclusive pricing. Persisted to a cookie so SSR renders in the
+                chosen mode. Only meaningful when GST is on AND the viewer can
+                see prices. */}
+            {gstEnabled && hasLivePrices && gstView ? (
+              <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
+                <div className="space-y-0.5">
+                  <p className="text-sm font-medium text-foreground">
+                    GST in prices
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Show catalogue prices inclusive or exclusive of GST.
+                  </p>
+                </div>
+                <GstViewToggle value={gstView} />
+              </div>
+            ) : null}
           </div>
         </FadeUp>
+
+        {/* Business & tax details — GSTIN + place of supply. Only when the
+            seller has GST enabled; otherwise this card is absent (pre-GST). */}
+        {gstEnabled ? (
+          <FadeUp delay={0.12}>
+            <div className="space-y-4 rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-sm ring-1 ring-foreground/5 sm:p-7">
+              <div className="space-y-1">
+                <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                  Tax
+                </p>
+                <h2 className="font-heading text-lg font-semibold tracking-tight">
+                  Business &amp; GST details
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  Add your GSTIN and billing state so your invoices carry the
+                  correct GST split.
+                </p>
+              </div>
+              <BusinessProfileForm
+                initial={{
+                  businessName: customer.businessName,
+                  gstNumber: customer.gstNumber ?? "",
+                  placeOfSupplyStateCode:
+                    customer.placeOfSupplyStateCode ?? "",
+                }}
+              />
+            </div>
+          </FadeUp>
+        ) : null}
       </div>
     </StorefrontShell>
   );

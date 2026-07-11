@@ -42,6 +42,11 @@ export function toProductRow(product: AdminGridProduct): ProductRow {
     // Active-variant count from the grid read's `_count` (the grid never joins
     // full variant rows, so `product.variants` is `[]` here).
     variantCount: product.variantCount,
+    // GST overrides — raw stored values (null = inherit). Rate is stored as bps;
+    // the grid edits it as a percent, so convert bps → percent here.
+    hsnCode: product.hsnCode,
+    gstRatePercent:
+      product.gstRateBps == null ? null : product.gstRateBps / 100,
     updatedAt: product.updatedAt.getTime(),
   };
 }
@@ -85,6 +90,18 @@ export function toUpdateInput(
       typeof raw === "boolean" ? (raw ? "ACTIVE" : "INACTIVE") : raw;
   }
   if ("tags" in patch && patch.tags !== undefined) out.tags = patch.tags;
+  // GST overrides. HSN: empty/null clears the override (inherit). GST% (percent)
+  // → integer bps; empty/null clears the override. Both are NON-MONETARY.
+  if ("hsnCode" in patch) {
+    const hsn =
+      typeof patch.hsnCode === "string" ? patch.hsnCode.trim() : patch.hsnCode;
+    out.hsnCode = hsn ? hsn : null;
+  }
+  if ("gstRatePercent" in patch) {
+    const pct = patch.gstRatePercent;
+    out.gstRateBps =
+      pct == null || pct === ("" as unknown) ? null : Math.round(Number(pct) * 100);
+  }
 
   return Object.keys(out).length > 0 ? out : null;
 }

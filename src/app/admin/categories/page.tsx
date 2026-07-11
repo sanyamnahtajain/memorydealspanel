@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import { prisma } from "@/server/db";
 import { getViewer } from "@/server/auth/viewer";
 import { isAdmin } from "@/server/types/viewer";
+import { getSellerTaxProfile } from "@/server/services/tax-profile";
 import { AdminShell } from "@/components/shell/AdminShell";
 import { PageHeader } from "@/components/common";
 import {
@@ -39,22 +40,27 @@ export default async function AdminCategoriesPage() {
     redirect("/admin/login");
   }
 
-  const rows = await prisma.category.findMany({
-    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-    select: {
-      id: true,
-      name: true,
-      slug: true,
-      image: true,
-      sortOrder: true,
-      status: true,
-      parentId: true,
-      // Non-deleted products directly in this category.
-      _count: {
-        select: { products: { where: { deletedAt: null } } },
+  const [rows, taxProfile] = await Promise.all([
+    prisma.category.findMany({
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        image: true,
+        sortOrder: true,
+        status: true,
+        parentId: true,
+        defaultHsnCode: true,
+        defaultGstRateBps: true,
+        // Non-deleted products directly in this category.
+        _count: {
+          select: { products: { where: { deletedAt: null } } },
+        },
       },
-    },
-  });
+    }),
+    getSellerTaxProfile(),
+  ]);
 
   const byParent = new Map<string, typeof rows>();
   const roots: typeof rows = [];
@@ -78,6 +84,8 @@ export default async function AdminCategoriesPage() {
       status: child.status,
       parentId: child.parentId ?? null,
       productCount: child._count.products,
+      defaultHsnCode: child.defaultHsnCode ?? null,
+      defaultGstRateBps: child.defaultGstRateBps ?? null,
     }));
     // Direct products + products in sub-categories, for the parent summary.
     const childProductTotal = children.reduce(
@@ -95,6 +103,8 @@ export default async function AdminCategoriesPage() {
       productCount: root._count.products,
       childProductTotal,
       children,
+      defaultHsnCode: root.defaultHsnCode ?? null,
+      defaultGstRateBps: root.defaultGstRateBps ?? null,
     };
   });
 
@@ -105,7 +115,10 @@ export default async function AdminCategoriesPage() {
           title="Categories"
           description="Organize your catalog. Drag to reorder, rename inline, and hide categories from the storefront without deleting them."
         />
-        <CategoryManager initialCategories={tree} />
+        <CategoryManager
+          initialCategories={tree}
+          gstEnabled={taxProfile.gstEnabled}
+        />
 
         {/* Module-level recent activity — subtle, admin-only, streams in. */}
         <div className="max-w-md">

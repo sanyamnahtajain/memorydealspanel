@@ -92,6 +92,8 @@ export async function createCategoryAction(
           image: data.image ?? null,
           sortOrder: data.sortOrder,
           status: data.status,
+          defaultHsnCode: data.defaultHsnCode ?? null,
+          defaultGstRateBps: data.defaultGstRateBps ?? null,
         })
       : await createCategory({
           name: data.name,
@@ -99,6 +101,8 @@ export async function createCategoryAction(
           sortOrder: data.sortOrder,
           status: data.status,
           parentId: null,
+          defaultHsnCode: data.defaultHsnCode ?? null,
+          defaultGstRateBps: data.defaultGstRateBps ?? null,
         });
 
     await writeAudit({

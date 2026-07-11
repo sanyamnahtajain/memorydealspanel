@@ -3,6 +3,11 @@ import type { OrderStatus } from "@prisma/client";
 
 import { prisma } from "@/server/db";
 import { canTransition } from "@/components/storefront/orders/order-status";
+import {
+  toOrderTaxSnapshot,
+  type OrderItemTaxSnapshot,
+  type OrderTaxSnapshot,
+} from "@/server/services/orders";
 
 /**
  * Order service layer — reads and status management over the `Order`
@@ -50,6 +55,50 @@ export interface OrderItemSnapshot {
   unitPricePaise: number;
   /** quantity × unitPricePaise (paise), frozen at placement. */
   lineTotalPaise: number;
+  /**
+   * Frozen per-line GST breakup, or undefined for a pre-GST / kill-switch-off
+   * order (those lines have no tax and render exactly as before).
+   */
+  tax?: OrderItemTaxSnapshot;
+}
+
+/** Coerce a persisted per-line GST blob into a typed snapshot, or undefined. */
+function parseLineTax(raw: unknown): OrderItemTaxSnapshot | undefined {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const t = raw as Record<string, unknown>;
+  const num = (v: unknown): number | null =>
+    typeof v === "number" && Number.isSafeInteger(v) ? v : null;
+  const gstRateBps = num(t.gstRateBps);
+  const taxablePaise = num(t.taxablePaise);
+  const taxPaise = num(t.taxPaise);
+  const grossPaise = num(t.grossPaise);
+  const cgstPaise = num(t.cgstPaise) ?? 0;
+  const sgstPaise = num(t.sgstPaise) ?? 0;
+  const igstPaise = num(t.igstPaise) ?? 0;
+  const treatment =
+    t.treatment === "TAX_INCLUSIVE" || t.treatment === "TAX_EXCLUSIVE"
+      ? t.treatment
+      : null;
+  if (
+    gstRateBps === null ||
+    taxablePaise === null ||
+    taxPaise === null ||
+    grossPaise === null ||
+    treatment === null
+  ) {
+    return undefined;
+  }
+  return {
+    hsnCode: typeof t.hsnCode === "string" ? t.hsnCode : null,
+    gstRateBps,
+    treatment,
+    taxablePaise,
+    taxPaise,
+    cgstPaise,
+    sgstPaise,
+    igstPaise,
+    grossPaise,
+  };
 }
 
 /**
@@ -96,6 +145,7 @@ export function parseOrderItems(raw: Prisma.JsonValue): OrderItemSnapshot[] {
       quantity,
       unitPricePaise,
       lineTotalPaise,
+      ...(parseLineTax(o.tax) ? { tax: parseLineTax(o.tax) } : {}),
     });
   }
   return out;
@@ -132,7 +182,26 @@ export interface OrderDetail extends OrderListItem {
   items: OrderItemSnapshot[];
   note: string | null;
   adminNote: string | null;
+  /** Frozen order-level GST snapshot, or null for a pre-GST order. */
+  tax: OrderTaxSnapshot | null;
 }
+
+/** The full set of Order GST columns needed to rebuild the frozen snapshot. */
+const ORDER_TAX_SELECT = {
+  taxApplied: true,
+  supplyType: true,
+  placeOfSupplyStateCode: true,
+  sellerStateCode: true,
+  sellerGstin: true,
+  totalTaxablePaise: true,
+  totalCgstPaise: true,
+  totalSgstPaise: true,
+  totalIgstPaise: true,
+  totalTaxPaise: true,
+  roundOffPaise: true,
+  grandTotalPaise: true,
+  hsnSummary: true,
+} satisfies Prisma.OrderSelect;
 
 const CUSTOMER_SUMMARY_SELECT = {
   id: true,
@@ -281,6 +350,7 @@ export async function getOrder(id: string): Promise<OrderDetail | null> {
     where: { id },
     select: {
       ...ADMIN_LIST_SELECT,
+      ...ORDER_TAX_SELECT,
       items: true,
       note: true,
       adminNote: true,
@@ -292,6 +362,7 @@ export async function getOrder(id: string): Promise<OrderDetail | null> {
     items: parseOrderItems(row.items),
     note: row.note ?? null,
     adminNote: row.adminNote ?? null,
+    tax: toOrderTaxSnapshot(row),
   };
 }
 
@@ -472,6 +543,7 @@ export async function getCustomerOrderByNumber(
     where: { customerId, orderNumber },
     select: {
       ...LIST_SELECT,
+      ...ORDER_TAX_SELECT,
       items: true,
       note: true,
     },
@@ -487,5 +559,6 @@ export async function getCustomerOrderByNumber(
     updatedAt: row.updatedAt,
     items: parseOrderItems(row.items),
     note: row.note ?? null,
+    tax: toOrderTaxSnapshot(row),
   };
 }

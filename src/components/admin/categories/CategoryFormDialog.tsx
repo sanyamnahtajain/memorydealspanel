@@ -31,6 +31,10 @@ export interface CategoryFormValues {
   name: string;
   image: string | null;
   status: "ACTIVE" | "INACTIVE";
+  /** Default HSN/SAC code for products in this category, or null when unset. */
+  defaultHsnCode: string | null;
+  /** Default GST rate as a PERCENT (e.g. 18), or null when unset. */
+  defaultGstRatePercent: number | null;
 }
 
 interface CategoryFormDialogProps {
@@ -39,6 +43,8 @@ interface CategoryFormDialogProps {
   title: string;
   description?: string;
   submitLabel: string;
+  /** Show the HSN / GST-default fields. False (default) ⇒ pre-GST behaviour. */
+  showTaxDefaults?: boolean;
   /** Initial field values (for editing). Omit for a blank create form. */
   initial?: Partial<CategoryFormValues>;
   /**
@@ -62,6 +68,7 @@ export function CategoryFormDialog({
   title,
   description,
   submitLabel,
+  showTaxDefaults = false,
   initial,
   onSubmit,
 }: CategoryFormDialogProps) {
@@ -79,6 +86,7 @@ export function CategoryFormDialog({
     title,
     description,
     submitLabel,
+    showTaxDefaults,
     initial,
     onSubmit,
     onRequestClose: () => onOpenChange(false),
@@ -120,6 +128,7 @@ interface CategoryFormBodyProps {
   title: string;
   description?: string;
   submitLabel: string;
+  showTaxDefaults: boolean;
   initial?: Partial<CategoryFormValues>;
   onSubmit: (values: CategoryFormValues) => Promise<string | null | undefined>;
   onRequestClose: () => void;
@@ -134,6 +143,7 @@ function CategoryFormBody({
   title,
   description,
   submitLabel,
+  showTaxDefaults,
   initial,
   onSubmit,
   onRequestClose,
@@ -144,6 +154,12 @@ function CategoryFormBody({
   );
   const [status, setStatus] = React.useState<"ACTIVE" | "INACTIVE">(
     initial?.status ?? "ACTIVE",
+  );
+  const [hsn, setHsn] = React.useState(initial?.defaultHsnCode ?? "");
+  const [gstPercent, setGstPercent] = React.useState(
+    initial?.defaultGstRatePercent != null
+      ? String(initial.defaultGstRatePercent)
+      : "",
   );
   const [error, setError] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
@@ -193,10 +209,30 @@ function CategoryFormBody({
       setError("Name must be at least 2 characters.");
       return;
     }
+
+    // GST default rate: blank = null (inherit); otherwise a valid 0–100 percent.
+    let defaultGstRatePercent: number | null = null;
+    if (showTaxDefaults && gstPercent.trim() !== "") {
+      const pct = Number(gstPercent);
+      if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+        setError("Enter a GST rate between 0 and 100%.");
+        return;
+      }
+      defaultGstRatePercent = pct;
+    }
+    const defaultHsnCode =
+      showTaxDefaults && hsn.trim() !== "" ? hsn.trim() : null;
+
     setSaving(true);
     setError(null);
     try {
-      const result = await onSubmit({ name: trimmed, image, status });
+      const result = await onSubmit({
+        name: trimmed,
+        image,
+        status,
+        defaultHsnCode,
+        defaultGstRatePercent,
+      });
       if (result) {
         setError(result);
         return;
@@ -207,7 +243,7 @@ function CategoryFormBody({
     } finally {
       setSaving(false);
     }
-  }, [name, image, status, onSubmit, onRequestClose]);
+  }, [name, image, status, hsn, gstPercent, showTaxDefaults, onSubmit, onRequestClose]);
 
   const fields = (
     <div className="flex flex-col gap-4 px-4 md:px-0">
@@ -321,6 +357,45 @@ function CategoryFormBody({
           />
         </div>
       </div>
+
+      {showTaxDefaults ? (
+        <div className="grid grid-cols-2 gap-3">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="category-hsn">Default HSN (optional)</Label>
+            <Input
+              id="category-hsn"
+              value={hsn}
+              placeholder="e.g. 8523"
+              maxLength={16}
+              disabled={busy}
+              className="font-tabular"
+              onChange={(event) => setHsn(event.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="category-gst">Default GST % (optional)</Label>
+            <div className="relative">
+              <Input
+                id="category-gst"
+                inputMode="decimal"
+                value={gstPercent}
+                placeholder="18"
+                disabled={busy}
+                className="pr-7 font-tabular"
+                onChange={(event) =>
+                  setGstPercent(event.target.value.replace(/[^\d.]/g, ""))
+                }
+              />
+              <span
+                aria-hidden
+                className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-sm text-muted-foreground"
+              >
+                %
+              </span>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {error ? (
         <p role="alert" className="text-sm text-destructive">

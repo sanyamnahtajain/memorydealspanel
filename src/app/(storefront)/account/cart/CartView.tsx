@@ -47,8 +47,40 @@ import {
   removeCartItemAction,
 } from "@/server/actions/cart";
 import { placeOrderAction } from "@/server/actions/orders";
-import type { CartLineIssue } from "@/server/services/cart";
+import type { CartLineIssue, CartTaxSummary } from "@/server/services/cart";
 import type { StockStatus } from "@/lib/schemas/shared";
+
+/** Whole-basis-points → "18%" / "18.5%" label. */
+function formatRate(gstRateBps: number): string {
+  const pct = gstRateBps / 100;
+  return `${Number.isInteger(pct) ? pct : pct.toFixed(2)}%`;
+}
+
+/**
+ * Client-side mirror of the server's integer GST line math (src/lib/gst.ts).
+ * Kept in lock-step so the preview stays live + correct across optimistic
+ * quantity changes; the server re-derives + freezes the authoritative figures
+ * at placement, so this is display-only and can never be trusted for money.
+ */
+function lineTaxOf(
+  lineTotalPaise: number,
+  gstRateBps: number,
+  taxInclusive: boolean,
+): { taxablePaise: number; taxPaise: number; grossPaise: number } {
+  if (gstRateBps === 0) {
+    return { taxablePaise: lineTotalPaise, taxPaise: 0, grossPaise: lineTotalPaise };
+  }
+  if (taxInclusive) {
+    const taxablePaise = Math.round((lineTotalPaise * 10000) / (10000 + gstRateBps));
+    return {
+      taxablePaise,
+      taxPaise: lineTotalPaise - taxablePaise,
+      grossPaise: lineTotalPaise,
+    };
+  }
+  const taxPaise = Math.round((lineTotalPaise * gstRateBps) / 10000);
+  return { taxablePaise: lineTotalPaise, taxPaise, grossPaise: lineTotalPaise + taxPaise };
+}
 
 /** Client-safe shape of one cart line (built server-side; price already gated). */
 export interface CartLineData {
@@ -69,6 +101,13 @@ export interface CartLineData {
   lineTotalPaise: number | null;
   available: boolean;
   issues: CartLineIssue[];
+  /**
+   * Effective GST rate in basis points for this line, or null when GST is off
+   * (kill-switch) / the line has no rate. NON-MONETARY — drives the live preview.
+   */
+  gstRateBps: number | null;
+  /** Whether the displayed line total already includes the GST above. */
+  taxInclusive: boolean;
 }
 
 export interface CartViewProps {
@@ -77,6 +116,12 @@ export interface CartViewProps {
   priced: boolean;
   /** Whether the viewer may still place an order (approved + live grant). */
   canOrder: boolean;
+  /**
+   * The server's GST order-preview, or null when GST is off / the viewer is
+   * gated. The client keeps supplyType + seller-state context from this and
+   * re-derives the amounts live as quantities change.
+   */
+  initialTax: CartTaxSummary | null;
 }
 
 /** A stable per-line key (product + variant pair is unique in a cart). */
@@ -100,6 +145,7 @@ export function CartView({
   initialSubtotalPaise,
   priced,
   canOrder,
+  initialTax,
 }: CartViewProps) {
   const router = useRouter();
   const reduced = useReducedMotion();
@@ -128,6 +174,52 @@ export function CartView({
     : null;
   const itemCount = orderableLines.reduce((sum, l) => sum + l.quantity, 0);
   const canPlace = canOrder && orderableLines.length > 0 && !placing;
+
+  // Live GST preview: re-derived from the current (possibly optimistic) line
+  // quantities using the same integer formula as the server, then split by the
+  // supply type the server determined. When GST is off (initialTax null) the
+  // whole block is absent and the cart renders exactly as pre-GST.
+  const taxPreview = React.useMemo(() => {
+    if (!priced || !initialTax) return null;
+    let totalTaxablePaise = 0;
+    let totalTaxPaise = 0;
+    let grossPaise = 0;
+    for (const l of orderableLines) {
+      if (l.gstRateBps === null || l.lineTotalPaise === null) continue;
+      const t = lineTaxOf(l.lineTotalPaise, l.gstRateBps, l.taxInclusive);
+      totalTaxablePaise += t.taxablePaise;
+      totalTaxPaise += t.taxPaise;
+      grossPaise += t.grossPaise;
+    }
+    const supplyType = initialTax.supplyType;
+    // CGST/SGST split mirrors src/lib/gst.ts (odd paisa → SGST). IGST = full tax.
+    const cgstPaise = supplyType === "INTRA" ? Math.floor(totalTaxPaise / 2) : 0;
+    const sgstPaise = supplyType === "INTRA" ? totalTaxPaise - cgstPaise : 0;
+    const igstPaise = supplyType === "INTER" ? totalTaxPaise : 0;
+    // Preserve the server's rounding mode: INVOICE re-applies a nearest-rupee
+    // round-off live; LINE leaves the summed gross exact.
+    let roundOffPaise = 0;
+    let grandTotalPaise = grossPaise;
+    if (initialTax.roundingMode === "INVOICE") {
+      grandTotalPaise = Math.round(grossPaise / 100) * 100;
+      roundOffPaise = grandTotalPaise - grossPaise;
+    }
+    return {
+      supplyType,
+      totalTaxablePaise,
+      totalTaxPaise,
+      totalCgstPaise: cgstPaise,
+      totalSgstPaise: sgstPaise,
+      totalIgstPaise: igstPaise,
+      roundOffPaise,
+      grandTotalPaise,
+      roundingMode: initialTax.roundingMode,
+    } satisfies CartTaxSummary;
+  }, [priced, initialTax, orderableLines]);
+
+  // The customer-facing total that "Place order" commits to: the GST grand
+  // total when GST applies, else the plain subtotal.
+  const payablePaise = taxPreview ? taxPreview.grandTotalPaise : subtotalPaise;
 
   const markPending = (key: string, on: boolean) =>
     setPending((prev) => {
@@ -422,6 +514,12 @@ export function CartView({
                             <p className="text-[0.7rem] text-muted-foreground tabular-nums">
                               {formatPaise(line.unitPricePaise)} each
                             </p>
+                            {line.gstRateBps != null ? (
+                              <p className="text-[0.65rem] text-muted-foreground">
+                                {line.taxInclusive ? "incl." : "+"}{" "}
+                                {formatRate(line.gstRateBps)} GST
+                              </p>
+                            ) : null}
                           </>
                         ) : (
                           <p className="text-xs text-muted-foreground">
@@ -451,6 +549,7 @@ export function CartView({
             placing={placing}
             onPlace={placeOrder}
             canOrder={canOrder}
+            tax={taxPreview}
           />
         </div>
       </aside>
@@ -463,13 +562,14 @@ export function CartView({
           <div className="min-w-0 flex-1">
             {priced ? (
               <p className="truncate text-sm font-semibold tabular-nums">
-                {formatPaise(subtotalPaise ?? 0)}
+                {formatPaise(payablePaise ?? 0)}
               </p>
             ) : (
               <p className="text-xs text-muted-foreground">Price on approval</p>
             )}
             <p className="text-[0.7rem] text-muted-foreground">
               {itemCount} item{itemCount === 1 ? "" : "s"}
+              {taxPreview ? " · incl. GST" : ""}
             </p>
           </div>
           <Button
@@ -496,6 +596,8 @@ interface SummaryProps {
   placing: boolean;
   onPlace: () => void;
   canOrder: boolean;
+  /** Live GST preview, or null when GST is off / gated. */
+  tax: CartTaxSummary | null;
 }
 
 function Summary({
@@ -508,7 +610,13 @@ function Summary({
   placing,
   onPlace,
   canOrder,
+  tax,
 }: SummaryProps) {
+  // With GST on, the taxable base is what we call "subtotal" for an exclusive
+  // catalog; for an inclusive one the tax is carved out of the line totals. We
+  // display the taxable subtotal + the GST lines + the grand total.
+  const showTax = priced && tax !== null;
+  const grandTotalPaise = showTax ? tax.grandTotalPaise : subtotalPaise ?? 0;
   return (
     <div className="flex flex-col gap-4">
       <h2 className="text-sm font-semibold text-foreground">Order summary</h2>
@@ -522,13 +630,27 @@ function Summary({
             {priced ? formatPaise(subtotalPaise ?? 0) : "—"}
           </dd>
         </div>
+
+        {showTax ? (
+          <TaxLines tax={tax} />
+        ) : null}
+
         <div className="mt-1 flex items-center justify-between border-t border-border pt-2">
-          <dt className="font-semibold text-foreground">Subtotal</dt>
+          <dt className="font-semibold text-foreground">
+            {showTax ? "Grand total" : "Subtotal"}
+          </dt>
           <dd className="text-base font-semibold text-foreground tabular-nums">
-            {priced ? formatPaise(subtotalPaise ?? 0) : "Price on approval"}
+            {priced ? formatPaise(grandTotalPaise) : "Price on approval"}
           </dd>
         </div>
       </dl>
+
+      {showTax && tax.supplyType === null ? (
+        <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-[0.7rem] leading-relaxed text-amber-700 dark:text-amber-300">
+          GST is shown combined. Add your GSTIN in the note (or your profile) so
+          we can split it into CGST/SGST or IGST on the proforma.
+        </p>
+      ) : null}
 
       <p className="text-[0.7rem] leading-relaxed text-muted-foreground">
         No payment is taken now. Placing an order sends a purchase request; our
@@ -567,5 +689,54 @@ function Summary({
         Place order
       </Button>
     </div>
+  );
+}
+
+/**
+ * The GST breakdown rows inside the Summary: taxable base, then CGST+SGST
+ * (intra-state) OR IGST (inter-state) OR a single combined "GST" line (no place
+ * of supply), plus any invoice round-off. Amounts are the live preview.
+ */
+function TaxLines({ tax }: { tax: CartTaxSummary }) {
+  const inter = tax.supplyType === "INTER";
+  const intra = tax.supplyType === "INTRA";
+  return (
+    <>
+      <div className="flex items-center justify-between text-muted-foreground">
+        <dt>Taxable value</dt>
+        <dd className="tabular-nums">{formatPaise(tax.totalTaxablePaise)}</dd>
+      </div>
+      {intra ? (
+        <>
+          <div className="flex items-center justify-between text-muted-foreground">
+            <dt>CGST</dt>
+            <dd className="tabular-nums">{formatPaise(tax.totalCgstPaise)}</dd>
+          </div>
+          <div className="flex items-center justify-between text-muted-foreground">
+            <dt>SGST</dt>
+            <dd className="tabular-nums">{formatPaise(tax.totalSgstPaise)}</dd>
+          </div>
+        </>
+      ) : inter ? (
+        <div className="flex items-center justify-between text-muted-foreground">
+          <dt>IGST</dt>
+          <dd className="tabular-nums">{formatPaise(tax.totalIgstPaise)}</dd>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between text-muted-foreground">
+          <dt>GST</dt>
+          <dd className="tabular-nums">{formatPaise(tax.totalTaxPaise)}</dd>
+        </div>
+      )}
+      {tax.roundOffPaise !== 0 ? (
+        <div className="flex items-center justify-between text-muted-foreground">
+          <dt>Round off</dt>
+          <dd className="tabular-nums">
+            {tax.roundOffPaise > 0 ? "+" : "−"}
+            {formatPaise(Math.abs(tax.roundOffPaise))}
+          </dd>
+        </div>
+      ) : null}
+    </>
   );
 }

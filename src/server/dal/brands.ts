@@ -172,7 +172,7 @@ export async function listByBrandForViewer(
       skip,
       take,
     });
-    return rows.map(toPricedProduct);
+    return rows.map((row) => toPricedProduct(row));
   }
   const rows = await prisma.product.findMany({
     where,
@@ -181,5 +181,5 @@ export async function listByBrandForViewer(
     skip,
     take,
   });
-  return rows.map(toPublicProduct);
+  return rows.map((row) => toPublicProduct(row));
 }

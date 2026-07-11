@@ -50,6 +50,9 @@ interface ReviewRow {
   status: string;
   tags: string;
   description: string;
+  hsnCode: string;
+  gstRate: string;
+  taxInclusive: string;
   /** Parent SKU when this is a variant row (empty otherwise). */
   variantOf: string;
   /** Human-readable option combination, e.g. "Capacity: 16GB · Color: Black". */
@@ -98,6 +101,9 @@ function toReviewRow(row: PreviewRow): ReviewRow {
     status: row.raw.status,
     tags: row.raw.tags,
     description: row.raw.description,
+    hsnCode: row.raw.hsnCode,
+    gstRate: row.raw.gstRate,
+    taxInclusive: row.raw.taxInclusive,
     variantOf: row.variant?.parentSku ?? "",
     options,
   };
@@ -215,6 +221,15 @@ function buildColumns(): ColumnDef<ReviewRow>[] {
     { key: "status", header: "Status", type: "text", width: 120, validate: serverError("status") },
     { key: "tags", header: "Tags", type: "text", width: 180 },
     { key: "description", header: "Description", type: "text", width: 240 },
+    { key: "hsnCode", header: "HSN", type: "text", width: 110, validate: serverError("hsnCode") },
+    { key: "gstRate", header: "GST %", type: "text", width: 90, validate: serverError("gstRate") },
+    {
+      key: "taxInclusive",
+      header: "Tax incl.",
+      type: "text",
+      width: 100,
+      validate: serverError("taxInclusive"),
+    },
   ];
 }
 

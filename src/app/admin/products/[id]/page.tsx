@@ -8,6 +8,8 @@ import { isAdmin } from "@/server/types/viewer";
 import { listAll } from "@/server/dal/categories";
 import { listActiveBrands } from "@/server/services/brands";
 import { toPricedProduct } from "@/server/dto/product";
+import { getSellerTaxProfile } from "@/server/services/tax-profile";
+import { resolveEffectiveTax } from "@/lib/tax-inherit";
 import { objectIdSchema } from "@/lib/schemas/shared";
 import { AdminShell } from "@/components/shell/AdminShell";
 import { PageHeader } from "@/components/common";
@@ -49,6 +51,12 @@ const EDIT_SELECT = {
   images: true,
   price: true,
   mrp: true,
+  // GST override columns + the owning category's defaults, for the editor's
+  // effective-tax preview / inherit hints. Non-monetary metadata.
+  hsnCode: true,
+  gstRateBps: true,
+  taxTreatment: true,
+  category: { select: { defaultHsnCode: true, defaultGstRateBps: true } },
   createdAt: true,
   updatedAt: true,
   // Variants (opt-in). `optionTypes`/`variants` are absent/empty for the
@@ -102,6 +110,8 @@ export default async function EditProductPage({
     notFound();
   }
 
+  const profile = await getSellerTaxProfile();
+
   const priced = toPricedProduct(row);
   const product: EditorProduct = {
     id: priced.id,
@@ -125,7 +135,28 @@ export default async function EditProductPage({
     hasVariants: row.hasVariants,
     optionTypes: parseOptionTypes(row.optionTypes),
     variants: toEditorVariants(row.variants as PersistedVariant[]),
+    // Raw GST overrides (null = inherit); fed back into the editor's fields.
+    hsnCode: row.hsnCode,
+    gstRateBps: row.gstRateBps,
+    taxTreatment: row.taxTreatment,
   };
+
+  // The tax section is shown only when the GST kill-switch is on. `inherited`
+  // is the effective tax with the product's OWN overrides stripped out, so the
+  // editor can show what applies when a field is left blank.
+  const tax = profile.gstEnabled
+    ? {
+        inherited: resolveEffectiveTax({
+          entity: {},
+          category: row.category,
+          profile: {
+            defaultHsnCode: profile.defaultHsnCode,
+            defaultGstRateBps: profile.defaultGstRateBps,
+            priceEntryMode: profile.priceEntryMode,
+          },
+        }),
+      }
+    : undefined;
 
   return (
     <AdminShell title="Edit product">
@@ -138,6 +169,7 @@ export default async function EditProductPage({
         />
         <ProductEditorForm
           product={product}
+          tax={tax}
           brands={brands}
           categories={categories.map((c) => ({
             id: c.id,

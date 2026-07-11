@@ -204,6 +204,38 @@ describe("products DAL price gate", () => {
   });
 });
 
+describe("GST threading — kill-switch OFF (default seed) keeps pre-GST shapes", () => {
+  it("anon carries amount-free tax metadata and NO tax paise anywhere", async () => {
+    const products = await listForViewer(ANON_VIEWER, { take: 10 });
+    expect(products.length).toBeGreaterThan(0);
+    for (const p of products) {
+      // The non-monetary metadata key is always present…
+      expect("tax" in p).toBe(true);
+      expect(p.tax.gstRateBps).toBeNull();
+      expect(p.tax.taxInclusive).toBe(false);
+      // …and the priced-only breakdown is STRUCTURALLY absent for a gated view.
+      expect("taxBreakdown" in p).toBe(false);
+    }
+    // Adversarial: no paise tax field name survives anywhere in the payload.
+    const serialized = JSON.stringify(products);
+    expect(serialized).not.toContain("taxBreakdown");
+    expect(serialized).not.toContain("taxPaise");
+    expect(serialized).not.toContain("taxablePaise");
+    expect(serialized).not.toContain("grossPaise");
+  });
+
+  it("approved viewer gets taxBreakdown: null while GST is off (pre-GST total)", async () => {
+    const products = await listForViewer(APPROVED_VIEWER, { take: 10 });
+    expect(products.length).toBeGreaterThan(0);
+    for (const p of products) {
+      const priced = p as typeof p & { taxBreakdown: unknown };
+      expect("taxBreakdown" in priced).toBe(true);
+      expect(priced.taxBreakdown).toBeNull();
+      expect(p.tax.gstRateBps).toBeNull();
+    }
+  });
+});
+
 describe("brand master on the public payload", () => {
   it("exposes brandRef {id,name,slug} to anon WITHOUT leaking price", async () => {
     // Find a product that references a brand master, via any active row.

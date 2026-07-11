@@ -11,6 +11,7 @@ import {
   Search,
   Settings,
   ShieldCheck,
+  Percent,
   Tag,
   Trash2,
   Upload,
@@ -65,6 +66,7 @@ export const adminSecondaryNav: readonly NavItem[] = [
   { label: "Audit log", href: "/admin/audit", icon: History },
   { label: "Sessions", href: "/admin/sessions", icon: MonitorSmartphone },
   { label: "Trash", href: "/admin/trash", icon: Trash2 },
+  { label: "Tax", href: "/admin/settings/tax", icon: Percent },
   { label: "Settings", href: "/admin/settings", icon: Settings },
 ] as const
 
