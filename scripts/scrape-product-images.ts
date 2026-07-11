@@ -42,6 +42,15 @@ const IMAGES_PER_PRODUCT = 3;
 const MIN_DIM = 400;
 const LIMIT = process.env.LIMIT ? parseInt(process.env.LIMIT, 10) : Infinity;
 const FORCE = process.env.FORCE === "1";
+// Sharding: run N workers in parallel, each taking every Nth pending product
+// (i % WORKER_COUNT === WORKER_INDEX). Disjoint + complete, so no two workers
+// scrape the same product. Defaults to a single worker.
+const WORKER_COUNT = Math.max(1, parseInt(process.env.WORKER_COUNT ?? "1", 10));
+const WORKER_INDEX = Math.min(
+  WORKER_COUNT - 1,
+  Math.max(0, parseInt(process.env.WORKER_INDEX ?? "0", 10)),
+);
+const WORKER_TAG = WORKER_COUNT > 1 ? `[w${WORKER_INDEX}] ` : "";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 interface DdgResult { image: string; width: number; height: number }
@@ -99,9 +108,10 @@ const DESCRIPTOR: Record<string, string> = {
 // timestamp, so progress survives across runs and can be tailed live.
 const LOG_FILE = path.join(process.cwd(), "scripts", "scrape-product-images.progress.log");
 function log(msg: string) {
-  console.log(msg);
+  const line = `${new Date().toISOString()} ${WORKER_TAG}${msg}`;
+  console.log(line);
   try {
-    appendFileSync(LOG_FILE, `${new Date().toISOString()} ${msg}\n`);
+    appendFileSync(LOG_FILE, line + "\n");
   } catch {
     /* logging is best-effort */
   }
@@ -115,8 +125,10 @@ async function main() {
     select: { id: true, name: true, slug: true, images: true, category: { select: { slug: true } } },
     orderBy: { createdAt: "asc" },
   });
-  const pending = FORCE ? products : products.filter((p) => p.images.length === 0);
-  log(`# run start — ${products.length} products, ${pending.length} to scrape (${products.length - pending.length} already imaged)`);
+  const allPending = FORCE ? products : products.filter((p) => p.images.length === 0);
+  // Take this worker's shard of the pending list.
+  const pending = allPending.filter((_, i) => i % WORKER_COUNT === WORKER_INDEX);
+  log(`# run start — ${products.length} products, ${allPending.length} pending, this worker ${pending.length} (shard ${WORKER_INDEX + 1}/${WORKER_COUNT})`);
 
   let done = 0;
   let withImages = 0;
