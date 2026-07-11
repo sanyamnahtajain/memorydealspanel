@@ -296,7 +296,7 @@ export function PreferencesPanel({ className }: PreferencesPanelProps) {
 
         <Field
           title="Theme"
-          description="Light, dark, or follow your system."
+          description="Choose light or dark."
           control={<ThemeToggle />}
         />
 

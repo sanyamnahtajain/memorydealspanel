@@ -4,41 +4,31 @@ import * as React from "react"
 
 import { DEFAULT_THEME, THEME_STORAGE_KEY } from "./theme-script"
 
-export type Theme = "light" | "dark" | "system"
-export type ResolvedTheme = "light" | "dark"
+/** The two themes. There is no "system"/OS-following mode. */
+export type Theme = "light" | "dark"
+/** Kept as an alias of {@link Theme} for existing consumers. */
+export type ResolvedTheme = Theme
 
 export interface ThemeContextValue {
-  /** The user's stored preference. `'system'` follows the OS. */
+  /** The user's current theme (persisted; defaults to `'light'`). */
   theme: Theme
-  /** The concrete theme currently applied (`system` resolved to light/dark). */
+  /** Same as `theme` — the concrete applied theme. */
   resolvedTheme: ResolvedTheme
-  /** Persist a new preference and apply it immediately. */
+  /** Persist a new theme and apply it immediately. */
   setTheme: (theme: Theme) => void
 }
 
 const ThemeContext = React.createContext<ThemeContextValue | null>(null)
 
-const MEDIA_QUERY = "(prefers-color-scheme: dark)"
-
 function isTheme(value: unknown): value is Theme {
-  return value === "light" || value === "dark" || value === "system"
+  return value === "light" || value === "dark"
 }
 
-function systemPrefersDark(): boolean {
-  if (typeof window === "undefined" || !window.matchMedia) return false
-  return window.matchMedia(MEDIA_QUERY).matches
-}
-
-function resolve(theme: Theme, systemDark: boolean): ResolvedTheme {
-  if (theme === "system") return systemDark ? "dark" : "light"
-  return theme
-}
-
-/** Apply/remove the `dark` class on `<html>` to match the resolved theme. */
-function applyClass(resolved: ResolvedTheme) {
+/** Apply/remove the `dark` class on `<html>` to match the theme. */
+function applyClass(theme: Theme) {
   const root = document.documentElement
-  root.classList.toggle("dark", resolved === "dark")
-  root.style.colorScheme = resolved
+  root.classList.toggle("dark", theme === "dark")
+  root.style.colorScheme = theme
 }
 
 /**
@@ -60,9 +50,9 @@ function syncMetaThemeColor() {
 export interface ThemeProviderProps {
   children: React.ReactNode
   /**
-   * Preference to seed on first visit when nothing is stored yet. Lets the
-   * admin area default to `dark` while the storefront defaults to `system`.
-   * A previously stored user choice always wins.
+   * Theme to seed on a first visit when nothing is stored yet. Defaults to
+   * `'light'` — first-time visitors always start in light mode. A previously
+   * stored user choice always wins.
    */
   defaultTheme?: Theme
 }
@@ -71,8 +61,9 @@ export function ThemeProvider({
   children,
   defaultTheme = DEFAULT_THEME,
 }: ThemeProviderProps) {
-  // Seed from storage synchronously; if nothing stored, use defaultTheme and
-  // persist it so the pre-hydration script picks it up on the next load.
+  // Seed from storage synchronously; if nothing (valid) is stored, use
+  // defaultTheme (light) and persist it below so the pre-hydration script picks
+  // it up on the next load.
   const [theme, setThemeState] = React.useState<Theme>(() => {
     if (typeof window === "undefined") return defaultTheme
     try {
@@ -84,15 +75,8 @@ export function ThemeProvider({
     return defaultTheme
   })
 
-  const [systemDark, setSystemDark] = React.useState<boolean>(() =>
-    systemPrefersDark()
-  )
-
-  const resolvedTheme = resolve(theme, systemDark)
-
-  // On mount, persist the seeded default if this is a first visit, so the
-  // pre-hydration inline script resolves to the same theme on subsequent
-  // loads. Writing to storage is an external side-effect (no React setState).
+  // On mount, persist the seeded default on a first visit so the pre-hydration
+  // inline script resolves to the same theme next load.
   React.useEffect(() => {
     let hasStored = false
     try {
@@ -109,7 +93,7 @@ export function ThemeProvider({
     }
   }, [defaultTheme])
 
-  // Keep in sync with the preference written by other tabs/windows.
+  // Keep in sync with a choice made in another tab/window.
   React.useEffect(() => {
     const onStorage = (event: StorageEvent) => {
       if (event.key !== THEME_STORAGE_KEY) return
@@ -119,23 +103,11 @@ export function ThemeProvider({
     return () => window.removeEventListener("storage", onStorage)
   }, [])
 
-  // Track OS preference while (and only while) following the system.
+  // Apply the theme to <html> and the meta tag on every change.
   React.useEffect(() => {
-    if (theme !== "system") return
-    if (typeof window === "undefined" || !window.matchMedia) return
-    const mql = window.matchMedia(MEDIA_QUERY)
-    const onChange = (event: MediaQueryListEvent) => {
-      setSystemDark(event.matches)
-    }
-    mql.addEventListener("change", onChange)
-    return () => mql.removeEventListener("change", onChange)
-  }, [theme])
-
-  // Apply the resolved theme to <html> and the meta tag on every change.
-  React.useEffect(() => {
-    applyClass(resolvedTheme)
+    applyClass(theme)
     syncMetaThemeColor()
-  }, [resolvedTheme])
+  }, [theme])
 
   const setTheme = React.useCallback((next: Theme) => {
     setThemeState(next)
@@ -147,14 +119,14 @@ export function ThemeProvider({
   }, [])
 
   const value = React.useMemo<ThemeContextValue>(
-    () => ({ theme, resolvedTheme, setTheme }),
-    [theme, resolvedTheme, setTheme]
+    () => ({ theme, resolvedTheme: theme, setTheme }),
+    [theme, setTheme]
   )
 
   return <ThemeContext value={value}>{children}</ThemeContext>
 }
 
-/** Access the current theme, resolved theme, and setter. */
+/** Access the current theme and setter. */
 export function useTheme(): ThemeContextValue {
   const ctx = React.useContext(ThemeContext)
   if (!ctx) {

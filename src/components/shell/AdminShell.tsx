@@ -17,8 +17,6 @@ import {
 import { Tooltip } from "@/components/ui/tooltip"
 import { ThemeToggle } from "@/components/theme/ThemeToggle"
 import { SignOutButton } from "@/components/admin/SignOutButton"
-import { THEME_STORAGE_KEY } from "@/components/theme/theme-script"
-import { useTheme } from "@/components/theme/ThemeProvider"
 import { TabBadge } from "@/components/shell/TabBadge"
 import { Logo } from "@/components/brand/Logo"
 import {
@@ -52,11 +50,9 @@ export interface AdminShellProps {
 /**
  * Admin app shell.
  *
- * The theme is driven globally by `<ThemeProvider>` on `<html>` — this shell no
- * longer hardcodes `dark`. Instead admin *defaults* to dark: on a first visit
- * with no stored preference we seed `dark`, but an explicit user choice
- * (including switching to light/system via the header `ThemeToggle`) always
- * wins.
+ * The theme is driven globally by `<ThemeProvider>` on `<html>`. First-time
+ * visitors always start in light; a user's Light/Dark choice via the header
+ * `ThemeToggle` is persisted and honoured on every subsequent load.
  *
  * - Mobile: bottom tabs (Dashboard / Products / Requests / Customers) plus a
  *   "More" bottom sheet for Import / Trash / Settings.
@@ -76,21 +72,6 @@ export function AdminShell({
   const pathname = usePathname()
   const reducedMotion = useReducedMotion()
   const spring: Transition = reducedMotion ? { duration: 0 } : SNAPPY_SPRING
-  const { setTheme } = useTheme()
-
-  // Admin defaults to dark: seed `dark` only when the user has no stored
-  // preference yet. A previously stored choice is left untouched.
-  React.useEffect(() => {
-    let hasStored = false
-    try {
-      const stored = window.localStorage.getItem(THEME_STORAGE_KEY)
-      hasStored =
-        stored === "light" || stored === "dark" || stored === "system"
-    } catch {
-      hasStored = false
-    }
-    if (!hasStored) setTheme("dark")
-  }, [setTheme])
 
   const [collapsed, setCollapsed] = React.useState(false)
   const [moreOpen, setMoreOpen] = React.useState(false)

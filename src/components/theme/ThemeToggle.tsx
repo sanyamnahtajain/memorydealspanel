@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Monitor, Moon, Sun } from "lucide-react"
+import { Moon, Sun } from "lucide-react"
 import { motion, useReducedMotion, type Transition } from "motion/react"
 
 import { cn } from "@/lib/utils"
@@ -26,7 +26,6 @@ const OPTIONS: ReadonlyArray<{
 }> = [
   { value: "light", label: "Light", icon: Sun },
   { value: "dark", label: "Dark", icon: Moon },
-  { value: "system", label: "System", icon: Monitor },
 ]
 
 export interface ThemeToggleProps {
@@ -39,10 +38,10 @@ export interface ThemeToggleProps {
 }
 
 /**
- * Custom animated segmented control for choosing the theme
- * (Light / Dark / System). A single spring-driven pill slides between the
- * three options via a shared `layoutId`. Fully keyboard-accessible via native
- * radio semantics — never a native `<select>`.
+ * Custom animated segmented control for choosing the theme (Light / Dark).
+ * A single spring-driven pill slides between the two options via a shared
+ * `layoutId`. Fully keyboard-accessible via native radio semantics — never a
+ * native `<select>`.
  */
 export function ThemeToggle({ variant = "full", className }: ThemeToggleProps) {
   const { theme, setTheme } = useTheme()
