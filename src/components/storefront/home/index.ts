@@ -2,5 +2,8 @@ export { HomeHero } from "./HomeHero";
 export { HowItWorks } from "./HowItWorks";
 export { ValueProps } from "./ValueProps";
 export { BrandStrip } from "./BrandStrip";
+export { BrandShowcase } from "./BrandShowcase";
+export { StatsBar } from "./StatsBar";
+export { HomeCTA } from "./HomeCTA";
 export { FeaturedRail } from "./FeaturedRail";
 export { SectionHeading } from "./SectionHeading";

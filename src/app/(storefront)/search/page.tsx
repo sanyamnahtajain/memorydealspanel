@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 
 import { PAGE_SIZES } from "@/lib/constants";
 import { listActive } from "@/server/dal/categories";
+import { listActivePublicBrands } from "@/server/dal/brands";
+import { listForViewer } from "@/server/dal/products";
 import { getViewer } from "@/server/auth/viewer";
 import { canSeePrices } from "@/server/types/viewer";
 import { discoverProducts } from "@/server/storefront/discovery";
@@ -9,13 +11,20 @@ import { wishlistStateForViewer } from "@/server/services/wishlist";
 import { cartCountForViewer } from "@/server/services/cart";
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
 import { FadeUp } from "@/components/motion/primitives";
-import { EmptyState } from "@/components/common/EmptyState";
 import {
   StorefrontListing,
   buildListingItems,
   type ListingItem,
 } from "@/components/storefront/listing";
 import { SearchLauncher } from "@/components/storefront/SearchLauncher";
+import { CategoryGrid } from "@/components/storefront/CategoryGrid";
+import { renderPriceSlot } from "@/components/storefront/priceSlot";
+import type { ProductCardItem } from "@/components/storefront/ProductCardGrid";
+import {
+  BrandShowcase,
+  FeaturedRail,
+  SectionHeading,
+} from "@/components/storefront/home";
 import { DiscoveryFilters } from "@/components/storefront/filters";
 import {
   loadFacetData,
@@ -112,6 +121,19 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
     ? buildListingItems(firstPage.items, viewer)
     : [];
 
+  // No query → a discovery surface (browse by category/brand + featured) so
+  // search is never a dead end. Prices stay gated to the real viewer.
+  const [discoveryBrands, discoveryFeatured] = search
+    ? [[], []]
+    : await Promise.all([
+        listActivePublicBrands(),
+        listForViewer(viewer, { take: 8 }),
+      ]);
+  const featuredItems: ProductCardItem[] = discoveryFeatured.map((product) => ({
+    product,
+    priceSlot: renderPriceSlot(product, viewer),
+  }));
+
   // Load-more re-runs the SAME faceted query for the next offset window; the
   // selection + query are captured server-side (gated viewers can't inject a
   // price band). Price slots stay server-rendered.
@@ -151,11 +173,33 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
       </FadeUp>
 
       {rawQuery.length === 0 || !facets || !firstPage ? (
-        <EmptyState
-          illustration="no-results"
-          title="Search the catalogue"
-          description="Start typing a product name or brand to find what you need."
-        />
+        <div className="space-y-10 pb-4">
+          <section aria-labelledby="search-cats">
+            <SectionHeading
+              id="search-cats"
+              title="Browse by category"
+              seeAllHref="/categories"
+              seeAllLabel="View all"
+            />
+            {categories.length > 0 ? (
+              <CategoryGrid categories={categories} />
+            ) : null}
+          </section>
+
+          {featuredItems.length > 0 ? (
+            <section aria-labelledby="search-featured">
+              <SectionHeading id="search-featured" title="Popular right now" />
+              <FeaturedRail items={featuredItems} />
+            </section>
+          ) : null}
+
+          {discoveryBrands.length > 0 ? (
+            <section aria-labelledby="search-brands">
+              <SectionHeading id="search-brands" title="Shop by brand" />
+              <BrandShowcase brands={discoveryBrands} />
+            </section>
+          ) : null}
+        </div>
       ) : (
         <div>
           <p className="mb-4 text-sm text-muted-foreground">

@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 
+import { prisma } from "@/server/db";
 import { listActive } from "@/server/dal/categories";
+import { listActivePublicBrands } from "@/server/dal/brands";
 import { listForViewer } from "@/server/dal/products";
 import { ANON_VIEWER } from "@/server/types/viewer";
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
@@ -13,11 +15,13 @@ import {
   HomeHero,
   HowItWorks,
   ValueProps,
-  BrandStrip,
+  BrandShowcase,
+  StatsBar,
+  HomeCTA,
   FeaturedRail,
   SectionHeading,
 } from "@/components/storefront/home";
-import { APP_NAME, APP_TAGLINE } from "@/lib/constants";
+import { APP_NAME } from "@/lib/constants";
 
 export const metadata: Metadata = {
   title: `${APP_NAME} — Wholesale mobile accessories`,
@@ -26,53 +30,54 @@ export const metadata: Metadata = {
 };
 
 /**
- * Home is a PUBLIC, price-free landing page served via ISR. The featured rail
- * is rendered for the ANONYMOUS viewer on purpose: the cached shell must never
+ * Home is a PUBLIC, price-free landing page served via ISR. The featured rail is
+ * rendered for the ANONYMOUS viewer on purpose: the cached shell must never
  * embed a real price, and locked pills are correct for every visitor sharing a
- * cache entry. Live pricing is unlocked on the category, product and search
- * surfaces, which branch on the real viewer.
- *
- * INTEGRATOR NOTE: to show approved customers live prices on the home teaser,
- * split the featured rail into its own dynamic segment / client fetch — do NOT
- * relax this page's ISR, or a cached anon render could be served to an approved
- * viewer (and vice-versa).
+ * cache entry. Live pricing is unlocked on category/product/search surfaces,
+ * which branch on the real viewer.
  */
 export const revalidate = 300;
 
 const FEATURED_LIMIT = 8;
 
 export default async function HomePage() {
-  const [categories, featured] = await Promise.all([
+  const [categories, brands, featured, productCount] = await Promise.all([
     listActive(),
+    listActivePublicBrands(),
     listForViewer(ANON_VIEWER, { take: FEATURED_LIMIT }),
+    prisma.product.count({ where: { status: "ACTIVE", deletedAt: null } }),
   ]);
 
   const featuredItems: ProductCardItem[] = featured.map((product) => ({
     product,
-    // Anon viewer → every slot is a locked "See price" chip. No money crosses
-    // into the client, so this is safe to cache in the shared ISR shell.
     priceSlot: renderPriceSlot(product, ANON_VIEWER),
   }));
 
+  // Category names seed the hero's "popular" search chips.
+  const suggestions = categories.slice(0, 5).map((c) => c.name);
+
   return (
     <StorefrontShell>
-      <HomeHero />
+      <HomeHero suggestions={suggestions} />
 
       <HomeSections>
-        <section aria-labelledby="home-how">
-          <SectionHeading id="home-how" title="How it works" />
-          <HowItWorks />
-        </section>
+        {/* Stats strip — immediate sense of catalogue scale. */}
+        <StatsBar
+          products={productCount}
+          brands={brands.length}
+          categories={categories.length}
+        />
 
+        {/* Shop by category — the retailer's #1 jump-off point, high on the page. */}
         <section aria-labelledby="home-categories">
           <SectionHeading
             id="home-categories"
             title="Shop by category"
-            seeAllHref="/search"
-            seeAllLabel="Browse all"
+            seeAllHref="/categories"
+            seeAllLabel="View all"
           />
           {categories.length > 0 ? (
-            <CategoryGrid categories={categories} />
+            <CategoryGrid categories={categories} animated />
           ) : (
             <EmptyState
               illustration="empty-box"
@@ -82,6 +87,7 @@ export default async function HomePage() {
           )}
         </section>
 
+        {/* New & featured products (gated pills). */}
         {featuredItems.length > 0 ? (
           <section aria-labelledby="home-featured">
             <SectionHeading
@@ -93,14 +99,28 @@ export default async function HomePage() {
           </section>
         ) : null}
 
+        {/* Shop by brand — leverages the brand master. */}
+        {brands.length > 0 ? (
+          <section aria-labelledby="home-brands">
+            <SectionHeading id="home-brands" title="Shop by brand" />
+            <BrandShowcase brands={brands} />
+          </section>
+        ) : null}
+
+        {/* How it works — conversion for first-time visitors. */}
+        <section aria-labelledby="home-how">
+          <SectionHeading id="home-how" title="How it works" />
+          <HowItWorks />
+        </section>
+
+        {/* Why us — trust. */}
         <section aria-labelledby="home-why">
           <SectionHeading id="home-why" title={`Why ${APP_NAME}`} />
           <ValueProps />
         </section>
 
-        <section aria-label={APP_TAGLINE}>
-          <BrandStrip />
-        </section>
+        {/* Closing call-to-action. */}
+        <HomeCTA />
       </HomeSections>
     </StorefrontShell>
   );
