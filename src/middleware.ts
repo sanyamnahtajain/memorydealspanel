@@ -77,6 +77,7 @@ function makeNonce(): string {
 
 export function middleware(request: NextRequest): NextResponse {
   const { pathname } = request.nextUrl;
+  const host = (request.headers.get("host") ?? "").toLowerCase();
   const nonce = makeNonce();
 
   // Forward the nonce to the App Router on the *request* headers. Next parses
@@ -86,6 +87,42 @@ export function middleware(request: NextRequest): NextResponse {
   requestHeaders.set(CSP_HEADER, buildContentSecurityPolicy(IS_DEV, nonce));
   requestHeaders.set("x-nonce", nonce);
 
+  const isLocal = /^(localhost|127\.0\.0\.1)(:|$)/.test(host);
+  const onAdminHost = !isLocal && host.startsWith("admin.");
+
+  // ── The admin subdomain lands on the admin console ────────────────────────
+  // https://admin.thememorydeals.com/ → the dashboard (which itself falls back
+  // to /admin/login when unauthed, so an unauthed visitor sees the login page).
+  // ONLY the root is remapped — /admin/*, the manifest, icons, API and every
+  // other route are served untouched, so nothing else is disturbed.
+  if (onAdminHost && pathname === "/") {
+    if (!request.cookies.has(SESSION_COOKIE)) {
+      return withSecurityHeaders(
+        NextResponse.redirect(new URL("/admin/login", request.url)),
+        nonce,
+      );
+    }
+    const url = request.nextUrl.clone();
+    url.pathname = "/admin/dashboard";
+    return withSecurityHeaders(
+      NextResponse.rewrite(url, { request: { headers: requestHeaders } }),
+      nonce,
+    );
+  }
+
+  // ── Keep the admin OFF the main domain (opt-in via ADMIN_HOST) ────────────
+  // When ADMIN_HOST is configured, /admin/* on the storefront domain is sent to
+  // the admin subdomain, so the two apps stay cleanly separated. Skipped when
+  // unset (admin still works on the main domain) and in local dev.
+  const adminHost = process.env.ADMIN_HOST;
+  if (!onAdminHost && !isLocal && adminHost && pathname.startsWith("/admin")) {
+    const url = new URL(request.url);
+    url.protocol = "https:";
+    url.host = adminHost;
+    return NextResponse.redirect(url);
+  }
+
+  // ── Admin auth fence (main domain, and /admin paths on the admin host) ────
   const isAdminArea = pathname.startsWith("/admin");
   if (isAdminArea && !isAdminPublic(pathname)) {
     const hasSession = request.cookies.has(SESSION_COOKIE);
