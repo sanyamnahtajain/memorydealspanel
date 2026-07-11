@@ -44,6 +44,32 @@ describe("buildContentSecurityPolicy", () => {
     expect(value).not.toContain("not a url");
   });
 
+  it("allows the R2 S3 upload host(s) in connect-src (presigned direct PUT)", () => {
+    const prevAccount = process.env.R2_ACCOUNT_ID;
+    const prevBucket = process.env.R2_BUCKET;
+    process.env.R2_ACCOUNT_ID = "03f23ad3d88cd7d0737f49dbc426e9ad";
+    process.env.R2_BUCKET = "memorydeals-images";
+    try {
+      const connectSrc = buildContentSecurityPolicy(false)
+        .split(";")
+        .map((s) => s.trim())
+        .find((s) => s.startsWith("connect-src"))!;
+      // Path-style account host AND the virtual-hosted bucket host the AWS SDK
+      // emits by default — both must be present or the browser blocks the PUT.
+      expect(connectSrc).toContain(
+        "https://03f23ad3d88cd7d0737f49dbc426e9ad.r2.cloudflarestorage.com",
+      );
+      expect(connectSrc).toContain(
+        "https://memorydeals-images.03f23ad3d88cd7d0737f49dbc426e9ad.r2.cloudflarestorage.com",
+      );
+    } finally {
+      if (prevAccount === undefined) delete process.env.R2_ACCOUNT_ID;
+      else process.env.R2_ACCOUNT_ID = prevAccount;
+      if (prevBucket === undefined) delete process.env.R2_BUCKET;
+      else process.env.R2_BUCKET = prevBucket;
+    }
+  });
+
   it("does not grant unsafe-eval to scripts in production", () => {
     delete process.env.R2_PUBLIC_URL;
     const value = buildContentSecurityPolicy(false);

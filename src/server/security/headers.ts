@@ -33,6 +33,27 @@ function r2ImageOrigin(): string | null {
 }
 
 /**
+ * S3 API origin(s) the browser uploads product/brand images to via a presigned
+ * PUT. This is a DIFFERENT host from the public read domain (`R2_PUBLIC_URL`):
+ * the S3 endpoint is `https://<account>.r2.cloudflarestorage.com`, and the AWS
+ * SDK emits **virtual-hosted-style** URLs by default
+ * (`https://<bucket>.<account>.r2.cloudflarestorage.com`). Both must be in
+ * `connect-src` or the upload is blocked by CSP before it ever leaves the page.
+ * Derived from `R2_ACCOUNT_ID` (+ `R2_BUCKET`); empty when R2 isn't configured
+ * (local-disk dev uploads are same-origin and need no extra source).
+ */
+function r2UploadOrigins(): string[] {
+  const account = process.env.R2_ACCOUNT_ID?.trim();
+  if (!account) return [];
+  const origins = [`https://${account}.r2.cloudflarestorage.com`];
+  const bucket = process.env.R2_BUCKET?.trim();
+  if (bucket) {
+    origins.push(`https://${bucket}.${account}.r2.cloudflarestorage.com`);
+  }
+  return origins;
+}
+
+/**
  * Build the Content-Security-Policy value.
  *
  * `isDev` relaxes two things Next.js needs in development: `'unsafe-eval'`
@@ -62,6 +83,9 @@ export function buildContentSecurityPolicy(
   const scriptSrc = ["'self'", TURNSTILE_ORIGIN];
   const connectSrc = ["'self'", TURNSTILE_ORIGIN];
   if (imgOrigin) connectSrc.push(imgOrigin);
+  // Presigned direct-to-R2 image uploads (PUT) target the S3 API host, which
+  // is not the public read domain above — allow it or uploads are CSP-blocked.
+  for (const uploadOrigin of r2UploadOrigins()) connectSrc.push(uploadOrigin);
 
   if (nonce) {
     // Allow Next's inline bootstrap scripts, which carry this exact nonce.
