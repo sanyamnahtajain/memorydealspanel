@@ -199,7 +199,7 @@ export function PhotoStrip({
               {/* Drag handle affordance */}
               <span
                 aria-hidden
-                className="absolute top-1 left-1 rounded-md bg-background/70 p-0.5 text-muted-foreground opacity-0 backdrop-blur-sm transition-opacity group-hover/tile:opacity-100"
+                className="absolute top-1 left-1 rounded-md bg-background/70 p-0.5 text-muted-foreground opacity-0 backdrop-blur-sm transition-opacity group-hover/tile:opacity-100 [@media(hover:none)]:opacity-100"
               >
                 <GripVerticalIcon className="size-3.5" />
               </span>
@@ -212,8 +212,9 @@ export function PhotoStrip({
                 </span>
               ) : null}
 
-              {/* Action overlay */}
-              <div className="absolute inset-x-0 bottom-0 flex items-center justify-end gap-1 bg-gradient-to-t from-background/80 to-transparent p-1 opacity-0 transition-opacity group-hover/tile:opacity-100 focus-within:opacity-100">
+              {/* Action overlay. On touch devices (no hover) it is ALWAYS
+                  visible — otherwise Set-primary / Remove are unreachable. */}
+              <div className="absolute inset-x-0 bottom-0 flex items-center justify-end gap-1 bg-gradient-to-t from-background/80 to-transparent p-1 opacity-0 transition-opacity group-hover/tile:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100">
                 {!image.isPrimary ? (
                   <Tooltip content="Set as primary">
                     <Button
