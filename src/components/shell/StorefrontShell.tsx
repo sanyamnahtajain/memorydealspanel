@@ -140,10 +140,15 @@ export function StorefrontShell({
             />
           </Link>
 
-          {/* Desktop top nav (replaces bottom tabs) */}
+          {/* Desktop top nav (replaces bottom tabs). Account is intentionally
+              omitted here — it's the person icon in the right-hand cluster on
+              desktop (and a bottom tab on mobile), so listing it as a pill too
+              would be a duplicate link. */}
           <nav aria-label="Primary" className="ml-6 hidden md:block">
             <ul className="flex items-center gap-1">
-              {storefrontNav.map((item) => {
+              {storefrontNav
+                .filter((item) => item.href !== "/account")
+                .map((item) => {
                 const active = isNavItemActive(item, pathname)
                 const count = badges?.[item.href]
                 return (
