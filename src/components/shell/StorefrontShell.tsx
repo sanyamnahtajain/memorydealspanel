@@ -12,6 +12,7 @@ import { ThemeToggle } from "@/components/theme/ThemeToggle"
 import { TabBadge } from "@/components/shell/TabBadge"
 import { Logo } from "@/components/brand/Logo"
 import { StorefrontFooter } from "@/components/shell/StorefrontFooter"
+import { WishlistBadge } from "@/components/storefront/wishlist/WishlistBadge"
 import { SearchOverlay } from "@/components/storefront/SearchOverlay"
 import { searchCategoryChips } from "@/components/storefront/search/actions"
 import type { CategoryChip } from "@/components/storefront/search/types"
@@ -32,6 +33,19 @@ export interface StorefrontShellProps {
   children: React.ReactNode
   /** Badge counts keyed by nav href, e.g. `{ "/account": 1 }`. */
   badges?: NavBadges
+  /**
+   * Saved-products count for the current customer, resolved server-side and
+   * threaded in so the header/tab Wishlist badge paints correctly on first
+   * render. Undefined for anon (the heart entry point still links to the
+   * wishlist page, which itself gates on login). Carries NO price.
+   */
+  wishlistCount?: number
+  /**
+   * Whether to show the Wishlist entry point at all. Defaults to true. Pass
+   * false on surfaces where it's redundant (e.g. the wishlist page itself may
+   * still show it — kept simple: always shown unless a page opts out).
+   */
+  showWishlist?: boolean
 }
 
 /**
@@ -42,7 +56,12 @@ export interface StorefrontShellProps {
  * - Desktop: inline top nav instead of bottom tabs.
  * - Safe-area padding on both the header and the tab bar.
  */
-export function StorefrontShell({ children, badges }: StorefrontShellProps) {
+export function StorefrontShell({
+  children,
+  badges,
+  wishlistCount,
+  showWishlist = true,
+}: StorefrontShellProps) {
   const pathname = usePathname()
   const reducedMotion = useReducedMotion()
   const spring: Transition = reducedMotion ? { duration: 0 } : SNAPPY_SPRING
@@ -171,6 +190,16 @@ export function StorefrontShell({ children, badges }: StorefrontShellProps) {
                 <Search className="size-5" aria-hidden />
               </button>
             </Tooltip>
+            {showWishlist ? (
+              <WishlistBadge
+                initialCount={wishlistCount}
+                className={cn(
+                  "size-11",
+                  pathname.startsWith("/account/wishlist") &&
+                    "bg-muted text-foreground",
+                )}
+              />
+            ) : null}
             <HeaderIconLink
               href="/account"
               label="Account"

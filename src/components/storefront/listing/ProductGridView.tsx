@@ -26,6 +26,7 @@ import {
   galleryTransitionName,
 } from "@/components/storefront/ProductGallery";
 import { BrandBadge } from "@/components/storefront/BrandBadge";
+import { HeartButton } from "@/components/storefront/wishlist/HeartButton";
 import type { ListingItem } from "./types";
 import { keySpec, primaryImage } from "./product-display";
 
@@ -33,9 +34,19 @@ interface ProductGridViewProps {
   items: ListingItem[];
   /** Density from usePreferences — tightens gaps in compact density. */
   compactDensity?: boolean;
+  /**
+   * Product ids the current customer has already saved — seeds each card's
+   * HeartButton so it renders filled on first paint. Absent/undefined for anon
+   * (the heart then prompts login on tap). Carries NO price.
+   */
+  savedProductIds?: ReadonlySet<string>;
 }
 
-export function ProductGridView({ items, compactDensity }: ProductGridViewProps) {
+export function ProductGridView({
+  items,
+  compactDensity,
+  savedProductIds,
+}: ProductGridViewProps) {
   const reduced = useReducedMotion();
 
   return (
@@ -54,14 +65,17 @@ export function ProductGridView({ items, compactDensity }: ProductGridViewProps)
           variants={staggerItemVariants}
           layout={!reduced}
         >
-          <GridCard item={item} />
+          <GridCard
+            item={item}
+            saved={savedProductIds?.has(item.product.id) ?? false}
+          />
         </motion.li>
       ))}
     </motion.ul>
   );
 }
 
-function GridCard({ item }: { item: ListingItem }) {
+function GridCard({ item, saved }: { item: ListingItem; saved: boolean }) {
   const { product } = item;
   const image = primaryImage(product);
   const snippet = keySpec(product);
@@ -72,6 +86,22 @@ function GridCard({ item }: { item: ListingItem }) {
       className="group flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm outline-none transition-shadow hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.99]"
     >
       <div className="relative aspect-square w-full overflow-hidden bg-muted">
+        {/* Save heart — floats over the image. The wrapper swallows the click so
+            tapping the heart toggles the save WITHOUT following the card link. */}
+        <div
+          className="absolute top-1.5 right-1.5 z-10"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+        >
+          <HeartButton
+            productId={product.id}
+            initialSaved={saved}
+            size="compact"
+            className="bg-background/80 shadow-sm ring-1 ring-border/50 backdrop-blur hover:bg-background"
+          />
+        </div>
         {image ? (
           <Image
             src={image.thumbUrl ?? image.url}

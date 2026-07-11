@@ -19,6 +19,7 @@ import { motion, useReducedMotion } from "motion/react";
 import { cn } from "@/lib/utils";
 import { StatusChip } from "@/components/common/StatusChip";
 import { BrandBadge } from "@/components/storefront/BrandBadge";
+import { HeartButton } from "@/components/storefront/wishlist/HeartButton";
 import { staggerItemVariants } from "@/components/motion/primitives";
 import type { ListingItem } from "./types";
 import { keySpec, stockChipVariant, thumbUrl } from "./product-display";
@@ -26,9 +27,18 @@ import { keySpec, stockChipVariant, thumbUrl } from "./product-display";
 interface ProductCompactViewProps {
   items: ListingItem[];
   compactDensity?: boolean;
+  /**
+   * Product ids the current customer has saved — seeds each row's HeartButton
+   * so it paints filled immediately. Absent for anon (heart prompts login).
+   */
+  savedProductIds?: ReadonlySet<string>;
 }
 
-export function ProductCompactView({ items, compactDensity }: ProductCompactViewProps) {
+export function ProductCompactView({
+  items,
+  compactDensity,
+  savedProductIds,
+}: ProductCompactViewProps) {
   const reduced = useReducedMotion();
 
   return (
@@ -40,7 +50,11 @@ export function ProductCompactView({ items, compactDensity }: ProductCompactView
     >
       {items.map((item) => (
         <motion.li key={item.product.id} variants={staggerItemVariants} layout={!reduced}>
-          <CompactRow item={item} compactDensity={compactDensity} />
+          <CompactRow
+            item={item}
+            compactDensity={compactDensity}
+            saved={savedProductIds?.has(item.product.id) ?? false}
+          />
         </motion.li>
       ))}
     </motion.ul>
@@ -50,9 +64,11 @@ export function ProductCompactView({ items, compactDensity }: ProductCompactView
 function CompactRow({
   item,
   compactDensity,
+  saved,
 }: {
   item: ListingItem;
   compactDensity?: boolean;
+  saved: boolean;
 }) {
   const { product } = item;
   const url = thumbUrl(product);
@@ -116,6 +132,21 @@ function CompactRow({
       </div>
 
       <div className="shrink-0 pl-1">{item.priceSlot}</div>
+
+      {/* Save heart — swallow the click so it doesn't follow the row link. */}
+      <div
+        className="shrink-0"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+      >
+        <HeartButton
+          productId={product.id}
+          initialSaved={saved}
+          size="compact"
+        />
+      </div>
     </Link>
   );
 }

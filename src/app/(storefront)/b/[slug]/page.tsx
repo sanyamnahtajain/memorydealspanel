@@ -8,6 +8,7 @@ import { PAGE_SIZES } from "@/lib/constants";
 import { getBrandBySlug, listByBrandForViewer } from "@/server/dal/brands";
 import { getViewer } from "@/server/auth/viewer";
 import { canSeePrices } from "@/server/types/viewer";
+import { wishlistStateForViewer } from "@/server/services/wishlist";
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
 import { FadeUp } from "@/components/motion/primitives";
 import {
@@ -68,6 +69,10 @@ export default async function BrandPage({ params }: BrandPageProps) {
 
   const items: ListingItem[] = buildListingItems(products, viewer);
 
+  // Wishlist state for the current customer: seeds the header badge count and
+  // each product heart's filled state. Empty for anon/admin. Carries no price.
+  const wishlistState = await wishlistStateForViewer(viewer);
+
   // Bind the brand id to the load-more action so the client listing only needs
   // to pass the next page number. Price slots stay server-rendered.
   const brandId = brand.id;
@@ -77,7 +82,7 @@ export default async function BrandPage({ params }: BrandPageProps) {
   }
 
   return (
-    <StorefrontShell>
+    <StorefrontShell wishlistCount={wishlistState.count}>
       <FadeUp>
         <div className="mt-2 mb-4">
           <Link
@@ -115,6 +120,7 @@ export default async function BrandPage({ params }: BrandPageProps) {
         canSeePrices={canSeePrices(viewer)}
         emptyTitle={`No ${brand.name} products yet`}
         emptyDescription="We're adding stock for this brand soon — check back shortly."
+        savedProductIds={wishlistState.savedProductIds}
       />
     </StorefrontShell>
   );

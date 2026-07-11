@@ -8,6 +8,7 @@ import { getBySlug } from "@/server/dal/categories";
 import { getViewer } from "@/server/auth/viewer";
 import { canSeePrices } from "@/server/types/viewer";
 import { discoverProducts } from "@/server/storefront/discovery";
+import { wishlistStateForViewer } from "@/server/services/wishlist";
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
 import { FadeUp } from "@/components/motion/primitives";
 import {
@@ -116,6 +117,10 @@ export default async function CategoryPage({
 
   const items: ListingItem[] = buildListingItems(firstPage.items, viewer);
 
+  // Wishlist state for the current customer: seeds the header badge count and
+  // each product heart's filled state. Empty for anon/admin. Carries no price.
+  const wishlistState = await wishlistStateForViewer(viewer);
+
   // Load-more re-runs the SAME faceted query for the next offset window. The
   // selection is captured server-side so gated viewers can never inject a price
   // band via the client. Price slots stay server-rendered.
@@ -140,7 +145,7 @@ export default async function CategoryPage({
   }
 
   return (
-    <StorefrontShell>
+    <StorefrontShell wishlistCount={wishlistState.count}>
       <FadeUp>
         <div className="mt-2 mb-4">
           <Link
@@ -166,6 +171,7 @@ export default async function CategoryPage({
           total={firstPage.total}
           emptyTitle="Nothing in this category yet"
           emptyDescription="We're adding stock here soon — check back shortly."
+          savedProductIds={wishlistState.savedProductIds}
         />
       </DiscoveryFilters>
     </StorefrontShell>

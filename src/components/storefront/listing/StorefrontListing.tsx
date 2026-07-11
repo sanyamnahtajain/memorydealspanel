@@ -62,6 +62,12 @@ interface StorefrontListingProps {
   total?: number;
   emptyTitle?: string;
   emptyDescription?: string;
+  /**
+   * Product ids the current customer has already saved — threaded down to each
+   * view's HeartButton so saved products paint filled on first render. Absent
+   * for anon/admin (the heart then prompts login on tap). Carries NO price.
+   */
+  savedProductIds?: ReadonlySet<string>;
 }
 
 function isViewMode(value: unknown): value is ViewMode {
@@ -77,6 +83,7 @@ export function StorefrontListing({
   total,
   emptyTitle = "No products here yet",
   emptyDescription = "Check back soon — we're adding stock regularly.",
+  savedProductIds,
 }: StorefrontListingProps) {
   const prefs = usePreferences();
   const router = useRouter();
@@ -242,6 +249,7 @@ export function StorefrontListing({
           sort={sort}
           onSort={changeSort}
           canSortPrice={canSeePrices}
+          savedProductIds={savedProductIds}
         />
       )}
 
@@ -264,6 +272,7 @@ function ListingBody({
   sort,
   onSort,
   canSortPrice,
+  savedProductIds,
 }: {
   viewMode: ViewMode;
   items: ListingItem[];
@@ -271,6 +280,7 @@ function ListingBody({
   sort: SortKey;
   onSort: (key: SortKey) => void;
   canSortPrice: boolean;
+  savedProductIds?: ReadonlySet<string>;
 }) {
   switch (viewMode) {
     case "table":
@@ -280,13 +290,26 @@ function ListingBody({
           sort={sort}
           onSort={onSort}
           canSortPrice={canSortPrice}
+          savedProductIds={savedProductIds}
         />
       );
     case "compact":
-      return <ProductCompactView items={items} compactDensity={compactDensity} />;
+      return (
+        <ProductCompactView
+          items={items}
+          compactDensity={compactDensity}
+          savedProductIds={savedProductIds}
+        />
+      );
     case "grid":
     default:
-      return <ProductGridView items={items} compactDensity={compactDensity} />;
+      return (
+        <ProductGridView
+          items={items}
+          compactDensity={compactDensity}
+          savedProductIds={savedProductIds}
+        />
+      );
   }
 }
 

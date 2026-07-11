@@ -24,6 +24,7 @@ import { ArrowDown, ArrowUp, ChevronsUpDown, ImageOff } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { StatusChip } from "@/components/common/StatusChip";
+import { HeartButton } from "@/components/storefront/wishlist/HeartButton";
 import type { ListingItem, SortKey } from "./types";
 import { keySpec, stockChipVariant, thumbUrl } from "./product-display";
 
@@ -35,6 +36,11 @@ interface ProductTableViewProps {
   onSort: (key: SortKey) => void;
   /** Whether price sorting is available (approved viewer). */
   canSortPrice: boolean;
+  /**
+   * Product ids the current customer has saved — seeds each row's save heart.
+   * Absent for anon (the heart prompts login). Carries NO price.
+   */
+  savedProductIds?: ReadonlySet<string>;
 }
 
 /**
@@ -58,6 +64,7 @@ export function ProductTableView({
   sort,
   onSort,
   canSortPrice,
+  savedProductIds,
 }: ProductTableViewProps) {
   const columns: Column[] = [
     { id: "image", label: "", headClassName: "w-14" },
@@ -76,6 +83,8 @@ export function ProductTableView({
     },
     { id: "moq", label: "MOQ", className: "hidden text-right sm:table-cell", headClassName: "text-right" },
     { id: "stock", label: "Stock", headClassName: "text-right", className: "text-right" },
+    // Save-to-wishlist heart column (no header label).
+    { id: "save", label: "", headClassName: "w-10" },
   ];
 
   return (
@@ -95,7 +104,11 @@ export function ProductTableView({
         </thead>
         <tbody className="divide-y divide-border">
           {items.map((item) => (
-            <TableRow key={item.product.id} item={item} />
+            <TableRow
+              key={item.product.id}
+              item={item}
+              saved={savedProductIds?.has(item.product.id) ?? false}
+            />
           ))}
         </tbody>
       </table>
@@ -165,7 +178,7 @@ function SortableHeader({
   );
 }
 
-function TableRow({ item }: { item: ListingItem }) {
+function TableRow({ item, saved }: { item: ListingItem; saved: boolean }) {
   const { product } = item;
   const url = thumbUrl(product);
   const spec = keySpec(product);
@@ -218,6 +231,16 @@ function TableRow({ item }: { item: ListingItem }) {
       <td className="px-3 py-2">
         <div className="flex justify-end">
           <StatusChip variant={stockChipVariant(product.stockStatus)} />
+        </div>
+      </td>
+      {/* Save-to-wishlist heart. This cell has no row link, so no click guard. */}
+      <td className="px-2 py-2 text-right">
+        <div className="flex justify-end">
+          <HeartButton
+            productId={product.id}
+            initialSaved={saved}
+            size="compact"
+          />
         </div>
       </td>
     </tr>

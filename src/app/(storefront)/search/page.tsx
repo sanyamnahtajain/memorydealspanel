@@ -5,6 +5,7 @@ import { listActive } from "@/server/dal/categories";
 import { getViewer } from "@/server/auth/viewer";
 import { canSeePrices } from "@/server/types/viewer";
 import { discoverProducts } from "@/server/storefront/discovery";
+import { wishlistStateForViewer } from "@/server/services/wishlist";
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
 import { FadeUp } from "@/components/motion/primitives";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -76,6 +77,10 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   const [categories, viewer] = await Promise.all([listActive(), getViewer()]);
   const categoryChips = categories.map((c) => ({ name: c.name, slug: c.slug }));
 
+  // Wishlist state for the current customer: seeds the header badge count and
+  // each product heart's filled state. Empty for anon/admin. Carries no price.
+  const wishlistState = await wishlistStateForViewer(viewer);
+
   const approved = canSeePrices(viewer);
   const urlParams = toSearchParams(raw);
   const selection = parseSelection(urlParams, approved);
@@ -127,7 +132,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   }
 
   return (
-    <StorefrontShell>
+    <StorefrontShell wishlistCount={wishlistState.count}>
       <FadeUp>
         <div className="mt-2 mb-5">
           <h1 className="mb-3 font-heading text-2xl font-bold tracking-tight text-foreground md:text-3xl">
@@ -163,6 +168,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
               total={firstPage.total}
               emptyTitle={`No results for “${rawQuery}”`}
               emptyDescription="Try a different keyword, or browse by category."
+              savedProductIds={wishlistState.savedProductIds}
             />
           </DiscoveryFilters>
         </div>

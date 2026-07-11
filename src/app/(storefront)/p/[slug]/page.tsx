@@ -19,6 +19,8 @@ import { ProductGallery } from "@/components/storefront/ProductGallery";
 import { BrandBadge } from "@/components/storefront/BrandBadge";
 import { SpecTable } from "@/components/storefront/SpecTable";
 import { renderPriceSlot } from "@/components/storefront/priceSlot";
+import { HeartButton } from "@/components/storefront/wishlist/HeartButton";
+import { wishlistProductIds } from "@/server/services/wishlist";
 import { recordProductView } from "@/server/services/pageviews";
 import {
   ProductBreadcrumb,
@@ -134,13 +136,21 @@ export default async function ProductDetailPage({ params }: PageParams) {
   // Category (breadcrumb) + related products (same category), both gated. We
   // over-fetch by one so we can drop the current product and still fill the
   // rail. `renderPriceSlot` produces the per-viewer price cell server-side.
-  const [category, relatedRaw] = await Promise.all([
+  const [category, relatedRaw, savedIds] = await Promise.all([
     resolveCategory(product.categoryId),
     listByCategoryForViewer(viewer, product.categoryId, {
       page: 1,
       take: RELATED_LIMIT + 1,
     }),
+    // Seed the save heart's filled state for a logged-in customer. Anon/admin
+    // get an empty set (heart renders empty and prompts login on tap). Reads no
+    // price — only this customer's own saved product ids.
+    isCustomer(viewer)
+      ? wishlistProductIds(viewer.customerId)
+      : Promise.resolve(new Set<string>()),
   ]);
+
+  const initialSaved = savedIds.has(product.id);
 
   const related: RelatedRailItem[] = relatedRaw
     .filter((p) => p.id !== product.id)
@@ -219,9 +229,18 @@ export default async function ProductDetailPage({ params }: PageParams) {
                     label={STOCK_LABEL[product.stockStatus]}
                   />
                 </div>
-                <h1 className="font-heading text-2xl font-semibold tracking-tight sm:text-3xl">
-                  {product.name}
-                </h1>
+                <div className="flex items-start justify-between gap-3">
+                  <h1 className="font-heading text-2xl font-semibold tracking-tight sm:text-3xl">
+                    {product.name}
+                  </h1>
+                  {/* Save to wishlist — carries no price; prompts login for anon. */}
+                  <HeartButton
+                    productId={product.id}
+                    initialSaved={initialSaved}
+                    size="default"
+                    className="-mr-1 shrink-0"
+                  />
+                </div>
                 <p className="text-xs text-muted-foreground">
                   SKU: {product.sku}
                 </p>

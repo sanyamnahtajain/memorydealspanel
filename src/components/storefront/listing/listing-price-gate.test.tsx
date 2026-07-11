@@ -19,8 +19,22 @@
  * price DOES show, so the gate is the discriminator — not a broken renderer.
  */
 import * as React from "react";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
+
+// Each row now carries a wishlist HeartButton, which calls `useRouter()` (to
+// route anon taps to login). The renderers aren't mounted inside an app-router
+// provider here, so stub next/navigation. Irrelevant to the price-gate asserts.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: () => {},
+    replace: () => {},
+    prefetch: () => {},
+    back: () => {},
+    forward: () => {},
+    refresh: () => {},
+  }),
+}));
 
 import { PriceGateCard } from "@/components/storefront/PriceGateCard";
 import type { PublicProduct, PricedProduct } from "@/server/dto/product";
