@@ -69,7 +69,12 @@ export default async function HomePage() {
         {/* Shop by brand — leverages the brand master; surfaced first. */}
         {brands.length > 0 ? (
           <section aria-labelledby="home-brands">
-            <SectionHeading id="home-brands" title="Shop by brand" />
+            <SectionHeading
+              id="home-brands"
+              title="Shop by brand"
+              seeAllHref="/brands"
+              seeAllLabel="All brands"
+            />
             <BrandShowcase brands={brands} />
           </section>
         ) : null}

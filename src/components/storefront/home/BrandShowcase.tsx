@@ -6,11 +6,18 @@ import type { PublicBrand } from "@/server/dal/brands";
  * "Shop by brand" — a responsive grid of brand tiles (logo or monogram) that
  * link to the brand landing page (/b/[slug]). Public/price-free.
  */
-export function BrandShowcase({ brands }: { brands: PublicBrand[] }) {
+export function BrandShowcase({
+  brands,
+  limit = 18,
+}: {
+  brands: PublicBrand[];
+  /** Max tiles shown (home teaser); the full directory lives at /brands. */
+  limit?: number;
+}) {
   if (brands.length === 0) return null;
   return (
     <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6">
-      {brands.slice(0, 12).map((brand) => (
+      {brands.slice(0, limit).map((brand) => (
         <Link
           key={brand.id}
           href={`/b/${brand.slug}`}

@@ -42,6 +42,7 @@ export type NavBadges = Partial<Record<string, number>>
 export const storefrontNav: readonly NavItem[] = [
   { label: "Home", href: "/", icon: House, exact: true },
   { label: "Categories", href: "/categories", icon: LayoutGrid },
+  { label: "Brands", href: "/brands", icon: Tag },
   { label: "Search", href: "/search", icon: Search },
   { label: "Account", href: "/account", icon: CircleUserRound },
 ] as const

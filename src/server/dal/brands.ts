@@ -63,6 +63,32 @@ export async function listActivePublicBrands(): Promise<PublicBrand[]> {
   return rows.map(toPublicBrand);
 }
 
+/** A brand plus its count of visible products (price-free). */
+export interface BrandWithCount extends PublicBrand {
+  count: number;
+}
+
+/**
+ * ACTIVE brands that have ≥1 visible (ACTIVE, non-deleted) product, each with
+ * the product count. Ordered by count (desc) then name. Carries NO pricing —
+ * counts + brand metadata are public — so it is safe on any surface.
+ */
+export async function listBrandsWithCounts(): Promise<BrandWithCount[]> {
+  const [rows, grouped] = await Promise.all([
+    prisma.brand.findMany({ where: { status: "ACTIVE" }, select: BRAND_SELECT }),
+    prisma.product.groupBy({
+      by: ["brandId"],
+      where: { status: "ACTIVE", deletedAt: null, brandId: { not: null } },
+      _count: { _all: true },
+    }),
+  ]);
+  const counts = new Map(grouped.map((g) => [g.brandId, g._count._all]));
+  return rows
+    .map((r) => ({ ...toPublicBrand(r), count: counts.get(r.id) ?? 0 }))
+    .filter((b) => b.count > 0)
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+}
+
 /**
  * A single ACTIVE brand by slug, or null. Inactive brands are treated as
  * non-existent for the storefront (so their landing page 404s).
