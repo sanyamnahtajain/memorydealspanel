@@ -146,10 +146,14 @@ async function main() {
         create: {
           name, slug, sku, brand: g.display, brandId: brand.id, categoryId,
           price: pricePaise, status: "ACTIVE", stockStatus: "IN_STOCK",
+          // Set explicitly: Prisma+MongoDB's `{ deletedAt: null }` filter (used by
+          // every storefront query) does NOT match an ABSENT field — only an
+          // explicit null. Leaving it unset hides the product everywhere.
+          deletedAt: null,
         },
         update: {
           name, brand: g.display, brandId: brand.id, categoryId,
-          price: pricePaise, status: "ACTIVE",
+          price: pricePaise, status: "ACTIVE", deletedAt: null,
         },
       });
       if (existing) updated++; else created++;

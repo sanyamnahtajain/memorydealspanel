@@ -251,6 +251,11 @@ export async function createProduct(
         hsnCode: data.hsnCode ?? null,
         gstRateBps: data.gstRateBps ?? null,
         taxTreatment: data.taxTreatment ?? null,
+        // Store an explicit null: on MongoDB (Atlas), `{ deletedAt: null }` — the
+        // filter every storefront/DAL query uses — does NOT match an ABSENT
+        // field, only an explicit null. Omitting it would make the product
+        // invisible everywhere.
+        deletedAt: null,
       },
       select: PRICED_SELECT,
     });
@@ -407,6 +412,9 @@ export async function duplicateProduct(id: string): Promise<PricedProduct> {
         sortOrder: image.sortOrder,
         isPrimary: image.isPrimary,
       })),
+      // Explicit null so `{ deletedAt: null }` matches on MongoDB/Atlas (an
+      // absent field is not matched) — see createProduct.
+      deletedAt: null,
     },
     select: PRICED_SELECT,
   });
