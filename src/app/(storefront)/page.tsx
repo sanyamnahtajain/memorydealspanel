@@ -58,8 +58,6 @@ export default async function HomePage() {
 
   return (
     <StorefrontShell>
-      <HomeHero suggestions={suggestions} />
-
       <HomeSections>
         {/* Stats strip — immediate sense of catalogue scale. */}
         <StatsBar
@@ -118,6 +116,10 @@ export default async function HomePage() {
           <SectionHeading id="home-why" title={`Why ${APP_NAME}`} />
           <ValueProps />
         </section>
+
+        {/* Pitch + integrated search + CTAs — moved below the catalogue so the
+            brand/category grids lead the page. */}
+        <HomeHero suggestions={suggestions} />
 
         {/* Closing call-to-action. */}
         <HomeCTA />
