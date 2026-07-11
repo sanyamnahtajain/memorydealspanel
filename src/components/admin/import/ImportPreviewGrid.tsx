@@ -50,6 +50,10 @@ interface ReviewRow {
   status: string;
   tags: string;
   description: string;
+  /** Parent SKU when this is a variant row (empty otherwise). */
+  variantOf: string;
+  /** Human-readable option combination, e.g. "Capacity: 16GB · Color: Black". */
+  options: string;
   [key: string]: unknown;
 }
 
@@ -73,6 +77,11 @@ function toReviewRow(row: PreviewRow): ReviewRow {
     // Keep the first error per field for the cell tooltip.
     if (!errorMap[e.field]) errorMap[e.field] = e.message;
   }
+  const options = row.variant
+    ? Object.entries(row.variant.optionValues)
+        .map(([axis, value]) => `${axis}: ${value}`)
+        .join(" · ")
+    : "";
   return {
     id: row.id,
     rowNumber: row.rowNumber,
@@ -89,6 +98,8 @@ function toReviewRow(row: PreviewRow): ReviewRow {
     status: row.raw.status,
     tags: row.raw.tags,
     description: row.raw.description,
+    variantOf: row.variant?.parentSku ?? "",
+    options,
   };
 }
 
@@ -103,6 +114,10 @@ const OPERATION_META: Record<
   update: {
     label: "Update",
     className: "bg-primary/12 text-primary",
+  },
+  variant: {
+    label: "Variant",
+    className: "bg-accent/40 text-accent-foreground",
   },
   invalid: {
     label: "Error",
@@ -154,6 +169,23 @@ function buildColumns(): ColumnDef<ReviewRow>[] {
       validate: serverError("name"),
     },
     { key: "sku", header: "SKU", type: "text", width: 140, validate: serverError("sku") },
+    {
+      // Read-only: the parent SKU that ties a variant row to its group. Blank
+      // for single-product rows. Errors on the parent surface here.
+      key: "variantOf",
+      header: "Variant of",
+      type: "text",
+      width: 130,
+      validate: serverError("variantOf"),
+    },
+    {
+      // Read-only display of the row's option combination (Capacity: 16GB · …).
+      key: "options",
+      header: "Options",
+      type: "computed",
+      width: 200,
+      compute: (row) => row.options,
+    },
     { key: "brand", header: "Brand", type: "text", width: 130 },
     {
       key: "category",
@@ -224,12 +256,24 @@ export function ImportPreviewGrid({ rows, onEditRow }: ImportPreviewGridProps) {
     let creates = 0;
     let updates = 0;
     let invalid = 0;
+    let variants = 0;
+    const variantParents = new Set<string>();
     for (const r of rows) {
       if (r.operation === "create") creates++;
       else if (r.operation === "update") updates++;
-      else invalid++;
+      else if (r.operation === "variant") {
+        variants++;
+        if (r.variant?.parentSku) variantParents.add(r.variant.parentSku.toLowerCase());
+      } else invalid++;
     }
-    return { creates, updates, invalid, total: rows.length };
+    return {
+      creates,
+      updates,
+      invalid,
+      variants,
+      variantProducts: variantParents.size,
+      total: rows.length,
+    };
   }, [rows]);
 
   const onSave = React.useCallback(
@@ -262,6 +306,13 @@ export function ImportPreviewGrid({ rows, onEditRow }: ImportPreviewGridProps) {
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <CountBadge tone="emerald" label="New" value={counts.creates} />
           <CountBadge tone="sky" label="Update" value={counts.updates} />
+          {counts.variants > 0 && (
+            <CountBadge
+              tone="violet"
+              label={`Variant${counts.variants === 1 ? "" : "s"} in ${counts.variantProducts} product${counts.variantProducts === 1 ? "" : "s"}`}
+              value={counts.variants}
+            />
+          )}
           <CountBadge tone="destructive" label="Errors" value={counts.invalid} />
           <span className="text-muted-foreground">
             {counts.total} row{counts.total === 1 ? "" : "s"}
@@ -296,6 +347,14 @@ export function ImportPreviewGrid({ rows, onEditRow }: ImportPreviewGridProps) {
       <p className="text-xs text-muted-foreground">
         Cells with a red corner have errors — hover to see why. Edit any cell to
         fix it before committing; rows with errors are skipped automatically.
+        {counts.variants > 0 && (
+          <>
+            {" "}
+            Rows sharing a <span className="font-medium">Variant of</span> value
+            become one product; a variant product commits only when all of its
+            rows are error-free.
+          </>
+        )}
       </p>
     </div>
   );
@@ -306,7 +365,7 @@ function CountBadge({
   label,
   value,
 }: {
-  tone: "emerald" | "sky" | "destructive";
+  tone: "emerald" | "sky" | "violet" | "destructive";
   label: string;
   value: number;
 }) {
@@ -315,7 +374,9 @@ function CountBadge({
       ? "bg-emerald-500/12 text-emerald-600 dark:text-emerald-400"
       : tone === "sky"
         ? "bg-sky-500/12 text-sky-600 dark:text-sky-400"
-        : "bg-destructive/12 text-destructive";
+        : tone === "violet"
+          ? "bg-violet-500/12 text-violet-600 dark:text-violet-400"
+          : "bg-destructive/12 text-destructive";
   return (
     <span
       className={cn(

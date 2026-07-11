@@ -27,6 +27,10 @@ import {
   type UpdateProductInput,
 } from "@/lib/schemas/product";
 import type { EntityStatus, StockStatus } from "@/lib/schemas/shared";
+import {
+  VARIANT_MANAGED_MESSAGE,
+  variantSummaryLabel,
+} from "./VariantCell";
 
 /* -------------------------------------------------------------------------- */
 /*  Row shape                                                                 */
@@ -58,10 +62,49 @@ export interface ProductRow extends GridRow {
   tags: string[];
   /** Count of attached images — rendered read-only, click opens the editor. */
   images: number;
+  /**
+   * Whether this product is split into purchasable variants. When true, the
+   * top-level `price` / `mrp` / `stockStatus` are RECOMPUTED "FROM" values
+   * owned by the variant matrix — the grid renders them read-only and refuses
+   * to persist edits to them (see `ProductGrid`'s `onSave` guard). Non-variant
+   * rows (the vast majority) behave EXACTLY as before: fully editable.
+   *
+   * INTEGRATOR: the server page that builds rows must thread this through
+   * `toProductRow(product)` — it reads `PricedProduct.hasVariants`.
+   */
+  hasVariants: boolean;
+  /**
+   * Number of variants for this product (0 when `hasVariants` is false). Feeds
+   * the read-only "Variants" info column's "N variants" summary. INTEGRATOR:
+   * `toProductRow` derives this from `PricedProduct.variants.length`.
+   */
+  variantCount: number;
   /** Derived margin string; never persisted, produced by the computed column. */
   margin?: string;
+  /** Read-only variant summary ("from ₹X · N variants"); computed, never sent. */
+  variantSummary?: string;
   /** Epoch ms of the last persisted write, for conflict detection. */
   updatedAt?: number;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Variant read-only guard                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Guard a validator for a variant-managed field (price / mrp / stock). On a
+ * variant row the recompute owns the value, so any candidate edit is rejected
+ * inline with the canonical message — the engine surfaces it as the cell's
+ * red-corner tooltip. On a plain product row the field validates exactly as
+ * before via `base`. This blocks the interactive edit path; the airtight
+ * persistence guard (covering paste/fill, which bypass `validate`) lives in
+ * `ProductGrid.onSave`.
+ */
+function guardVariantManaged(
+  base: (value: unknown, row: ProductRow) => string | null,
+): (value: unknown, row: ProductRow) => string | null {
+  return (value, row) =>
+    row.hasVariants ? VARIANT_MANAGED_MESSAGE : base(value, row);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -194,7 +237,10 @@ export function buildProductColumns(
       width: 130,
       format: (value) => (value == null ? "" : formatPaise(value as number)),
       // Editor delivers parsed paise (or null); reuse the server paise schema.
-      validate: (value) => validatePatch({ price: value as number }, "price"),
+      // Variant rows: read-only (the FROM price is recomputed) — guarded.
+      validate: guardVariantManaged((value) =>
+        validatePatch({ price: value as number }, "price"),
+      ),
     },
     {
       key: "mrp",
@@ -202,14 +248,15 @@ export function buildProductColumns(
       type: "currency",
       width: 130,
       format: (value) => (value == null ? "" : formatPaise(value as number)),
-      validate: (value, row) => {
+      // Variant rows: read-only (managed per variant) — guarded.
+      validate: guardVariantManaged((value, row) => {
         if (value == null) return null; // MRP is optional.
         // Pass price too so the server's `mrp >= price` refinement fires here.
         return validatePatch(
           { mrp: value as number, price: row.price },
           "mrp",
         );
-      },
+      }),
     },
     {
       key: "stockStatus",
@@ -217,8 +264,10 @@ export function buildProductColumns(
       type: "select",
       width: 150,
       options: STOCK_OPTIONS.map((option) => ({ ...option })),
-      validate: (value) =>
+      // Variant rows: read-only (stock rolls up from variants) — guarded.
+      validate: guardVariantManaged((value) =>
         validatePatch({ stockStatus: value as StockStatus }, "stockStatus"),
+      ),
     },
     {
       key: "status",
@@ -246,6 +295,19 @@ export function buildProductColumns(
       type: "computed",
       width: 110,
       compute: (row) => marginLabel(row.price, row.mrp),
+    },
+    {
+      // Read-only, ROW-AWARE indicator. For variant products it reads
+      // "from ₹X · N variants" — signalling that price/mrp/stock are managed
+      // per variant (open the product to edit) and are FROM floors, not facts.
+      // Plain products show an em dash. A `computed` column is inherently
+      // read-only for every row, so this cell never accepts input.
+      key: "variantSummary",
+      header: "Variants",
+      type: "computed",
+      width: 170,
+      compute: (row) =>
+        variantSummaryLabel(row.hasVariants, row.variantCount, row.price),
     },
     {
       key: "images",

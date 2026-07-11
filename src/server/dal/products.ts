@@ -343,6 +343,28 @@ export interface AdminGridOptions extends ListForViewerOptions {
 }
 
 /**
+ * A priced product PLUS a lightweight active-variant count for the bulk-edit
+ * grid. We deliberately do NOT join the full variant rows here (a list read
+ * must not carry per-variant money or drag in N child rows per product); a
+ * Prisma `_count` gives the grid exactly what it needs to render the read-only
+ * "from ₹X · N variants" indicator and to gate price/mrp/stock edits.
+ */
+export interface AdminGridProduct extends PricedProduct {
+  /** Number of ACTIVE variants (0 when `hasVariants` is false). */
+  variantCount: number;
+}
+
+/**
+ * Grid select: priced product fields + `hasVariants` + a scalar count of ACTIVE
+ * variants. No variant row (and therefore no variant price) is selected.
+ */
+const ADMIN_GRID_SELECT = {
+  ...PRICED_SELECT,
+  hasVariants: true,
+  _count: { select: { variants: { where: VARIANT_WHERE } } },
+} satisfies Prisma.ProductSelect;
+
+/**
  * The full management grid: prices always present, and (unlike the storefront
  * reads) INACTIVE products are included. Throws `ForbiddenError` for any
  * non-admin viewer before touching the database.
@@ -350,7 +372,7 @@ export interface AdminGridOptions extends ListForViewerOptions {
 export async function listForAdminGrid(
   viewer: ViewerContext,
   options?: AdminGridOptions,
-): Promise<PricedProduct[]> {
+): Promise<AdminGridProduct[]> {
   assertAdmin(viewer);
   const { skip, take } = resolvePaging(options);
   const where: Prisma.ProductWhereInput = options?.includeDeleted
@@ -358,10 +380,15 @@ export async function listForAdminGrid(
     : { deletedAt: null };
   const rows = await prisma.product.findMany({
     where,
-    select: PRICED_SELECT,
+    select: ADMIN_GRID_SELECT,
     orderBy: STOREFRONT_ORDER,
     skip,
     take,
   });
-  return rows.map(toPricedProduct);
+  // Map WITHOUT the variant rows (none selected) — `toPricedProduct` yields
+  // `variants: []`; we layer the real active count on top from `_count`.
+  return rows.map((row) => ({
+    ...toPricedProduct(row),
+    variantCount: row._count.variants,
+  }));
 }
