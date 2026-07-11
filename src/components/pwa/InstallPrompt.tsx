@@ -20,7 +20,18 @@ interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
 }
 
-const DISMISS_KEY = "md-pwa-install-dismissed";
+/**
+ * Re-prompt cadence: a dismissal ("Not now" / ✕ / declining the native sheet)
+ * only SNOOZES the prompt for this long. It reappears after the window elapses
+ * (on the next visit, or live if the tab stays open) and keeps nudging every
+ * 4 hours — UNTIL the app is actually installed, after which it never shows
+ * again.
+ */
+const SNOOZE_MS = 4 * 60 * 60 * 1000; // 4 hours
+/** Epoch-ms of the last dismissal (drives the snooze window). */
+const DISMISS_AT_KEY = "md-pwa-install-dismissed-at";
+/** Set once installed → the prompt is suppressed permanently. */
+const INSTALLED_KEY = "md-pwa-installed";
 
 function isStandalone(): boolean {
   if (typeof window === "undefined") return false;
@@ -37,9 +48,47 @@ function isIos(): boolean {
   const ua = window.navigator.userAgent;
   const isIosDevice = /iphone|ipad|ipod/i.test(ua);
   // iPadOS 13+ reports as Mac; detect via touch support.
-  const isIpadOs =
-    /macintosh/i.test(ua) && navigator.maxTouchPoints > 1;
+  const isIpadOs = /macintosh/i.test(ua) && navigator.maxTouchPoints > 1;
   return isIosDevice || isIpadOs;
+}
+
+/** Installed for good — a stored flag or an already-standalone session. */
+function isInstalled(): boolean {
+  try {
+    if (window.localStorage.getItem(INSTALLED_KEY) === "1") return true;
+  } catch {
+    /* ignore */
+  }
+  return isStandalone();
+}
+
+/** Milliseconds left on the current snooze, or 0 if not snoozed. */
+function snoozeRemaining(): number {
+  try {
+    const raw = window.localStorage.getItem(DISMISS_AT_KEY);
+    const at = raw ? parseInt(raw, 10) : 0;
+    if (!at) return 0;
+    const remaining = at + SNOOZE_MS - Date.now();
+    return remaining > 0 ? remaining : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function markInstalled() {
+  try {
+    window.localStorage.setItem(INSTALLED_KEY, "1");
+  } catch {
+    /* ignore */
+  }
+}
+
+function markDismissedNow() {
+  try {
+    window.localStorage.setItem(DISMISS_AT_KEY, String(Date.now()));
+  } catch {
+    /* ignore — snooze simply won't persist across reloads. */
+  }
 }
 
 /**
@@ -48,89 +97,93 @@ function isIos(): boolean {
  * - Chromium: captures `beforeinstallprompt`, suppresses the default mini-bar,
  *   and shows a custom card whose CTA triggers the native prompt.
  * - iOS Safari: no install event exists, so shows an Add-to-Home-Screen hint.
- * - Dismissal is remembered in localStorage; already-installed (standalone)
- *   sessions never see it.
+ * - Dismissal snoozes for 4h and then re-prompts, repeating until the app is
+ *   installed; already-installed (standalone) sessions never see it.
  *
  * Token-styled; renders nothing until it has something to show. Safe on both
  * the light storefront and dark admin surfaces.
  */
-function isDismissed(): boolean {
-  try {
-    return window.localStorage.getItem(DISMISS_KEY) === "1";
-  } catch {
-    // localStorage may be unavailable (private mode) — treat as not dismissed.
-    return false;
-  }
-}
-
-// Whether the iOS Add-to-Home-Screen hint should show. Evaluated lazily
-// (client-only) so no state is set synchronously inside an effect.
-function initialIosHint(): boolean {
-  if (typeof window === "undefined") return false;
-  return isIos() && !isStandalone() && !isDismissed();
-}
-
 export function InstallPrompt({ className }: { className?: string }) {
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(
     null,
   );
-  const [iosHint] = useState(initialIosHint);
-  // Visible when we either have a captured install event or an iOS hint.
   const [hasPrompt, setHasPrompt] = useState(false);
-  const [dismissedState, setDismissedState] = useState(false);
+  const [iosHint, setIosHint] = useState(false);
+  // Start hidden; the mount effect decides whether we're snoozed. Rendering
+  // `null` on the server and on the first client paint keeps hydration stable.
+  const [snoozed, setSnoozed] = useState(true);
 
-  const visible = !dismissedState && (hasPrompt || iosHint);
+  // Re-show once the snooze window elapses, unless already installed.
+  const scheduleReshow = useCallback((delay: number) => {
+    return window.setTimeout(() => {
+      if (!isInstalled()) setSnoozed(false);
+    }, Math.max(0, Math.min(delay, 2 ** 31 - 1)));
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (isStandalone() || isDismissed()) return;
+    if (isInstalled()) return; // permanently suppressed
+
+    setIosHint(isIos() && !isStandalone());
+
+    let timer: number | undefined;
+    const remaining = snoozeRemaining();
+    if (remaining > 0) {
+      setSnoozed(true);
+      timer = scheduleReshow(remaining);
+    } else {
+      setSnoozed(false);
+    }
 
     const onBeforeInstall = (event: Event) => {
       event.preventDefault();
       setDeferred(event as BeforeInstallPromptEvent);
       setHasPrompt(true);
     };
-
     const onInstalled = () => {
+      markInstalled();
       setHasPrompt(false);
       setDeferred(null);
+      setSnoozed(true);
     };
 
     window.addEventListener("beforeinstallprompt", onBeforeInstall);
     window.addEventListener("appinstalled", onInstalled);
 
     return () => {
+      if (timer) window.clearTimeout(timer);
       window.removeEventListener("beforeinstallprompt", onBeforeInstall);
       window.removeEventListener("appinstalled", onInstalled);
     };
-  }, []);
+  }, [scheduleReshow]);
 
-  const remember = useCallback(() => {
-    try {
-      window.localStorage.setItem(DISMISS_KEY, "1");
-    } catch {
-      // ignore — dismissal simply won't persist across reloads.
-    }
-  }, []);
+  const visible = !snoozed && (hasPrompt || iosHint);
 
-  const dismiss = useCallback(() => {
-    setDismissedState(true);
-    remember();
-  }, [remember]);
+  const snooze = useCallback(() => {
+    markDismissedNow();
+    setSnoozed(true);
+    scheduleReshow(SNOOZE_MS);
+  }, [scheduleReshow]);
 
   const install = useCallback(async () => {
     if (!deferred) return;
     setHasPrompt(false);
     try {
       await deferred.prompt();
-      await deferred.userChoice;
+      const choice = await deferred.userChoice;
+      if (choice.outcome === "accepted") {
+        markInstalled();
+        setSnoozed(true);
+        return;
+      }
+      // Declined the native sheet → snooze like a dismissal.
+      snooze();
     } catch {
-      // User dismissed the native sheet or it failed — nothing to do.
+      snooze();
     } finally {
       setDeferred(null);
-      remember();
     }
-  }, [deferred, remember]);
+  }, [deferred, snooze]);
 
   if (!visible) return null;
 
@@ -172,7 +225,7 @@ export function InstallPrompt({ className }: { className?: string }) {
               <Button size="sm" onClick={install}>
                 Install app
               </Button>
-              <Button size="sm" variant="ghost" onClick={dismiss}>
+              <Button size="sm" variant="ghost" onClick={snooze}>
                 Not now
               </Button>
             </div>
@@ -182,7 +235,7 @@ export function InstallPrompt({ className }: { className?: string }) {
         <Button
           size="icon-sm"
           variant="ghost"
-          onClick={dismiss}
+          onClick={snooze}
           aria-label="Dismiss install prompt"
           className="-mt-0.5 -mr-0.5 shrink-0"
         >
