@@ -335,6 +335,28 @@ Built in Phase 1, consumed by everything after. **No component ships colors/spac
 **Quality/§0:** custom components throughout (no native anything), loading/empty/error states, tooltips on the heart, motion on add/remove, responsive, paginated if large, tabular price display.
 **Gate:** save/remove persists across devices (DB-backed) and reflects instantly (optimistic); wishlist respects the price gate (no price for non-approved); a customer cannot access another's wishlist (ownership test); add-to-enquiry from wishlist works; typecheck+lint+vitest green.
 
+### Phase 7.9 — Guided browse: Brand → Category → Products (storefront drill-down)
+**Goal:** a clear, guided **Brand → Category → Products** navigation path for retailers who think "show me *this brand's* products, in *this category*". Complements (does not replace) the flat `/b/[slug]` brand listing, the `/c/[slug]` category listing, and the faceted `/search` — those stay. This adds an explicit stepped drill-down with breadcrumbs at each level.
+
+**What exists (build ON this, don't duplicate):** routes `/b/[slug]` (brand landing — today a FLAT product listing) and `/c/[slug]` (category listing) and `/p/[slug]` (product); `discoverProducts` already filters by `categoryId` + `brandIds`; `getBrandBySlug`, `listActivePublicBrands`, `listByBrandForViewer` in the brand DAL; `listActive()` categories; the gated `StorefrontListing` + `buildListingItems` + price slots; the `CategoryGrid` and `BrandShowcase` components.
+
+**The three steps:**
+1. **Brand (entry):** a brand index at `/brands` — a searchable/A–Z grid of all active brands (reuse `BrandShowcase`/`listActivePublicBrands`), with each brand's product count. (Today brands are only reachable via home/search showcases; this gives the flow a front door. Add "Brands" to the storefront nav + a home entry.)
+2. **Category (within brand):** rework `/b/[slug]` to LEAD with a **category drill-down** — a `CategoryGrid` scoped to the brand, showing only categories that have ≥1 active product for that brand, each with a per-brand product count. Keep a prominent "All {brand} products" escape hatch (the current flat listing) so the drill-down is optional, not forced. Brand header (logo + name) stays; breadcrumb: `Brands / {Brand}`.
+3. **Products (brand + category):** a NEW nested route `/b/[slug]/[categorySlug]` — the gated product listing filtered to that brand **and** category, reusing `StorefrontListing` + `discoverProducts({ brandIds:[brand.id], categoryId })` + the price gate + load-more. In-context facets (spec/stock/tag, and approved-only price band) via the existing `DiscoveryFilters` so the retailer can refine within the brand+category. Breadcrumb: `Brands / {Brand} / {Category}`.
+
+**DAL additions (gated, price-free counts):**
+- `listBrandCategoriesForViewer(brandId)` → the categories that have ≥1 ACTIVE, non-deleted product for the brand, each with a **count** (public — counts carry no price). Indexed on `(brandId, categoryId, status, deletedAt)` usage; reuse existing indexes where possible.
+- Product listing for brand+category rides on `discoverProducts` (no new query surface) — just wire `brandIds` + `categoryId` + the URL facet selection, exactly like `/search`.
+- Brand product counts for the index/drill-down (aggregate, cached/short-revalidate; no price).
+
+**Price gate (unchanged, still SACRED):** every product surface here goes through the same viewer-gated DAL — anon/pending/expired see the locked chip, never a price. Brand names, category names, logos, and **counts** are public. Breadcrumbs/headers/metadata are price-free by construction (mirror the existing `/b/[slug]` note). Extend the invariant test: no price on any brand/category drill-down payload for a gated viewer.
+
+**Reusable breadcrumb:** a small custom `<Breadcrumbs />` (tokens, no library) used across `/brands`, `/b/[slug]`, `/b/[slug]/[categorySlug]` (and optionally `/c/[slug]`, `/p/[slug]`), with schema.org `BreadcrumbList` JSON-LD (price-free) for SEO.
+
+**Quality/§0:** custom components, all states (loading skeletons for the grids/listing, rich empty states — "No {category} products for {brand} yet"), fully responsive (grids reflow, mobile back affordance), paginated/load-more on the product step, reduced-motion respected, ISR/`force-dynamic` matching the existing brand/category routes (dynamic because pricing is viewer-gated; the brand index + counts can be ISR/short-revalidate since they're price-free).
+**Gate:** the full Brand → Category → Products path works with correct breadcrumbs at each step; only categories with products for the brand appear (with correct counts); the brand+category listing is filtered correctly and paginates; the "All {brand} products" escape works; gated viewers see no price anywhere on the path (invariant test extended); empty/loading states present; single-brand/single-category and no-product edge cases handled; typecheck+lint+vitest green. **Sequencing:** pure storefront + DAL, no schema step; rides on Phase 7.5–7.7 (listing, discovery, facets) and the Brand master (8.5). A focused fast-follow.
+
 ### Phase 8.7 — Audit & session logs (admin observability)
 **Goal:** full accountability — which admin did what, and when/where they were signed in. (`AuditLog` + `writeAudit` already record mutations; this adds capture depth + the viewing UI.)
 - **Capture:** ensure every admin mutation writes an audit entry (actorType, actorId, actorName snapshot, action, entity, entityId, before/after diff, at). Add **IP + userAgent** to `Session` and to admin-login audit; record `lastLoginAt`. Consider a lightweight read-audit for sensitive views (who exported the catalog, who viewed a customer).
