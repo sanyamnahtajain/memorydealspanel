@@ -7,6 +7,7 @@ import {
   LayoutGrid,
   MonitorSmartphone,
   Package,
+  ShoppingCart,
   Search,
   Settings,
   ShieldCheck,
@@ -52,6 +53,7 @@ export const adminPrimaryNav: readonly NavItem[] = [
   { label: "Brands", href: "/admin/brands", icon: Tag },
   { label: "Requests", href: "/admin/requests", icon: Inbox },
   { label: "Customers", href: "/admin/customers", icon: Users },
+  { label: "Orders", href: "/admin/orders", icon: ShoppingCart },
 ] as const
 
 /**

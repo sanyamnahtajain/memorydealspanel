@@ -36,6 +36,14 @@ enum RequestStatus {
   REJECTED
 }
 
+enum OrderStatus {
+  PLACED
+  CONFIRMED
+  PROCESSING
+  FULFILLED
+  CANCELLED
+}
+
 model Category {
   id        String       @id @default(auto()) @map("_id") @db.ObjectId
   name      String
@@ -84,6 +92,7 @@ model Product {
   images      ProductImage[]
   pageViews   PageView[]
   wishlistedBy WishlistItem[]
+  cartItems   CartItem[]
   // Variants (opt-in per product). When hasVariants is false the product
   // behaves exactly as before: `price`/`mrp`/`stockStatus`/`sku` are authoritative
   // and there are no ProductVariant rows. When true, `price` is the denormalized
@@ -120,6 +129,8 @@ model Customer {
   sessions     Session[]
   pageViews    PageView[]
   wishlist     WishlistItem[]
+  cartItems    CartItem[]
+  orders       Order[]
   lastLoginAt  DateTime?
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
@@ -302,4 +313,45 @@ model ProductVariant {
   updatedAt    DateTime     @updatedAt
 
   @@index([productId, status])
+}
+
+// A line in an approved customer's cart. One row per (customer, product,
+// variant). Quantity is validated server-side (>= MOQ, <= caps). Prices are
+// NEVER stored here — they are computed server-side at placement from the
+// gated DAL, so a client can't manipulate them.
+model CartItem {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  customerId String   @db.ObjectId
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  productId  String   @db.ObjectId
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variantId  String?  @db.ObjectId
+  quantity   Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([customerId, productId, variantId])
+  @@index([customerId])
+}
+
+// A placed order (a purchase request — no payment collected). `items` is a
+// server-computed snapshot (name/sku/brand/variant/qty/unitPricePaise/lineTotal)
+// so later catalog changes don't alter the order. orderNumber is a random,
+// non-enumerable public reference.
+model Order {
+  id            String      @id @default(auto()) @map("_id") @db.ObjectId
+  orderNumber   String      @unique
+  customerId    String      @db.ObjectId
+  customer      Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  status        OrderStatus @default(PLACED)
+  items         Json
+  subtotalPaise Int
+  itemCount     Int
+  note          String?
+  adminNote     String?
+  placedAt      DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([customerId, placedAt])
+  @@index([status, placedAt])
 }
