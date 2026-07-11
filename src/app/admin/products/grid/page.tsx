@@ -7,6 +7,7 @@ import { getViewer } from "@/server/auth/viewer";
 import { isAdmin } from "@/server/types/viewer";
 import { listForAdminGrid } from "@/server/dal/products";
 import { listAll } from "@/server/dal/categories";
+import { listActiveBrands } from "@/server/services/brands";
 import { AdminShell } from "@/components/shell/AdminShell";
 import { PageHeader } from "@/components/common";
 import { Button } from "@/components/ui/button";
@@ -36,9 +37,10 @@ export default async function AdminProductsGridPage() {
     redirect("/admin/login");
   }
 
-  const [products, categories] = await Promise.all([
+  const [products, categories, brands] = await Promise.all([
     listForAdminGrid(viewer),
     listAll(viewer),
+    listActiveBrands(),
   ]);
 
   const rows = products.map(toProductRow);
@@ -63,7 +65,7 @@ export default async function AdminProductsGridPage() {
           }
         />
 
-        <ProductGrid rows={rows} categories={categories} />
+        <ProductGrid rows={rows} categories={categories} brands={brands} />
       </div>
     </AdminShell>
   );

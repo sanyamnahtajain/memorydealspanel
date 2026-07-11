@@ -204,6 +204,50 @@ describe("products DAL price gate", () => {
   });
 });
 
+describe("brand master on the public payload", () => {
+  it("exposes brandRef {id,name,slug} to anon WITHOUT leaking price", async () => {
+    // Find a product that references a brand master, via any active row.
+    const linked = await prisma.product.findFirst({
+      where: { status: "ACTIVE", deletedAt: null, brandId: { not: null } },
+      select: { slug: true },
+    });
+    // The seed links products to brands; if that ever changes, skip loudly
+    // rather than silently passing on an empty assertion.
+    expect(linked, "seed missing: no active product linked to a brand").not.toBeNull();
+
+    const anon = await getBySlugForViewer(ANON_VIEWER, linked!.slug);
+    expect(anon).not.toBeNull();
+
+    // Price gate intact: brand is public, but NO money keys are present.
+    expect("price" in anon!).toBe(false);
+    expect("mrp" in anon!).toBe(false);
+    expect("marginPct" in anon!).toBe(false);
+
+    // Brand master is present and shaped as the public projection.
+    expect(anon!.brandRef).not.toBeNull();
+    const brand = anon!.brandRef!;
+    expect(typeof brand.id).toBe("string");
+    expect(typeof brand.name).toBe("string");
+    expect(typeof brand.slug).toBe("string");
+    // Defence in depth: the nested brand object carries no price key either.
+    expect("price" in brand).toBe(false);
+  });
+
+  it("lists brandRef for anon across a page with no price key", async () => {
+    const products = await listForViewer(ANON_VIEWER, { take: 10 });
+    expect(products.length).toBeGreaterThan(0);
+    for (const p of products) {
+      // brandRef is always present as a key (object or null), never a price.
+      expect("brandRef" in p).toBe(true);
+      expect("price" in p).toBe(false);
+      if (p.brandRef) {
+        expect(typeof p.brandRef.name).toBe("string");
+        expect("price" in p.brandRef).toBe(false);
+      }
+    }
+  });
+});
+
 describe("listForAdminGrid authorization", () => {
   it("throws ForbiddenError for anon", async () => {
     await expect(listForAdminGrid(ANON_VIEWER)).rejects.toBeInstanceOf(

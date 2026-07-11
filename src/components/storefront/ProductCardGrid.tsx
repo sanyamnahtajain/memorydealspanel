@@ -24,6 +24,7 @@ import { motion, useReducedMotion, type Variants } from "motion/react";
 
 import type { PublicProduct } from "@/server/dto/product";
 import { EmptyState } from "@/components/common/EmptyState";
+import { BrandBadge } from "@/components/storefront/BrandBadge";
 import { staggerItemVariants } from "@/components/motion/primitives";
 import {
   GALLERY_HERO_CLASS,
@@ -264,7 +265,13 @@ function ProductCard({ item }: { item: ProductCardItem }) {
       </div>
 
       <div className="flex flex-1 flex-col gap-1 p-3">
-        {product.brand ? (
+        {product.brandRef ? (
+          <BrandBadge
+            name={product.brandRef.name}
+            slug={product.brandRef.slug}
+            asLink={false}
+          />
+        ) : product.brand ? (
           <span className="text-[0.7rem] font-medium tracking-wide text-muted-foreground uppercase">
             {product.brand}
           </span>

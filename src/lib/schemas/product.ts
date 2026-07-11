@@ -43,7 +43,12 @@ const productCoreSchema = z.object({
       /^[A-Za-z0-9][A-Za-z0-9._-]*$/,
       "sku may only contain letters, digits, dots, underscores and hyphens",
     ),
+  // Legacy free-text brand string, retained only for back-compat. New writes
+  // should set `brandId`; the service mirrors the selected brand's name here.
   brand: z.string().trim().min(1).max(80).optional(),
+  // Reference to the Brand master. This is the field the UI writes to now
+  // (a dropdown, no typos). Optional because a product may have no brand.
+  brandId: objectIdSchema.optional(),
   description: z.string().trim().max(5000).optional(),
   specs: z.record(z.string().min(1), z.string()).optional(),
   price: paiseSchema,

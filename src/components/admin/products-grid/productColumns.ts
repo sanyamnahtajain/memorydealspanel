@@ -20,6 +20,7 @@
 
 import type { ColumnDef, GridRow } from "@/components/grid/types";
 import type { CategoryDTO } from "@/server/dal/categories";
+import type { BrandOption } from "@/server/services/brands";
 import { formatPaise } from "@/lib/money";
 import {
   updateProductSchema,
@@ -40,7 +41,15 @@ export interface ProductRow extends GridRow {
   id: string;
   name: string;
   sku: string;
+  /**
+   * Legacy free-text brand name, kept read-through for display/back-compat. The
+   * editable grid column is now `brandId` (a Brand-master select). INTEGRATOR:
+   * `toProductRow` should also set `brandId` from `product.brandRef?.id ?? null`
+   * so the select shows the current brand.
+   */
   brand: string | null;
+  /** Reference to the Brand master — value behind the brand `select` column. */
+  brandId?: string | null;
   categoryId: string;
   price: number; // paise
   mrp: number | null; // paise
@@ -111,9 +120,13 @@ function validatePatch(
  * category `select` offers the real, colored options.
  *
  * @param categories - all categories (admin list, incl. inactive) for options.
+ * @param brands - active brands for the brand `select` column. INTEGRATOR: the
+ *   grid page must load these via `listActiveBrands()` and pass them here;
+ *   defaults to empty so existing callers keep compiling until wired.
  */
 export function buildProductColumns(
   categories: readonly CategoryDTO[],
+  brands: readonly BrandOption[] = [],
 ): ColumnDef<ProductRow>[] {
   const categoryOptions = categories.map((category, index) => ({
     value: category.id,
@@ -121,6 +134,12 @@ export function buildProductColumns(
     color: CATEGORY_PALETTE[index % CATEGORY_PALETTE.length],
   }));
   const knownCategoryIds = new Set(categories.map((c) => c.id));
+
+  const brandOptions = brands.map((brand) => ({
+    value: brand.id,
+    label: brand.name,
+  }));
+  const knownBrandIds = new Set(brands.map((b) => b.id));
 
   return [
     {
@@ -139,15 +158,18 @@ export function buildProductColumns(
       validate: (value) => validatePatch({ sku: value as string }, "sku"),
     },
     {
-      key: "brand",
+      key: "brandId",
       header: "Brand",
-      type: "text",
-      width: 150,
+      type: "select",
+      width: 180,
+      options: brandOptions,
       // Brand is optional; empty commits to `undefined` (cleared) server-side.
+      // A non-empty value must reference a known brand from the master.
       validate: (value) => {
-        const v = typeof value === "string" ? value.trim() : value;
-        if (v === "" || v == null) return null;
-        return validatePatch({ brand: v as string }, "brand");
+        if (value === "" || value == null) return null;
+        const zodError = validatePatch({ brandId: value as string }, "brandId");
+        if (zodError) return zodError;
+        return knownBrandIds.has(String(value)) ? null : "Unknown brand";
       },
     },
     {

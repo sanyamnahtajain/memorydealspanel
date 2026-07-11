@@ -110,7 +110,13 @@ export async function createProductAction(
       action: "product.create",
       entity: "Product",
       entityId: product.id,
-      diff: { after: { name: product.name, sku: product.sku } },
+      diff: {
+        after: {
+          name: product.name,
+          sku: product.sku,
+          brandId: product.brandRef?.id ?? null,
+        },
+      },
     });
 
     revalidateProductViews(product.id);
@@ -316,6 +322,7 @@ const LIST_SELECT = {
   slug: true,
   sku: true,
   brand: true,
+  brandRef: { select: { id: true, name: true, slug: true } },
   description: true,
   specs: true,
   moq: true,
@@ -356,6 +363,7 @@ export async function listProductsAction(
         { name: { contains: params.search, mode: "insensitive" } },
         { sku: { contains: params.search, mode: "insensitive" } },
         { brand: { contains: params.search, mode: "insensitive" } },
+        { brandRef: { name: { contains: params.search, mode: "insensitive" } } },
       ];
     }
 

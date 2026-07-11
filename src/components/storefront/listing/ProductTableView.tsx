@@ -202,7 +202,7 @@ function TableRow({ item }: { item: ListingItem }) {
         {product.sku}
       </td>
       <td className="hidden px-3 py-2 text-muted-foreground lg:table-cell">
-        {product.brand ?? "—"}
+        {product.brandRef?.name ?? product.brand ?? "—"}
       </td>
       <td className="hidden max-w-[14rem] px-3 py-2 text-xs text-muted-foreground lg:table-cell">
         <span className="block truncate">{spec ?? "—"}</span>

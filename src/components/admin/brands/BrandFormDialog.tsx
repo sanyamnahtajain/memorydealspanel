@@ -1,0 +1,412 @@
+"use client";
+
+import * as React from "react";
+import imageCompression from "browser-image-compression";
+import { ImageIcon, Loader2Icon, UploadIcon, XIcon } from "lucide-react";
+
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { useIsMobile } from "@/components/common";
+import { createBrandLogoUploadTargetAction } from "@/server/actions/brands";
+
+export interface BrandFormValues {
+  name: string;
+  logo: string | null;
+  status: "ACTIVE" | "INACTIVE";
+}
+
+interface BrandFormDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  title: string;
+  description?: string;
+  submitLabel: string;
+  /** Initial field values (for editing). Omit for a blank create form. */
+  initial?: Partial<BrandFormValues>;
+  /**
+   * Persists the form. Returns an error string to keep the surface open and
+   * show the message inline, or null/undefined on success (surface closes).
+   */
+  onSubmit: (values: BrandFormValues) => Promise<string | null | undefined>;
+}
+
+const MAX_UPLOAD_MB = 1;
+
+/**
+ * Add / edit brand surface — a centered Dialog on desktop, a bottom Sheet on
+ * mobile. The stateful form (`BrandFormBody`) is remounted on every open via
+ * `openKey`, so it always initializes fresh from `initial` without a
+ * sync-in-effect. The parent owns persistence via `onSubmit`.
+ */
+export function BrandFormDialog({
+  open,
+  onOpenChange,
+  title,
+  description,
+  submitLabel,
+  initial,
+  onSubmit,
+}: BrandFormDialogProps) {
+  const isMobile = useIsMobile();
+  // Bumped each time the surface transitions closed -> open, so the body
+  // remounts with fresh state derived from `initial` (no reset effect needed).
+  const [openKey, setOpenKey] = React.useState(0);
+  const [prevOpen, setPrevOpen] = React.useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (open) setOpenKey((k) => k + 1);
+  }
+
+  const shared = {
+    title,
+    description,
+    submitLabel,
+    initial,
+    onSubmit,
+    onRequestClose: () => onOpenChange(false),
+  };
+
+  if (isMobile) {
+    return (
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        <SheetContent
+          side="bottom"
+          showCloseButton={false}
+          className="max-h-[90dvh] overflow-y-auto rounded-t-2xl pb-[calc(1rem+env(safe-area-inset-bottom))]"
+        >
+          <div
+            aria-hidden
+            className="mx-auto mt-2.5 h-1 w-10 rounded-full bg-muted"
+          />
+          {open ? (
+            <BrandFormBody key={openKey} layout="sheet" {...shared} />
+          ) : null}
+        </SheetContent>
+      </Sheet>
+    );
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent showCloseButton>
+        {open ? (
+          <BrandFormBody key={openKey} layout="dialog" {...shared} />
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface BrandFormBodyProps {
+  layout: "dialog" | "sheet";
+  title: string;
+  description?: string;
+  submitLabel: string;
+  initial?: Partial<BrandFormValues>;
+  onSubmit: (values: BrandFormValues) => Promise<string | null | undefined>;
+  onRequestClose: () => void;
+}
+
+/**
+ * Stateful body of the brand form. Mounted fresh on each open so its state
+ * derives directly from `initial` — no reset effect needed.
+ */
+function BrandFormBody({
+  layout,
+  title,
+  description,
+  submitLabel,
+  initial,
+  onSubmit,
+  onRequestClose,
+}: BrandFormBodyProps) {
+  const [name, setName] = React.useState(initial?.name ?? "");
+  const [logo, setLogo] = React.useState<string | null>(initial?.logo ?? null);
+  const [status, setStatus] = React.useState<"ACTIVE" | "INACTIVE">(
+    initial?.status ?? "ACTIVE",
+  );
+  const [error, setError] = React.useState<string | null>(null);
+  const [saving, setSaving] = React.useState(false);
+  const [uploading, setUploading] = React.useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const busy = saving || uploading;
+
+  const handleFile = React.useCallback(async (file: File) => {
+    setError(null);
+    setUploading(true);
+    try {
+      const compressed = await imageCompression(file, {
+        maxSizeMB: MAX_UPLOAD_MB,
+        maxWidthOrHeight: 1024,
+        useWebWorker: true,
+      });
+      const contentType = compressed.type || file.type || "image/jpeg";
+      const target = await createBrandLogoUploadTargetAction({
+        fileName: file.name,
+        contentType,
+      });
+      if (!target.ok) {
+        setError(target.error);
+        return;
+      }
+      const res = await fetch(target.data.uploadUrl, {
+        method: "PUT",
+        headers: target.data.headers,
+        body: compressed,
+      });
+      if (!res.ok) {
+        setError("Upload failed. Please try again.");
+        return;
+      }
+      setLogo(target.data.publicUrl);
+    } catch {
+      setError("Could not process that image.");
+    } finally {
+      setUploading(false);
+    }
+  }, []);
+
+  const handleSubmit = React.useCallback(async () => {
+    const trimmed = name.trim();
+    if (trimmed.length < 2) {
+      setError("Name must be at least 2 characters.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const result = await onSubmit({ name: trimmed, logo, status });
+      if (result) {
+        setError(result);
+        return;
+      }
+      onRequestClose();
+    } catch {
+      setError("Something went wrong. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  }, [name, logo, status, onSubmit, onRequestClose]);
+
+  const fields = (
+    <div className="flex flex-col gap-4 px-4 md:px-0">
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="brand-name">Name</Label>
+        <Input
+          id="brand-name"
+          value={name}
+          autoFocus
+          placeholder="e.g. Samsung"
+          maxLength={80}
+          disabled={busy}
+          onChange={(event) => setName(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              void handleSubmit();
+            }
+          }}
+        />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="brand-logo">Logo (optional)</Label>
+        <div className="flex items-center gap-3">
+          <div className="relative flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-muted">
+            {logo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={logo} alt="" className="size-full object-contain" />
+            ) : (
+              <ImageIcon
+                className="size-5 text-muted-foreground"
+                aria-hidden
+              />
+            )}
+            {logo ? (
+              <button
+                type="button"
+                onClick={() => setLogo(null)}
+                disabled={busy}
+                aria-label="Remove logo"
+                className="absolute top-0.5 right-0.5 inline-flex size-5 items-center justify-center rounded-full bg-background/90 text-foreground shadow-sm outline-none transition-transform hover:bg-background focus-visible:ring-2 focus-visible:ring-ring/50 active:scale-90"
+              >
+                <XIcon className="size-3" aria-hidden />
+              </button>
+            ) : null}
+          </div>
+          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+            <Input
+              id="brand-logo"
+              type="url"
+              inputMode="url"
+              value={logo ?? ""}
+              placeholder="Paste a logo URL"
+              disabled={busy}
+              onChange={(event) =>
+                setLogo(
+                  event.target.value.trim() === ""
+                    ? null
+                    : event.target.value,
+                )
+              }
+            />
+            <div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) void handleFile(file);
+                  event.target.value = "";
+                }}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {uploading ? (
+                  <Loader2Icon className="animate-spin" aria-hidden />
+                ) : (
+                  <UploadIcon aria-hidden />
+                )}
+                {uploading ? "Uploading…" : "Upload"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label>Visibility</Label>
+        <div className="grid grid-cols-2 gap-2">
+          <StatusChoice
+            active={status === "ACTIVE"}
+            disabled={busy}
+            label="Active"
+            hint="Available on storefront"
+            onClick={() => setStatus("ACTIVE")}
+          />
+          <StatusChoice
+            active={status === "INACTIVE"}
+            disabled={busy}
+            label="Inactive"
+            hint="Hidden from storefront"
+            onClick={() => setStatus("INACTIVE")}
+          />
+        </div>
+      </div>
+
+      {error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+
+  const submitButton = (
+    <Button
+      disabled={busy}
+      onClick={handleSubmit}
+      data-loading={saving || undefined}
+    >
+      {saving ? <Loader2Icon className="animate-spin" aria-hidden /> : null}
+      {submitLabel}
+    </Button>
+  );
+  const cancelButton = (
+    <Button variant="outline" disabled={busy} onClick={onRequestClose}>
+      Cancel
+    </Button>
+  );
+
+  if (layout === "sheet") {
+    return (
+      <>
+        <SheetHeader className="pb-0 text-center">
+          <SheetTitle>{title}</SheetTitle>
+          {description ? (
+            <SheetDescription>{description}</SheetDescription>
+          ) : null}
+        </SheetHeader>
+        {fields}
+        <SheetFooter className="pt-2">
+          {submitButton}
+          {cancelButton}
+        </SheetFooter>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>{title}</DialogTitle>
+        {description ? (
+          <DialogDescription>{description}</DialogDescription>
+        ) : null}
+      </DialogHeader>
+      {fields}
+      <DialogFooter>
+        {cancelButton}
+        {submitButton}
+      </DialogFooter>
+    </>
+  );
+}
+
+function StatusChoice({
+  active,
+  disabled,
+  label,
+  hint,
+  onClick,
+}: {
+  active: boolean;
+  disabled?: boolean;
+  label: string;
+  hint: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      aria-pressed={active}
+      onClick={onClick}
+      className={cn(
+        "flex flex-col items-start gap-0.5 rounded-lg border px-3 py-2 text-left outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98]",
+        active
+          ? "border-primary bg-primary/10"
+          : "border-border bg-transparent hover:bg-muted",
+      )}
+    >
+      <span className="text-sm font-medium text-foreground">{label}</span>
+      <span className="text-xs text-muted-foreground">{hint}</span>
+    </button>
+  );
+}

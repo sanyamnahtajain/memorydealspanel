@@ -25,6 +25,7 @@ import {
   GALLERY_HERO_CLASS,
   galleryTransitionName,
 } from "@/components/storefront/ProductGallery";
+import { BrandBadge } from "@/components/storefront/BrandBadge";
 
 const containerVariants: Variants = {
   hidden: {},
@@ -90,7 +91,13 @@ function FeaturedCard({ item }: { item: ProductCardItem }) {
         )}
       </div>
       <div className="flex flex-1 flex-col gap-1 p-3">
-        {product.brand ? (
+        {product.brandRef ? (
+          <BrandBadge
+            name={product.brandRef.name}
+            slug={product.brandRef.slug}
+            asLink={false}
+          />
+        ) : product.brand ? (
           <span className="text-[0.7rem] font-medium tracking-wide text-muted-foreground uppercase">
             {product.brand}
           </span>
