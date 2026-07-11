@@ -345,10 +345,9 @@ export function CartView({
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
-      {/* Line items. Extra bottom padding on mobile clears the fixed summary
-          bar (+ the storefront bottom tab nav on phones); none needed at lg
-          where the summary is an inline sidebar. */}
-      <div className="pb-36 md:pb-24 lg:pb-0">
+      {/* Line items. On mobile the inline summary below carries the bottom
+          clearance for the fixed bars; at lg the summary is a sidebar. */}
+      <div className="lg:pb-0">
         {!canOrder ? (
           <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-700 dark:text-amber-300">
             <Lock className="mt-0.5 size-4 shrink-0" />
@@ -536,6 +535,28 @@ export function CartView({
         </ul>
       </div>
 
+      {/* Summary (mobile, inline). The note + full GST breakdown that the
+          desktop sidebar shows — placing itself is done from the sticky bar,
+          so the Place-order button is hidden here. Bottom padding clears the
+          fixed bar (+ tab nav on phones). */}
+      <div className="mt-2 pb-36 md:pb-24 lg:hidden">
+        <div className="rounded-xl border border-border bg-card p-4">
+          <Summary
+            priced={priced}
+            subtotalPaise={subtotalPaise ?? initialSubtotalPaise}
+            itemCount={itemCount}
+            note={note}
+            onNote={setNote}
+            canPlace={canPlace}
+            placing={placing}
+            onPlace={placeOrder}
+            canOrder={canOrder}
+            tax={taxPreview}
+            hidePlaceButton
+          />
+        </div>
+      </div>
+
       {/* Summary (desktop sidebar) */}
       <aside className="hidden lg:block">
         <div className="sticky top-24 rounded-xl border border-border bg-card p-4">
@@ -598,6 +619,8 @@ interface SummaryProps {
   canOrder: boolean;
   /** Live GST preview, or null when GST is off / gated. */
   tax: CartTaxSummary | null;
+  /** Hide the internal Place-order button (mobile uses the sticky bar's). */
+  hidePlaceButton?: boolean;
 }
 
 function Summary({
@@ -611,6 +634,7 @@ function Summary({
   onPlace,
   canOrder,
   tax,
+  hidePlaceButton = false,
 }: SummaryProps) {
   // With GST on, the taxable base is what we call "subtotal" for an exclusive
   // catalog; for an inclusive one the tax is carved out of the line totals. We
@@ -680,14 +704,16 @@ function Summary({
         </p>
       </div>
 
-      <Button onClick={onPlace} disabled={!canPlace} className="w-full">
-        {placing ? (
-          <Loader2 className="size-4 animate-spin" />
-        ) : (
-          <ShoppingBag className="size-4" />
-        )}
-        Place order
-      </Button>
+      {!hidePlaceButton ? (
+        <Button onClick={onPlace} disabled={!canPlace} className="w-full">
+          {placing ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <ShoppingBag className="size-4" />
+          )}
+          Place order
+        </Button>
+      ) : null}
     </div>
   );
 }
