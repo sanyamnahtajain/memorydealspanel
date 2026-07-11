@@ -68,6 +68,14 @@ interface StorefrontListingProps {
    * for anon/admin (the heart then prompts login on tap). Carries NO price.
    */
   savedProductIds?: ReadonlySet<string>;
+  /**
+   * Whether the viewer may quick-add products to the cart from a card — true
+   * only for an approved customer (same gate as `canSeePrices`). Threaded down
+   * to the grid/compact renderers, which show a quick-add affordance per
+   * in-stock, non-variant product. Sends only { productId, quantity } — no
+   * price. Defaults to `canSeePrices`.
+   */
+  canAddToCart?: boolean;
 }
 
 function isViewMode(value: unknown): value is ViewMode {
@@ -84,6 +92,7 @@ export function StorefrontListing({
   emptyTitle = "No products here yet",
   emptyDescription = "Check back soon — we're adding stock regularly.",
   savedProductIds,
+  canAddToCart = canSeePrices,
 }: StorefrontListingProps) {
   const prefs = usePreferences();
   const router = useRouter();
@@ -250,6 +259,7 @@ export function StorefrontListing({
           onSort={changeSort}
           canSortPrice={canSeePrices}
           savedProductIds={savedProductIds}
+          canAddToCart={canAddToCart}
         />
       )}
 
@@ -273,6 +283,7 @@ function ListingBody({
   onSort,
   canSortPrice,
   savedProductIds,
+  canAddToCart,
 }: {
   viewMode: ViewMode;
   items: ListingItem[];
@@ -281,6 +292,7 @@ function ListingBody({
   onSort: (key: SortKey) => void;
   canSortPrice: boolean;
   savedProductIds?: ReadonlySet<string>;
+  canAddToCart: boolean;
 }) {
   switch (viewMode) {
     case "table":
@@ -291,6 +303,7 @@ function ListingBody({
           onSort={onSort}
           canSortPrice={canSortPrice}
           savedProductIds={savedProductIds}
+          canAddToCart={canAddToCart}
         />
       );
     case "compact":
@@ -299,6 +312,7 @@ function ListingBody({
           items={items}
           compactDensity={compactDensity}
           savedProductIds={savedProductIds}
+          canAddToCart={canAddToCart}
         />
       );
     case "grid":
@@ -308,6 +322,7 @@ function ListingBody({
           items={items}
           compactDensity={compactDensity}
           savedProductIds={savedProductIds}
+          canAddToCart={canAddToCart}
         />
       );
   }

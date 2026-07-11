@@ -27,8 +27,9 @@ import {
 } from "@/components/storefront/ProductGallery";
 import { BrandBadge } from "@/components/storefront/BrandBadge";
 import { HeartButton } from "@/components/storefront/wishlist/HeartButton";
+import { QuickAddToCart } from "@/components/storefront/cart/QuickAddToCart";
 import type { ListingItem } from "./types";
-import { keySpec, primaryImage } from "./product-display";
+import { canQuickAdd, keySpec, primaryImage } from "./product-display";
 
 interface ProductGridViewProps {
   items: ListingItem[];
@@ -40,12 +41,15 @@ interface ProductGridViewProps {
    * (the heart then prompts login on tap). Carries NO price.
    */
   savedProductIds?: ReadonlySet<string>;
+  /** Whether the viewer may quick-add in-stock, non-variant products. */
+  canAddToCart?: boolean;
 }
 
 export function ProductGridView({
   items,
   compactDensity,
   savedProductIds,
+  canAddToCart = false,
 }: ProductGridViewProps) {
   const reduced = useReducedMotion();
 
@@ -68,6 +72,7 @@ export function ProductGridView({
           <GridCard
             item={item}
             saved={savedProductIds?.has(item.product.id) ?? false}
+            canAddToCart={canAddToCart}
           />
         </motion.li>
       ))}
@@ -75,10 +80,19 @@ export function ProductGridView({
   );
 }
 
-function GridCard({ item, saved }: { item: ListingItem; saved: boolean }) {
+function GridCard({
+  item,
+  saved,
+  canAddToCart,
+}: {
+  item: ListingItem;
+  saved: boolean;
+  canAddToCart: boolean;
+}) {
   const { product } = item;
   const image = primaryImage(product);
   const snippet = keySpec(product);
+  const quickAdd = canQuickAdd(product, canAddToCart);
 
   return (
     <Link
@@ -136,7 +150,16 @@ function GridCard({ item, saved }: { item: ListingItem; saved: boolean }) {
         {snippet ? (
           <p className="line-clamp-1 text-xs text-muted-foreground">{snippet}</p>
         ) : null}
-        <div className="mt-auto pt-2">{item.priceSlot}</div>
+        <div className="mt-auto flex items-end justify-between gap-2 pt-2">
+          <div className="min-w-0">{item.priceSlot}</div>
+          {quickAdd ? (
+            <QuickAddToCart
+              productId={product.id}
+              moq={product.moq}
+              className="shrink-0"
+            />
+          ) : null}
+        </div>
       </div>
     </Link>
   );

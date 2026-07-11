@@ -9,6 +9,7 @@ import { getViewer } from "@/server/auth/viewer";
 import { canSeePrices } from "@/server/types/viewer";
 import { discoverProducts } from "@/server/storefront/discovery";
 import { wishlistStateForViewer } from "@/server/services/wishlist";
+import { cartCountForViewer } from "@/server/services/cart";
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
 import { FadeUp } from "@/components/motion/primitives";
 import {
@@ -121,6 +122,9 @@ export default async function CategoryPage({
   // each product heart's filled state. Empty for anon/admin. Carries no price.
   const wishlistState = await wishlistStateForViewer(viewer);
 
+  // Header cart badge — a count only for an approved customer, else undefined.
+  const cartCount = await cartCountForViewer(viewer);
+
   // Load-more re-runs the SAME faceted query for the next offset window. The
   // selection is captured server-side so gated viewers can never inject a price
   // band via the client. Price slots stay server-rendered.
@@ -145,7 +149,7 @@ export default async function CategoryPage({
   }
 
   return (
-    <StorefrontShell wishlistCount={wishlistState.count}>
+    <StorefrontShell wishlistCount={wishlistState.count} cartCount={cartCount}>
       <FadeUp>
         <div className="mt-2 mb-4">
           <Link

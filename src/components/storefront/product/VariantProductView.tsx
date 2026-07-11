@@ -34,6 +34,8 @@ export interface VariantProductViewProps {
   /** Product-level images — the fallback when a variant has none of its own. */
   productImages: PublicProductImage[];
   productId: string;
+  /** Product-level MOQ — the add-to-cart quantity floor. */
+  moq?: number | null;
   optionTypes: ProductOptionType[];
   variants: Array<PublicVariant | PricedVariant>;
   showPrices: boolean;
@@ -48,6 +50,7 @@ export function VariantProductView({
   productName,
   productImages,
   productId,
+  moq,
   optionTypes,
   variants,
   showPrices,
@@ -84,6 +87,8 @@ export function VariantProductView({
           {header}
           <VariantSelector
             productName={productName}
+            productId={productId}
+            moq={moq}
             optionTypes={optionTypes}
             variants={variants}
             showPrices={showPrices}

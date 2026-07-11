@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { resolveViewer } from "@/server/auth/viewer";
 import { isCustomer } from "@/server/types/viewer";
 import { listWishlist, wishlistCount } from "@/server/services/wishlist";
+import { cartCountForViewer } from "@/server/services/cart";
 import { APP_NAME } from "@/lib/constants";
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -44,9 +45,10 @@ export default async function WishlistPage() {
     redirect(viewer.kind === "admin" ? "/admin" : "/account/login");
   }
 
-  const [entries, total] = await Promise.all([
+  const [entries, total, cartCount] = await Promise.all([
     listWishlist(viewer),
     wishlistCount(viewer.customerId),
+    cartCountForViewer(viewer),
   ]);
 
   // Build the client-safe card data. The price node is rendered HERE on the
@@ -74,7 +76,7 @@ export default async function WishlistPage() {
   });
 
   return (
-    <StorefrontShell wishlistCount={total}>
+    <StorefrontShell wishlistCount={total} cartCount={cartCount}>
       <div className="mx-auto w-full max-w-5xl py-6 sm:py-8">
         <FadeUp>
           <PageHeader

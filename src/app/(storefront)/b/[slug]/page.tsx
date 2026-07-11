@@ -9,6 +9,7 @@ import { getBrandBySlug, listByBrandForViewer } from "@/server/dal/brands";
 import { getViewer } from "@/server/auth/viewer";
 import { canSeePrices } from "@/server/types/viewer";
 import { wishlistStateForViewer } from "@/server/services/wishlist";
+import { cartCountForViewer } from "@/server/services/cart";
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
 import { FadeUp } from "@/components/motion/primitives";
 import {
@@ -73,6 +74,9 @@ export default async function BrandPage({ params }: BrandPageProps) {
   // each product heart's filled state. Empty for anon/admin. Carries no price.
   const wishlistState = await wishlistStateForViewer(viewer);
 
+  // Header cart badge — a count only for an approved customer, else undefined.
+  const cartCount = await cartCountForViewer(viewer);
+
   // Bind the brand id to the load-more action so the client listing only needs
   // to pass the next page number. Price slots stay server-rendered.
   const brandId = brand.id;
@@ -82,7 +86,7 @@ export default async function BrandPage({ params }: BrandPageProps) {
   }
 
   return (
-    <StorefrontShell wishlistCount={wishlistState.count}>
+    <StorefrontShell wishlistCount={wishlistState.count} cartCount={cartCount}>
       <FadeUp>
         <div className="mt-2 mb-4">
           <Link

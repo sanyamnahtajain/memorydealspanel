@@ -41,6 +41,26 @@ export function keySpec(product: PublicProduct, max = 2): string | null {
   return product.tags.length > 0 ? product.tags.slice(0, max).join(" · ") : null;
 }
 
+/**
+ * Whether a listing card should show the one-tap quick-add-to-cart affordance.
+ *
+ * True only when the viewer may add (`canAddToCart`, threaded from the gate),
+ * the product is NOT out of stock, and it is NOT a variant product. Variant
+ * products need an axis selection before a specific variant can be carted, so
+ * their card links to the detail page (where the variant selector + full
+ * add-to-cart live) instead of quick-adding an ambiguous line.
+ */
+export function canQuickAdd(
+  product: PublicProduct,
+  canAddToCart: boolean,
+): boolean {
+  return (
+    canAddToCart &&
+    product.stockStatus !== "OUT_OF_STOCK" &&
+    !product.hasVariants
+  );
+}
+
 /** Maps a stock status to the StatusChip variant that renders it. */
 export function stockChipVariant(status: StockStatus): StatusChipVariant {
   switch (status) {

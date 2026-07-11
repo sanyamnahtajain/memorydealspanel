@@ -25,8 +25,9 @@ import { ArrowDown, ArrowUp, ChevronsUpDown, ImageOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { StatusChip } from "@/components/common/StatusChip";
 import { HeartButton } from "@/components/storefront/wishlist/HeartButton";
+import { QuickAddToCart } from "@/components/storefront/cart/QuickAddToCart";
 import type { ListingItem, SortKey } from "./types";
-import { keySpec, stockChipVariant, thumbUrl } from "./product-display";
+import { canQuickAdd, keySpec, stockChipVariant, thumbUrl } from "./product-display";
 
 interface ProductTableViewProps {
   items: ListingItem[];
@@ -41,6 +42,8 @@ interface ProductTableViewProps {
    * Absent for anon (the heart prompts login). Carries NO price.
    */
   savedProductIds?: ReadonlySet<string>;
+  /** Whether the viewer may quick-add in-stock, non-variant products. */
+  canAddToCart?: boolean;
 }
 
 /**
@@ -65,6 +68,7 @@ export function ProductTableView({
   onSort,
   canSortPrice,
   savedProductIds,
+  canAddToCart = false,
 }: ProductTableViewProps) {
   const columns: Column[] = [
     { id: "image", label: "", headClassName: "w-14" },
@@ -85,6 +89,10 @@ export function ProductTableView({
     { id: "stock", label: "Stock", headClassName: "text-right", className: "text-right" },
     // Save-to-wishlist heart column (no header label).
     { id: "save", label: "", headClassName: "w-10" },
+    // Quick-add-to-cart column — only for an approved viewer who may cart.
+    ...(canAddToCart
+      ? [{ id: "cart", label: "", headClassName: "w-10" } as Column]
+      : []),
   ];
 
   return (
@@ -108,6 +116,7 @@ export function ProductTableView({
               key={item.product.id}
               item={item}
               saved={savedProductIds?.has(item.product.id) ?? false}
+              canAddToCart={canAddToCart}
             />
           ))}
         </tbody>
@@ -178,10 +187,19 @@ function SortableHeader({
   );
 }
 
-function TableRow({ item, saved }: { item: ListingItem; saved: boolean }) {
+function TableRow({
+  item,
+  saved,
+  canAddToCart,
+}: {
+  item: ListingItem;
+  saved: boolean;
+  canAddToCart: boolean;
+}) {
   const { product } = item;
   const url = thumbUrl(product);
   const spec = keySpec(product);
+  const quickAdd = canQuickAdd(product, canAddToCart);
 
   return (
     <tr className="group transition-colors hover:bg-muted/50">
@@ -243,6 +261,17 @@ function TableRow({ item, saved }: { item: ListingItem; saved: boolean }) {
           />
         </div>
       </td>
+      {/* Quick add-to-cart — the column exists only for approved viewers; a
+          variant/out-of-stock product renders an empty (aligned) cell. */}
+      {canAddToCart ? (
+        <td className="px-2 py-2 text-right">
+          {quickAdd ? (
+            <div className="flex justify-end">
+              <QuickAddToCart productId={product.id} moq={product.moq} />
+            </div>
+          ) : null}
+        </td>
+      ) : null}
     </tr>
   );
 }

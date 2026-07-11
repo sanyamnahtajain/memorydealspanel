@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { PricePill } from "@/components/common/PricePill";
 import { StatusChip, type StatusChipVariant } from "@/components/common/StatusChip";
 import { RequestAccessSheet } from "@/components/storefront/RequestAccessSheet";
+import { AddToCartButton } from "@/components/storefront/cart/AddToCartButton";
 import { buildWhatsAppEnquiryLink } from "./whatsapp";
 
 /**
@@ -50,6 +51,10 @@ const STOCK_CHIP: Record<StockStatus, StatusChipVariant> = {
 export interface VariantSelectorProps {
   /** Parent product name — pre-fills the enquiry and describes the axes. */
   productName: string;
+  /** Parent product id — sent (with the selected variantId) to add-to-cart. */
+  productId?: string;
+  /** Product-level MOQ — the add-to-cart quantity floor. */
+  moq?: number | null;
   /** Axis definitions (name + allowed values), from `Product.optionTypes`. */
   optionTypes: ProductOptionType[];
   /** ACTIVE variants, gated by the DAL to the viewer's tier. */
@@ -123,6 +128,8 @@ function isValueAvailable(
 
 export function VariantSelector({
   productName,
+  productId,
+  moq,
   optionTypes,
   variants,
   showPrices,
@@ -276,6 +283,24 @@ export function VariantSelector({
           </p>
         )}
       </div>
+
+      {/* Add to cart — approved-only, bound to the SELECTED variant. The button
+          self-gates (locked CTA for anon/unapproved), and OUT_OF_STOCK or "no
+          variant selected yet" disables it. Sends only { productId, variantId,
+          quantity } — never a price. Rendered only when add-to-cart is wired in
+          (a productId is present). */}
+      {productId ? (
+        <AddToCartButton
+          productId={productId}
+          variantId={selected?.id ?? null}
+          moq={moq}
+          canAdd={showPrices && selected != null}
+          isCustomer={status !== undefined}
+          outOfStock={
+            !selected || selected.stockStatus === "OUT_OF_STOCK"
+          }
+        />
+      ) : null}
 
       {/* Enquire CTA — carries the SELECTED variant's SKU + options. */}
       <Button

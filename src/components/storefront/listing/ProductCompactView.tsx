@@ -20,9 +20,10 @@ import { cn } from "@/lib/utils";
 import { StatusChip } from "@/components/common/StatusChip";
 import { BrandBadge } from "@/components/storefront/BrandBadge";
 import { HeartButton } from "@/components/storefront/wishlist/HeartButton";
+import { QuickAddToCart } from "@/components/storefront/cart/QuickAddToCart";
 import { staggerItemVariants } from "@/components/motion/primitives";
 import type { ListingItem } from "./types";
-import { keySpec, stockChipVariant, thumbUrl } from "./product-display";
+import { canQuickAdd, keySpec, stockChipVariant, thumbUrl } from "./product-display";
 
 interface ProductCompactViewProps {
   items: ListingItem[];
@@ -32,12 +33,15 @@ interface ProductCompactViewProps {
    * so it paints filled immediately. Absent for anon (heart prompts login).
    */
   savedProductIds?: ReadonlySet<string>;
+  /** Whether the viewer may quick-add in-stock, non-variant products. */
+  canAddToCart?: boolean;
 }
 
 export function ProductCompactView({
   items,
   compactDensity,
   savedProductIds,
+  canAddToCart = false,
 }: ProductCompactViewProps) {
   const reduced = useReducedMotion();
 
@@ -54,6 +58,7 @@ export function ProductCompactView({
             item={item}
             compactDensity={compactDensity}
             saved={savedProductIds?.has(item.product.id) ?? false}
+            canAddToCart={canAddToCart}
           />
         </motion.li>
       ))}
@@ -65,14 +70,17 @@ function CompactRow({
   item,
   compactDensity,
   saved,
+  canAddToCart,
 }: {
   item: ListingItem;
   compactDensity?: boolean;
   saved: boolean;
+  canAddToCart: boolean;
 }) {
   const { product } = item;
   const url = thumbUrl(product);
   const snippet = keySpec(product);
+  const quickAdd = canQuickAdd(product, canAddToCart);
 
   return (
     <Link
@@ -147,6 +155,19 @@ function CompactRow({
           size="compact"
         />
       </div>
+
+      {/* Quick add — swallow the click so it doesn't follow the row link. */}
+      {quickAdd ? (
+        <div
+          className="shrink-0"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+        >
+          <QuickAddToCart productId={product.id} moq={product.moq} />
+        </div>
+      ) : null}
     </Link>
   );
 }

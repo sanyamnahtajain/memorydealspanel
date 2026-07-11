@@ -20,7 +20,9 @@ import { BrandBadge } from "@/components/storefront/BrandBadge";
 import { SpecTable } from "@/components/storefront/SpecTable";
 import { renderPriceSlot } from "@/components/storefront/priceSlot";
 import { HeartButton } from "@/components/storefront/wishlist/HeartButton";
+import { AddToCartButton } from "@/components/storefront/cart/AddToCartButton";
 import { wishlistProductIds } from "@/server/services/wishlist";
+import { cartCountForViewer } from "@/server/services/cart";
 import { recordProductView } from "@/server/services/pageviews";
 import {
   ProductBreadcrumb,
@@ -137,7 +139,7 @@ export default async function ProductDetailPage({ params }: PageParams) {
   // Category (breadcrumb) + related products (same category), both gated. We
   // over-fetch by one so we can drop the current product and still fill the
   // rail. `renderPriceSlot` produces the per-viewer price cell server-side.
-  const [category, relatedRaw, savedIds] = await Promise.all([
+  const [category, relatedRaw, savedIds, cartCount] = await Promise.all([
     resolveCategory(product.categoryId),
     listByCategoryForViewer(viewer, product.categoryId, {
       page: 1,
@@ -149,6 +151,8 @@ export default async function ProductDetailPage({ params }: PageParams) {
     isCustomer(viewer)
       ? wishlistProductIds(viewer.customerId)
       : Promise.resolve(new Set<string>()),
+    // Header cart badge — a count only for an approved customer, else undefined.
+    cartCountForViewer(viewer),
   ]);
 
   const initialSaved = savedIds.has(product.id);
@@ -256,8 +260,14 @@ export default async function ProductDetailPage({ params }: PageParams) {
     ...(primaryImage ? { image: primaryImage.url } : {}),
   };
 
+  // Approved customers may add THIS product to their cart. Out-of-stock and
+  // gated viewers get a locked/blocked affordance from the button itself. For a
+  // variant product the AddToCartButton lives inside VariantProductView (it
+  // needs the selected variant + its MOQ), so the non-variant hero owns it here.
+  const canAdd = showPrices && !showVariantHero;
+
   return (
-    <StorefrontShell>
+    <StorefrontShell cartCount={cartCount}>
       <script
         type="application/ld+json"
         // Static, price-free object — no user input is interpolated.
@@ -271,6 +281,7 @@ export default async function ProductDetailPage({ params }: PageParams) {
             productName={product.name}
             productImages={product.images}
             productId={product.id}
+            moq={product.moq}
             optionTypes={product.optionTypes}
             variants={product.variants}
             showPrices={showPrices}
@@ -298,6 +309,18 @@ export default async function ProductDetailPage({ params }: PageParams) {
                   product={product as PublicProduct | PricedProduct}
                   showPrices={showPrices}
                   status={customerStatus}
+                />
+
+                {/* Add to cart — approved-only. The button self-gates: an
+                    unapproved/anon viewer sees a locked CTA that routes to
+                    login/request-access; OUT_OF_STOCK is blocked. It sends only
+                    { productId, quantity } — never a price. */}
+                <AddToCartButton
+                  productId={product.id}
+                  moq={product.moq}
+                  canAdd={canAdd}
+                  isCustomer={isCustomer(viewer)}
+                  outOfStock={product.stockStatus === "OUT_OF_STOCK"}
                 />
 
                 {/* Inline Enquire — hidden on mobile where the sticky bar owns it. */}

@@ -13,6 +13,7 @@ import { TabBadge } from "@/components/shell/TabBadge"
 import { Logo } from "@/components/brand/Logo"
 import { StorefrontFooter } from "@/components/shell/StorefrontFooter"
 import { WishlistBadge } from "@/components/storefront/wishlist/WishlistBadge"
+import { CartBadge } from "@/components/storefront/cart/CartBadge"
 import { SearchOverlay } from "@/components/storefront/SearchOverlay"
 import { searchCategoryChips } from "@/components/storefront/search/actions"
 import type { CategoryChip } from "@/components/storefront/search/types"
@@ -46,6 +47,14 @@ export interface StorefrontShellProps {
    * still show it — kept simple: always shown unless a page opts out).
    */
   showWishlist?: boolean
+  /**
+   * Cart item-count (sum of units) for the current APPROVED customer, resolved
+   * server-side and threaded in so the header CartBadge paints correctly on
+   * first render. UNDEFINED means "no cart entry point" — anon, admin, and
+   * non-approved customers cannot cart, so the badge is not rendered for them.
+   * Carries NO price.
+   */
+  cartCount?: number
 }
 
 /**
@@ -61,6 +70,7 @@ export function StorefrontShell({
   badges,
   wishlistCount,
   showWishlist = true,
+  cartCount,
 }: StorefrontShellProps) {
   const pathname = usePathname()
   const reducedMotion = useReducedMotion()
@@ -196,6 +206,16 @@ export function StorefrontShell({
                 className={cn(
                   "size-11",
                   pathname.startsWith("/account/wishlist") &&
+                    "bg-muted text-foreground",
+                )}
+              />
+            ) : null}
+            {cartCount !== undefined ? (
+              <CartBadge
+                initialCount={cartCount}
+                className={cn(
+                  "size-11",
+                  pathname.startsWith("/account/cart") &&
                     "bg-muted text-foreground",
                 )}
               />

@@ -4,7 +4,9 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/server/db";
 import { resolveViewer } from "@/server/auth/viewer";
 import { canSeePrices, isCustomer } from "@/server/types/viewer";
+import { cartCountForViewer } from "@/server/services/cart";
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
+import { AccountLinksPanel } from "./AccountLinksPanel";
 import { FadeUp } from "@/components/motion/primitives";
 import { AccountStatus } from "@/components/storefront/AccountStatus";
 import { ExpiryBanner } from "@/components/storefront/ExpiryBanner";
@@ -73,8 +75,11 @@ export default async function AccountPage() {
   const hasLivePrices = canSeePrices(viewer);
   const grantExpiry = customer.accessGrants[0]?.expiresAt ?? null;
 
+  // Header cart badge — a count only for an approved customer, else undefined.
+  const cartCount = await cartCountForViewer(viewer);
+
   return (
-    <StorefrontShell>
+    <StorefrontShell cartCount={cartCount}>
       <div className="mx-auto w-full max-w-lg space-y-4 py-8 sm:py-12">
         {hasLivePrices && grantExpiry ? (
           <FadeUp>
@@ -115,6 +120,17 @@ export default async function AccountPage() {
               <AccountLogoutButton />
             </div>
           </div>
+        </FadeUp>
+
+        {/* Quick links to the customer's cart, orders and saved products. The
+            cart + orders entries are shown only when price access is live —
+            they are inert for a pending/expired customer, so we route them to
+            the wishlist/orders they can still use. */}
+        <FadeUp delay={hasLivePrices ? 0.08 : 0.03}>
+          <AccountLinksPanel
+            cartCount={cartCount ?? 0}
+            canOrder={hasLivePrices}
+          />
         </FadeUp>
 
         {/* Appearance & preferences — theme, density, default view, motion.
