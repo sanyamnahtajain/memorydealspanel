@@ -5,7 +5,7 @@ import { getViewer } from "@/server/auth/viewer";
 import { isAdmin } from "@/server/types/viewer";
 import { AdminShell } from "@/components/shell/AdminShell";
 import { PageHeader } from "@/components/common";
-import { ImportWizard } from "@/components/admin/import/ImportWizard";
+import { ImportTabs } from "@/components/admin/import/ImportTabs";
 
 export const metadata: Metadata = {
   title: "Import — MemoryDeals Admin",
@@ -33,10 +33,10 @@ export default async function AdminImportPage() {
     <AdminShell title="Import">
       <div className="mx-auto max-w-4xl space-y-6">
         <PageHeader
-          title="Import products"
-          description="Upload a CSV or Excel file to create and update products in bulk. Preview and fix every row before anything is saved."
+          title="Import"
+          description="Bulk-add products from a spreadsheet, or attach product photos in one pass by naming each file after its product SKU."
         />
-        <ImportWizard />
+        <ImportTabs />
       </div>
     </AdminShell>
   );
