@@ -10,7 +10,7 @@
  *   DATABASE_URL="mongodb+srv://…/memorydeals" npx tsx scripts/audit-data.ts
  */
 
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, type Prisma } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
@@ -21,7 +21,7 @@ async function countRaw(filter: Record<string, unknown>): Promise<number> {
   const res = (await prisma.$runCommandRaw({
     count: "Product",
     query: filter,
-  })) as unknown as CountResult;
+  } as Prisma.InputJsonObject)) as unknown as CountResult;
   return res?.n ?? 0;
 }
 

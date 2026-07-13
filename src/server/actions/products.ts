@@ -85,8 +85,12 @@ function revalidateProductViews(id?: string): void {
   if (id) {
     revalidatePath(`/admin/products/${id}`);
   }
-  // Storefront reads are viewer-gated but still cached per path.
-  revalidatePath("/", "layout");
+  // The only cached storefront surface that shows product cards is the home
+  // page (ISR, `revalidate = 300`); product/category reads are `force-dynamic`
+  // and rebuild per request. Revalidating just "/" (a page, not the whole
+  // layout tree) keeps that fresh without busting the entire app cache on
+  // every single field save — the grid fires one of these per edited cell.
+  revalidatePath("/");
 }
 
 /* ------------------------------------------------------------------ */

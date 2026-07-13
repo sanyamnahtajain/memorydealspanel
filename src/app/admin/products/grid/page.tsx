@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ArrowLeftIcon } from "lucide-react";
 
 import { getViewer } from "@/server/auth/viewer";
-import { isAdmin } from "@/server/types/viewer";
+import { isAdmin, type ViewerContext } from "@/server/types/viewer";
 import { listForAdminGrid } from "@/server/dal/products";
 import { listAll } from "@/server/dal/categories";
 import { listActiveBrands } from "@/server/services/brands";
@@ -13,6 +14,7 @@ import { AdminShell } from "@/components/shell/AdminShell";
 import { PageHeader } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { ProductGrid } from "@/components/admin/products-grid/ProductGrid";
+import { GridSkeleton } from "@/components/admin/products-grid/GridSkeleton";
 import { toProductRow } from "@/components/admin/products-grid/adapters";
 
 export const metadata: Metadata = {
@@ -38,6 +40,38 @@ export default async function AdminProductsGridPage() {
     redirect("/admin/login");
   }
 
+  // Stream: the shell + header paint immediately; the (large) catalog read
+  // streams into the Suspense boundary behind a spreadsheet skeleton, so
+  // navigating to Bulk edit is instant instead of freezing on the prior page.
+  return (
+    <AdminShell title="Bulk edit">
+      <div className="space-y-6">
+        <PageHeader
+          title="Bulk edit"
+          description="Spreadsheet editing across your catalog. Changes autosave."
+          actions={
+            <Button variant="outline" render={<Link href="/admin/products" />}>
+              <ArrowLeftIcon aria-hidden />
+              Back to products
+            </Button>
+          }
+        />
+
+        <Suspense fallback={<GridSkeleton />}>
+          <GridData viewer={viewer} />
+        </Suspense>
+      </div>
+    </AdminShell>
+  );
+}
+
+/**
+ * The data-heavy half of the grid, isolated so it can suspend independently of
+ * the page shell. Loads every non-deleted product WITH prices via the
+ * admin-only DAL plus the category / brand / tax context the editable columns
+ * need, projects them into grid rows, and hands them to the client grid.
+ */
+async function GridData({ viewer }: { viewer: ViewerContext }) {
   const [products, categories, brands, taxProfile] = await Promise.all([
     listForAdminGrid(viewer, { all: true }),
     listAll(viewer),
@@ -48,32 +82,11 @@ export default async function AdminProductsGridPage() {
   const rows = products.map(toProductRow);
 
   return (
-    <AdminShell title="Bulk edit">
-      <div className="space-y-6">
-        <PageHeader
-          title="Bulk edit"
-          description={
-            rows.length > 0
-              ? `Spreadsheet editing across ${rows.length} product${
-                  rows.length === 1 ? "" : "s"
-                }. Changes autosave.`
-              : "Spreadsheet editing for your catalog. Changes autosave."
-          }
-          actions={
-            <Button variant="outline" render={<Link href="/admin/products" />}>
-              <ArrowLeftIcon aria-hidden />
-              Back to products
-            </Button>
-          }
-        />
-
-        <ProductGrid
-          rows={rows}
-          categories={categories}
-          brands={brands}
-          gstEnabled={taxProfile.gstEnabled}
-        />
-      </div>
-    </AdminShell>
+    <ProductGrid
+      rows={rows}
+      categories={categories}
+      brands={brands}
+      gstEnabled={taxProfile.gstEnabled}
+    />
   );
 }
