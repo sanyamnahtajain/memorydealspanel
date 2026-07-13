@@ -32,7 +32,9 @@ export function toProductRow(product: AdminGridProduct): ProductRow {
     stockStatus: product.stockStatus,
     status: product.status,
     tags: product.tags,
-    images: product.images.length,
+    // The grid read fetches only image counts (never URLs), so use `imageCount`
+    // rather than `images.length` (which is always 0 on the grid DTO).
+    images: product.imageCount,
     // Variant-awareness: when true the grid renders price/mrp/stock read-only
     // ("from ₹X · N variants") and refuses to persist edits to them, because
     // those are recomputed FROM values owned by the variant matrix. Non-variant

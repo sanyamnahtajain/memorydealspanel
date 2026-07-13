@@ -511,6 +511,13 @@ export interface AdminGridProduct extends PricedProduct {
   /** Number of ACTIVE variants (0 when `hasVariants` is false). */
   variantCount: number;
   /**
+   * Number of images the product has. The grid shows this count (and opens the
+   * editor to manage images) but never renders the URLs, so the read selects
+   * only image `sortOrder` — `images` on this DTO is therefore always `[]` and
+   * callers must use `imageCount`, not `images.length`.
+   */
+  imageCount: number;
+  /**
    * The product's OWN GST overrides (raw stored values, not the resolved
    * effective tax). NON-MONETARY. `null` means "inherit" (category → profile).
    * The bulk-edit grid renders/edits these directly; they are absent from the
@@ -524,9 +531,16 @@ export interface AdminGridProduct extends PricedProduct {
 /**
  * Grid select: priced product fields + `hasVariants` + a scalar count of ACTIVE
  * variants. No variant row (and therefore no variant price) is selected.
+ *
+ * IMAGES: the grid never renders image URLs — it only shows a count and opens
+ * the editor. So instead of pulling every image's url/thumbUrl (the bulk of the
+ * payload — ~500 KB across the catalog), we select ONLY `sortOrder` from each
+ * embedded image. The array length still gives the exact count, but the read is
+ * ~8x smaller, so the grid streams in markedly faster.
  */
 const ADMIN_GRID_SELECT = {
   ...PRICED_SELECT,
+  images: { select: { sortOrder: true } },
   hasVariants: true,
   _count: { select: { variants: { where: VARIANT_WHERE } } },
 } satisfies Prisma.ProductSelect;
@@ -554,14 +568,20 @@ export async function listForAdminGrid(
     orderBy: STOREFRONT_ORDER,
     ...paging,
   });
-  // Map WITHOUT the variant rows (none selected) — `toPricedProduct` yields
-  // `variants: []`; we layer the real active count on top from `_count`.
-  return rows.map((row) => ({
-    ...toPricedProduct(row, pricedTaxOpts(row, ctx)),
-    variantCount: row._count.variants,
-    // Raw override columns for the editable grid cells (inherit vs. pinned).
-    hsnCode: row.hsnCode ?? null,
-    gstRateBps: row.gstRateBps ?? null,
-    taxTreatment: row.taxTreatment ?? null,
-  }));
+  // Map WITHOUT variant rows (none selected) and WITHOUT image URLs (only
+  // `sortOrder` was fetched). `toPricedProduct` reads `images`, so feed it an
+  // empty array (type-clean) and carry the real count separately.
+  return rows.map((row) => {
+    const { images, _count, ...rest } = row;
+    const source = { ...rest, images: [] };
+    return {
+      ...toPricedProduct(source, pricedTaxOpts(source, ctx)),
+      imageCount: images.length,
+      variantCount: _count.variants,
+      // Raw override columns for the editable grid cells (inherit vs. pinned).
+      hsnCode: row.hsnCode ?? null,
+      gstRateBps: row.gstRateBps ?? null,
+      taxTreatment: row.taxTreatment ?? null,
+    };
+  });
 }
