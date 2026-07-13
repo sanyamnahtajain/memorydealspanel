@@ -45,6 +45,7 @@ describe("accessRequestSchema", () => {
     contactName: "Anchal Sharma",
     phone: "98765 43210",
     password: "s3cret-pass",
+    city: "Faridabad",
   };
 
   it("parses a minimal valid form and normalizes the phone", () => {
@@ -52,6 +53,16 @@ describe("accessRequestSchema", () => {
     expect(parsed.phone).toBe("+919876543210");
     expect(parsed.gstNumber).toBeUndefined();
     expect(parsed.email).toBeUndefined();
+    expect(parsed.city).toBe("Faridabad");
+  });
+
+  it("requires a city", () => {
+    const { city: _city, ...withoutCity } = valid;
+    void _city;
+    expect(accessRequestSchema.safeParse(withoutCity).success).toBe(false);
+    expect(
+      accessRequestSchema.safeParse({ ...valid, city: "" }).success,
+    ).toBe(false);
   });
 
   it("treats empty optional fields as not provided", () => {
@@ -59,11 +70,9 @@ describe("accessRequestSchema", () => {
       ...valid,
       gstNumber: "",
       email: "  ",
-      city: "",
     });
     expect(parsed.gstNumber).toBeUndefined();
     expect(parsed.email).toBeUndefined();
-    expect(parsed.city).toBeUndefined();
   });
 
   it("validates GSTIN only when provided", () => {

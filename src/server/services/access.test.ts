@@ -251,7 +251,7 @@ describe("requestAccess (public entry point)", () => {
         password: "password1234",
         gstNumber: undefined,
         email: undefined,
-        city: undefined,
+        city: "Delhi",
       },
       "test-token",
       "203.0.113.10",
@@ -286,7 +286,7 @@ describe("requestAccess (public entry point)", () => {
       password: "password1234",
       gstNumber: undefined,
       email: undefined,
-      city: undefined,
+      city: "Delhi",
     };
 
     const first = await requestAccess(form, "t", "203.0.113.11");
@@ -320,7 +320,7 @@ describe("requestAccess (public entry point)", () => {
         password: "password1234",
         gstNumber: undefined,
         email: undefined,
-        city: undefined,
+        city: "Delhi",
       },
       "t",
       "203.0.113.12",

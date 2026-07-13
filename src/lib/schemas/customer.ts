@@ -34,8 +34,8 @@ export const gstinSchema = z
 
 /**
  * Access-request form (F-C7): creates a PENDING customer.
- * gstNumber/email/city are optional; empty form fields are treated
- * as "not provided" and GSTIN is validated only when present.
+ * City is REQUIRED; gstNumber/email are optional (empty form fields are treated
+ * as "not provided" and GSTIN is validated only when present).
  */
 export const accessRequestSchema = z.object({
   businessName: z
@@ -55,7 +55,11 @@ export const accessRequestSchema = z.object({
     .max(72, "password is too long"),
   gstNumber: emptyStringAsUndefined(gstinSchema),
   email: emptyStringAsUndefined(z.email("Enter a valid email address")),
-  city: emptyStringAsUndefined(z.string().trim().min(2).max(80)),
+  city: z
+    .string("city is required")
+    .trim()
+    .min(2, "city is too short")
+    .max(80, "city is too long"),
 });
 export type AccessRequestInput = z.infer<typeof accessRequestSchema>;
 

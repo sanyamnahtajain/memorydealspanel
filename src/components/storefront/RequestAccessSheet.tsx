@@ -216,7 +216,8 @@ const FIELDS: FieldDef[] = [
   },
   {
     name: "city",
-    label: "City (optional)",
+    label: "City",
+    required: true,
     placeholder: "Mumbai",
     autoComplete: "address-level2",
   },
