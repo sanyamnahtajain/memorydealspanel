@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isObjectId, tokenFromFilename } from "./bulk-images";
+import { isObjectId, tokenFromFilename } from "./bulk-image-match";
 
 describe("tokenFromFilename", () => {
   it("takes the leading token before the first separator", () => {

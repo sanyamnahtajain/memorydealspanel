@@ -8,6 +8,7 @@ import { assertPermission } from "@/server/auth/require-permission";
 import { PERMISSIONS } from "@/lib/permissions";
 import { writeAudit } from "@/server/security/audit";
 import { MAX_IMAGES_PER_PRODUCT } from "@/lib/constants";
+import { isObjectId, tokenFromFilename } from "./bulk-image-match";
 
 /**
  * Bulk image → product matching.
@@ -88,31 +89,6 @@ export interface MatchPlan {
   unmatched: UnmatchedImage[];
   /** Total files considered. */
   total: number;
-}
-
-// ---------------------------------------------------------------------------
-// Filename token parsing
-// ---------------------------------------------------------------------------
-
-/** A 24-character hex Mongo ObjectId. */
-const OBJECT_ID_RE = /^[0-9a-f]{24}$/i;
-
-/** True when the token is shaped like a Mongo product id. */
-export function isObjectId(token: string): boolean {
-  return OBJECT_ID_RE.test(token);
-}
-
-/**
- * Derive the leading token from a filename such as
- * `64b7f8a2e4b0c12345678901-1.jpg`, `SKU123_2.png` or `SKU123 (front).webp`.
- * We take everything up to the first separator (`-`, `_`, `.`, space or paren)
- * after stripping any directory prefix. Returns null when nothing usable
- * remains. The token is later classified as a product id (24-hex) or a SKU.
- */
-export function tokenFromFilename(filename: string): string | null {
-  const base = filename.split(/[/\\]/).pop() ?? filename;
-  const token = base.split(/[-_.\s(]/)[0]?.trim();
-  return token && token.length > 0 ? token : null;
 }
 
 // ---------------------------------------------------------------------------
