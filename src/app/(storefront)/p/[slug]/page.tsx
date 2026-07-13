@@ -226,10 +226,6 @@ export default async function ProductDetailPage({ params }: PageParams) {
           className="-mr-1 shrink-0"
         />
       </div>
-      {/* For a variant product the per-variant SKU shows in the selector. */}
-      {showVariantHero ? null : (
-        <p className="text-xs text-muted-foreground">SKU: {product.sku}</p>
-      )}
     </header>
   );
 

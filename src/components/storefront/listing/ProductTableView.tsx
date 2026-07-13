@@ -73,7 +73,6 @@ export function ProductTableView({
   const columns: Column[] = [
     { id: "image", label: "", headClassName: "w-14" },
     { id: "name", label: "Name", asc: "name" },
-    { id: "sku", label: "SKU", className: "hidden md:table-cell" },
     { id: "brand", label: "Brand", className: "hidden lg:table-cell" },
     { id: "spec", label: "Key spec", className: "hidden lg:table-cell" },
     {
@@ -228,9 +227,6 @@ function TableRow({
         >
           {product.name}
         </Link>
-      </td>
-      <td className="hidden px-3 py-2 font-tabular text-xs text-muted-foreground md:table-cell">
-        {product.sku}
       </td>
       <td className="hidden px-3 py-2 text-muted-foreground lg:table-cell">
         {product.brandRef?.name ?? product.brand ?? "—"}

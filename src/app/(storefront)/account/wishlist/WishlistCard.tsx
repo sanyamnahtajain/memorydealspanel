@@ -179,10 +179,11 @@ function WishlistCard({
         >
           {item.name}
         </Link>
-        <p className="font-tabular text-xs text-muted-foreground">
-          SKU: {item.sku}
-          {item.moq !== null ? <> · MOQ {item.moq}</> : null}
-        </p>
+        {item.moq !== null ? (
+          <p className="font-tabular text-xs text-muted-foreground">
+            MOQ {item.moq}
+          </p>
+        ) : null}
 
         {item.note ? (
           <p className="line-clamp-2 rounded-md bg-muted/60 px-2 py-1 text-xs text-muted-foreground">

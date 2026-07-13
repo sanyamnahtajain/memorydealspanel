@@ -271,10 +271,6 @@ export function VariantSelector({
                 onRequest={() => setRequestOpen(true)}
               />
             )}
-
-            <p className="mt-2 text-xs text-muted-foreground">
-              SKU: {selected.sku}
-            </p>
           </>
         ) : (
           <p className="text-sm text-muted-foreground">

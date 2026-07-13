@@ -246,10 +246,11 @@ function OrderLineRow({
         <p className="truncate text-sm font-medium text-foreground">
           {line.name}
         </p>
-        <p className="truncate text-xs text-muted-foreground">
-          {line.variantLabel ? `${line.variantLabel} · ` : ""}
-          {line.sku}
-        </p>
+        {line.variantLabel ? (
+          <p className="truncate text-xs text-muted-foreground">
+            {line.variantLabel}
+          </p>
+        ) : null}
         <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
           Qty {line.quantity}
           {priced && line.unitPricePaise !== null

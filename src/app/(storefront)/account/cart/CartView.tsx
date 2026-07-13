@@ -433,9 +433,6 @@ export function CartView({
                             {line.variantLabel}
                           </p>
                         ) : null}
-                        <p className="mt-0.5 truncate text-[0.7rem] text-muted-foreground/80">
-                          {line.sku}
-                        </p>
                       </div>
                       <Tooltip content="Remove">
                         <Button

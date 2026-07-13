@@ -58,15 +58,21 @@ const imagesSchema = z
 const productCoreSchema = z.object({
   categoryId: objectIdSchema,
   name: z.string().trim().min(2, "name is too short").max(160, "name is too long"),
-  sku: z
-    .string()
-    .trim()
-    .min(1, "sku is required")
-    .max(64, "sku is too long")
-    .regex(
-      /^[A-Za-z0-9][A-Za-z0-9._-]*$/,
-      "sku may only contain letters, digits, dots, underscores and hyphens",
-    ),
+  // SKU is OPTIONAL — auto-generated from the name when blank (kept only for
+  // internal reference / CSV-import matching). Validated only when provided;
+  // an empty string is treated as "not provided".
+  sku: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z
+      .string()
+      .trim()
+      .max(64, "sku is too long")
+      .regex(
+        /^[A-Za-z0-9][A-Za-z0-9._-]*$/,
+        "sku may only contain letters, digits, dots, underscores and hyphens",
+      )
+      .optional(),
+  ),
   // Legacy free-text brand string, retained only for back-compat. New writes
   // should set `brandId`; the service mirrors the selected brand's name here.
   brand: z.string().trim().min(1).max(80).optional(),

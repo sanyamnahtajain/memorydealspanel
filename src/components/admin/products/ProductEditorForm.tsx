@@ -401,14 +401,17 @@ export function ProductEditorForm({
           </Field>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="SKU" htmlFor="sku" required>
+            <Field
+              label="SKU"
+              htmlFor="sku"
+              hint="Optional — auto-generated if left blank."
+            >
               <Input
                 id="sku"
                 value={state.sku}
                 onChange={(e) => set("sku", e.target.value)}
-                placeholder="SM-EVO-128"
+                placeholder="Auto-generated"
                 maxLength={64}
-                required
                 className="font-tabular"
               />
             </Field>

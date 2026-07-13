@@ -117,6 +117,32 @@ async function skuTaken(sku: string, excludeId?: string): Promise<boolean> {
   return row !== null;
 }
 
+/**
+ * Resolve the SKU for a new product. SKU is optional in the UI; when the admin
+ * provides one we verify it's unique, otherwise we auto-generate a unique code
+ * from the (already-unique) slug. SKU is internal-only reference now.
+ */
+async function resolveSku(
+  provided: string | undefined,
+  slug: string,
+): Promise<string> {
+  if (provided) {
+    if (await skuTaken(provided)) {
+      throw new ProductServiceError(
+        "DUPLICATE_SKU",
+        `SKU "${provided}" is already in use by another product.`,
+      );
+    }
+    return provided;
+  }
+  const base =
+    slug.replace(/-/g, "").toUpperCase().slice(0, 14) || "SKU";
+  let candidate = base;
+  let n = 1;
+  while (await skuTaken(candidate)) candidate = `${base}${n++}`;
+  return candidate;
+}
+
 async function assertCategoryExists(categoryId: string): Promise<void> {
   const category = await prisma.category.findUnique({
     where: { id: categoryId },
@@ -210,12 +236,6 @@ export async function createProduct(
   const data = createProductSchema.parse(input);
 
   await assertCategoryExists(data.categoryId);
-  if (await skuTaken(data.sku)) {
-    throw new ProductServiceError(
-      "DUPLICATE_SKU",
-      `SKU "${data.sku}" is already in use by another product.`,
-    );
-  }
 
   // When a brand master is selected, mirror its name into the legacy `brand`
   // string for back-compat. `brandId` is the source of truth going forward.
@@ -227,6 +247,8 @@ export async function createProduct(
   const slug = await makeUniqueSlug(data.name, (candidate) =>
     slugExists(candidate),
   );
+  // SKU is optional — use the provided one (verified unique) or auto-generate.
+  const sku = await resolveSku(data.sku, slug);
 
   try {
     const row = await prisma.product.create({
@@ -234,7 +256,7 @@ export async function createProduct(
         categoryId: data.categoryId,
         name: data.name,
         slug,
-        sku: data.sku,
+        sku,
         brand: brandName,
         brandId: data.brandId,
         description: data.description,
@@ -261,7 +283,7 @@ export async function createProduct(
     });
     return toPricedProduct(row);
   } catch (error) {
-    rethrowAsDuplicateSku(error, data.sku);
+    rethrowAsDuplicateSku(error, sku);
   }
 }
 
