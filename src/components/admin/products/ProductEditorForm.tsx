@@ -459,6 +459,33 @@ export function ProductEditorForm({
         </Section>
       </FadeUp>
 
+      <FadeUp delay={0.03}>
+        <Section
+          title="Photos"
+          description="Up to 8 images. The first is the primary."
+        >
+          {product?.id ? (
+            <ProductImagesField
+              productId={product.id}
+              images={state.images}
+              onImagesChange={(images) => set("images", images)}
+              disabled={pending}
+            />
+          ) : (
+            <div className="rounded-lg border border-dashed border-border bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">
+                Save the product to add photos
+              </p>
+              <p className="mt-1 text-xs">
+                Photos upload straight to storage, so the product needs to exist
+                first. Create it now — you&rsquo;ll land on the editor where you
+                can drop images or snap them with the camera.
+              </p>
+            </div>
+          )}
+        </Section>
+      </FadeUp>
+
       <FadeUp delay={0.04}>
         <Section
           title="Pricing"
@@ -530,8 +557,57 @@ export function ProductEditorForm({
         </Section>
       </FadeUp>
 
+      <FadeUp delay={0.05}>
+        <Section title="Availability" description="Stock and publish state.">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Stock status" htmlFor="stock">
+              <Select
+                value={state.stockStatus}
+                onValueChange={(value) =>
+                  set("stockStatus", value as StockStatus)
+                }
+                items={STOCK_OPTIONS}
+              >
+                <SelectTrigger id="stock" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {STOCK_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+
+            <Field label="Published" htmlFor="status">
+              <label
+                htmlFor="status"
+                className="flex h-8 cursor-pointer items-center justify-between gap-3 rounded-lg border border-input px-3 dark:bg-input/30"
+              >
+                <span className="text-sm text-muted-foreground">
+                  {state.status === "ACTIVE"
+                    ? "Visible in catalog"
+                    : "Hidden (draft)"}
+                </span>
+                <input
+                  id="status"
+                  type="checkbox"
+                  checked={state.status === "ACTIVE"}
+                  onChange={(e) =>
+                    set("status", e.target.checked ? "ACTIVE" : "INACTIVE")
+                  }
+                  className="size-4 accent-[var(--primary)]"
+                />
+              </label>
+            </Field>
+          </div>
+        </Section>
+      </FadeUp>
+
       {tax ? (
-        <FadeUp delay={0.05}>
+        <FadeUp delay={0.07}>
           <Section
             title="GST / tax"
             description="Optional overrides. Leave blank to inherit from the category, then the seller profile."
@@ -633,55 +709,6 @@ export function ProductEditorForm({
         </Section>
       </FadeUp>
 
-      <FadeUp delay={0.08}>
-        <Section title="Availability" description="Stock and publish state.">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Stock status" htmlFor="stock">
-              <Select
-                value={state.stockStatus}
-                onValueChange={(value) =>
-                  set("stockStatus", value as StockStatus)
-                }
-                items={STOCK_OPTIONS}
-              >
-                <SelectTrigger id="stock" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {STOCK_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-
-            <Field label="Published" htmlFor="status">
-              <label
-                htmlFor="status"
-                className="flex h-8 cursor-pointer items-center justify-between gap-3 rounded-lg border border-input px-3 dark:bg-input/30"
-              >
-                <span className="text-sm text-muted-foreground">
-                  {state.status === "ACTIVE"
-                    ? "Visible in catalog"
-                    : "Hidden (draft)"}
-                </span>
-                <input
-                  id="status"
-                  type="checkbox"
-                  checked={state.status === "ACTIVE"}
-                  onChange={(e) =>
-                    set("status", e.target.checked ? "ACTIVE" : "INACTIVE")
-                  }
-                  className="size-4 accent-[var(--primary)]"
-                />
-              </label>
-            </Field>
-          </div>
-        </Section>
-      </FadeUp>
-
       <FadeUp delay={0.12}>
         <Section title="Tags" description="Searchable keywords (max 20).">
           <TagEditor
@@ -699,33 +726,6 @@ export function ProductEditorForm({
             onChange={(rows) => set("specRows", rows)}
             disabled={pending}
           />
-        </Section>
-      </FadeUp>
-
-      <FadeUp delay={0.2}>
-        <Section
-          title="Photos"
-          description="Up to 8 images. The first is the primary."
-        >
-          {product?.id ? (
-            <ProductImagesField
-              productId={product.id}
-              images={state.images}
-              onImagesChange={(images) => set("images", images)}
-              disabled={pending}
-            />
-          ) : (
-            <div className="rounded-lg border border-dashed border-border bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
-              <p className="font-medium text-foreground">
-                Save the product to add photos
-              </p>
-              <p className="mt-1 text-xs">
-                Photos upload straight to storage, so the product needs to exist
-                first. Create it now — you&rsquo;ll land on the editor where you
-                can drop images or snap them with the camera.
-              </p>
-            </div>
-          )}
         </Section>
       </FadeUp>
 

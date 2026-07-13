@@ -3,7 +3,8 @@
 import * as React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Bell, Ellipsis, PanelLeft, PanelLeftClose } from "lucide-react"
+import { useLinkStatus } from "next/link"
+import { Bell, Ellipsis, Loader2, PanelLeft, PanelLeftClose } from "lucide-react"
 import { motion, useReducedMotion, type Transition } from "motion/react"
 
 import { cn } from "@/lib/utils"
@@ -20,9 +21,9 @@ import { SignOutButton } from "@/components/admin/SignOutButton"
 import { TabBadge } from "@/components/shell/TabBadge"
 import { Logo } from "@/components/brand/Logo"
 import {
+  adminMoreSections,
   adminNavSections,
-  adminPrimaryNav,
-  adminSecondaryNav,
+  mobileAdminTabs,
   isNavItemActive,
   type NavBadges,
   type NavItem,
@@ -80,8 +81,8 @@ export function AdminShell({
     setCollapsed((prev) => !prev)
   }, [])
 
-  const moreActive = adminSecondaryNav.some((item) =>
-    isNavItemActive(item, pathname)
+  const moreActive = adminMoreSections.some((section) =>
+    section.items.some((item) => isNavItemActive(item, pathname))
   )
 
   return (
@@ -224,7 +225,7 @@ export function AdminShell({
           className="shrink-0 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur supports-backdrop-filter:bg-background/85 md:hidden"
         >
           <ul className="grid grid-cols-5">
-            {adminPrimaryNav.map((item) => {
+            {mobileAdminTabs.map((item) => {
               const active = isNavItemActive(item, pathname)
               const Icon = item.icon
               return (
@@ -274,36 +275,46 @@ export function AdminShell({
                   <SheetHeader className="pb-0">
                     <SheetTitle>More</SheetTitle>
                   </SheetHeader>
-                  <ul className="flex flex-col gap-1 px-4">
-                    {adminSecondaryNav.map((item) => {
-                      const active = isNavItemActive(item, pathname)
-                      const Icon = item.icon
-                      return (
-                        <li key={item.href}>
-                          <Link
-                            href={item.href}
-                            aria-current={active ? "page" : undefined}
-                            onClick={() => setMoreOpen(false)}
-                            className={cn(
-                              "flex min-h-12 items-center gap-3 rounded-xl px-3 text-sm font-medium outline-none transition-[background-color,color,transform] duration-150 focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.98]",
-                              active
-                                ? "bg-accent text-accent-foreground"
-                                : "text-foreground/80 hover:bg-muted hover:text-foreground"
-                            )}
-                          >
-                            <span className="relative flex items-center justify-center">
-                              <Icon className="size-5" aria-hidden />
-                              <TabBadge
-                                count={badges?.[item.href]}
-                                label={`${item.label} updates`}
-                              />
-                            </span>
-                            {item.label}
-                          </Link>
-                        </li>
-                      )
-                    })}
-                  </ul>
+                  <div className="flex max-h-[60vh] flex-col gap-3 overflow-y-auto px-4">
+                    {adminMoreSections.map((section) => (
+                      <div key={section.label}>
+                        <p className="px-3 pb-1 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+                          {section.label}
+                        </p>
+                        <ul className="flex flex-col gap-1">
+                          {section.items.map((item) => {
+                            const active = isNavItemActive(item, pathname)
+                            const Icon = item.icon
+                            return (
+                              <li key={item.href}>
+                                <Link
+                                  href={item.href}
+                                  aria-current={active ? "page" : undefined}
+                                  onClick={() => setMoreOpen(false)}
+                                  className={cn(
+                                    "flex min-h-12 items-center gap-3 rounded-xl px-3 text-sm font-medium outline-none transition-[background-color,color,transform] duration-150 focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.98]",
+                                    active
+                                      ? "bg-accent text-accent-foreground"
+                                      : "text-foreground/80 hover:bg-muted hover:text-foreground"
+                                  )}
+                                >
+                                  <span className="relative flex items-center justify-center">
+                                    <Icon className="size-5" aria-hidden />
+                                    <TabBadge
+                                      count={badges?.[item.href]}
+                                      label={`${item.label} updates`}
+                                    />
+                                  </span>
+                                  {item.label}
+                                  <NavPendingSpinner className="ml-auto" />
+                                </Link>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
                   <div className="mt-2 border-t border-border px-4 pt-2">
                     <SignOutButton
                       variant="sheet"
@@ -358,6 +369,7 @@ function SidebarNavLink({
         )}
         <span className="relative flex shrink-0 items-center justify-center">
           <Icon className="size-5" strokeWidth={active ? 2.3 : 2} aria-hidden />
+          <NavPendingSpinner className="absolute inset-0 z-10 m-auto text-primary" />
           {collapsed && (
             <TabBadge count={count} label={`${item.label} updates`} />
           )}
@@ -408,8 +420,24 @@ function MobileTabIcon({
         strokeWidth={active ? 2.3 : 2}
         aria-hidden
       />
+      <NavPendingSpinner className="absolute inset-0 z-10 m-auto text-primary" />
       <TabBadge count={count} label={`${label} updates`} />
     </span>
+  )
+}
+
+/**
+ * Instant click feedback for navigation. Rendered INSIDE a <Link>, it reads the
+ * link's pending state (Next's `useLinkStatus`) and shows a spinner the moment
+ * the user taps — so navigations that need a server round-trip no longer feel
+ * dead until the next page paints. Renders nothing when idle (no layout shift);
+ * safe to render outside a Link too (it simply stays idle).
+ */
+function NavPendingSpinner({ className }: { className?: string }) {
+  const { pending } = useLinkStatus()
+  if (!pending) return null
+  return (
+    <Loader2 className={cn("size-4 animate-spin", className)} aria-hidden />
   )
 }
 

@@ -91,6 +91,36 @@ export const adminNavSections: readonly {
 ] as const
 
 /**
+ * Mobile bottom-tab subset — the four highest-frequency destinations. Keeping
+ * it to four (plus the "More" sheet) guarantees the bar is a SINGLE row on
+ * phones (5 columns); the remaining destinations live in "More". Previously the
+ * bar mapped all seven primary items and wrapped onto two lines.
+ */
+export const mobileAdminTabs: readonly NavItem[] = [
+  { label: "Dashboard", href: "/admin", icon: LayoutDashboard, exact: true },
+  { label: "Products", href: "/admin/products", icon: Package },
+  { label: "Requests", href: "/admin/requests", icon: Inbox },
+  { label: "Orders", href: "/admin/orders", icon: ShoppingCart },
+] as const
+
+/**
+ * Sections shown in the mobile "More" sheet: every sidebar destination that is
+ * NOT already a bottom tab, grouped exactly as the desktop sidebar groups them
+ * (so Categories / Brands / Customers land under "Manage", etc.).
+ */
+export const adminMoreSections: readonly {
+  label: string
+  items: readonly NavItem[]
+}[] = adminNavSections
+  .map((section) => ({
+    label: section.label,
+    items: section.items.filter(
+      (item) => !mobileAdminTabs.some((tab) => tab.href === item.href),
+    ),
+  }))
+  .filter((section) => section.items.length > 0)
+
+/**
  * Shared active-route matcher: exact items match only their own pathname,
  * everything else also matches nested routes ("/admin/products/123").
  */

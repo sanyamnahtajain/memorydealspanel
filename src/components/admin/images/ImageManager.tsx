@@ -184,17 +184,22 @@ export const ImageManager = React.forwardRef<
             </p>
           </>
         )}
-
-        <input
-          ref={inputRef}
-          type="file"
-          accept={IMAGE_ACCEPT_ATTR}
-          multiple
-          className="sr-only"
-          onChange={onPicked}
-          tabIndex={-1}
-        />
       </div>
+
+      {/* The file input lives OUTSIDE the clickable drop zone on purpose: when
+          it was nested, `openPicker()` calling `input.click()` re-bubbled to the
+          zone's onClick and fired the picker twice (a flicker / double dialog,
+          worst on mobile). As a sibling, the programmatic click has nowhere to
+          bubble back to. */}
+      <input
+        ref={inputRef}
+        type="file"
+        accept={IMAGE_ACCEPT_ATTR}
+        multiple
+        className="sr-only"
+        onChange={onPicked}
+        tabIndex={-1}
+      />
 
       {/* In-flight upload cards */}
       <AnimatePresence>
