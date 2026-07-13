@@ -34,7 +34,7 @@ export default async function AdminImportPage() {
       <div className="mx-auto max-w-4xl space-y-6">
         <PageHeader
           title="Import"
-          description="Bulk-add products from a spreadsheet, or attach product photos in one pass by naming each file after its product SKU."
+          description="Bulk-add products from a spreadsheet, or attach product photos in one pass by naming each file after its product id or SKU."
         />
         <ImportTabs />
       </div>

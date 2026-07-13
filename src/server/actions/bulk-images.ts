@@ -12,11 +12,16 @@ import { MAX_IMAGES_PER_PRODUCT } from "@/lib/constants";
 /**
  * Bulk image → product matching.
  *
- * The uploader hands us the filenames it picked; we derive a SKU from each
- * (the leading token before the first `-`, `_`, `.` or space) and match it —
- * case-insensitively — against live products. The returned plan tells the
- * client which file targets which product (with its current image count so it
- * can enforce the per-product cap) and flags anything unmatched.
+ * The uploader hands us the filenames it picked; we derive a leading token from
+ * each (everything before the first `-`, `_`, `.`, space or paren) and match it
+ * against live products. A token that is a 24-hex Mongo ObjectId matches by
+ * product id; anything else matches — case-insensitively — by SKU. Id matching
+ * is the reliable path now that SKUs are auto-generated: an admin can export the
+ * catalog CSV (its first column is `id`) and name each photo after the id.
+ *
+ * The returned plan tells the client which file targets which product (with its
+ * current image count so it can enforce the per-product cap) and flags anything
+ * unmatched.
  *
  * The actual compress → presign → PUT → attach happens client-side (it reuses
  * the existing `presignUpload` / `attachImageToProduct` pipeline), so this
@@ -57,8 +62,10 @@ export type BulkImageFileMeta = z.infer<typeof fileMetaSchema>;
 /** One matched file → product pairing. */
 export interface MatchedImage {
   filename: string;
-  /** The SKU token parsed from the filename. */
-  sku: string;
+  /** The token parsed from the filename (a product id or SKU). */
+  token: string;
+  /** Whether the token matched a product id or a SKU. */
+  matchedBy: "id" | "sku";
   productId: string;
   productName: string;
   productSku: string;
@@ -71,9 +78,9 @@ export interface MatchedImage {
 /** One file that could not be matched to a product. */
 export interface UnmatchedImage {
   filename: string;
-  /** The parsed SKU, or null when the filename had no usable token. */
-  sku: string | null;
-  reason: "no-sku" | "unknown-sku";
+  /** The parsed token, or null when the filename had no usable one. */
+  token: string | null;
+  reason: "no-token" | "unknown";
 }
 
 export interface MatchPlan {
@@ -84,16 +91,25 @@ export interface MatchPlan {
 }
 
 // ---------------------------------------------------------------------------
-// SKU parsing
+// Filename token parsing
 // ---------------------------------------------------------------------------
 
+/** A 24-character hex Mongo ObjectId. */
+const OBJECT_ID_RE = /^[0-9a-f]{24}$/i;
+
+/** True when the token is shaped like a Mongo product id. */
+export function isObjectId(token: string): boolean {
+  return OBJECT_ID_RE.test(token);
+}
+
 /**
- * Derive the SKU token from a filename such as `SKU123-1.jpg`, `sku123_2.png`
- * or `SKU123 (front).webp`. We take everything up to the first separator
- * (`-`, `_`, `.`, space or paren) after stripping any directory prefix.
- * Returns null when nothing usable remains.
+ * Derive the leading token from a filename such as
+ * `64b7f8a2e4b0c12345678901-1.jpg`, `SKU123_2.png` or `SKU123 (front).webp`.
+ * We take everything up to the first separator (`-`, `_`, `.`, space or paren)
+ * after stripping any directory prefix. Returns null when nothing usable
+ * remains. The token is later classified as a product id (24-hex) or a SKU.
  */
-export function skuFromFilename(filename: string): string | null {
+export function tokenFromFilename(filename: string): string | null {
   const base = filename.split(/[/\\]/).pop() ?? filename;
   const token = base.split(/[-_.\s(]/)[0]?.trim();
   return token && token.length > 0 ? token : null;
@@ -117,29 +133,38 @@ export async function matchImagesToSkus(
     await assertPermission(viewer, PERMISSIONS.PRODUCTS_EDIT);
     const input = matchInputSchema.parse(files);
 
-    // Parse SKUs up front; collect the distinct set for one DB round-trip.
-    const parsed = input.map((file) => ({
-      filename: file.filename,
-      sku: skuFromFilename(file.filename),
-    }));
+    // Parse tokens up front and classify each as a product id (24-hex) or a
+    // SKU. Collect the distinct sets for one DB round-trip.
+    const parsed = input.map((file) => {
+      const token = tokenFromFilename(file.filename);
+      return {
+        filename: file.filename,
+        token,
+        isId: token !== null && isObjectId(token),
+      };
+    });
+    const ids = Array.from(
+      new Set(parsed.filter((p) => p.isId && p.token).map((p) => p.token!)),
+    );
     const skus = Array.from(
       new Set(
         parsed
-          .map((p) => p.sku)
-          .filter((sku): sku is string => sku !== null),
+          .filter((p) => !p.isId && p.token)
+          .map((p) => p.token!),
       ),
     );
 
-    // Case-insensitive lookup: index live products by lower-cased SKU.
-    const products = skus.length
+    // One read for both match paths: products whose id OR SKU is in our sets.
+    const or: import("@prisma/client").Prisma.ProductWhereInput[] = [];
+    if (ids.length) or.push({ id: { in: ids } });
+    if (skus.length) or.push({ sku: { in: skus, mode: "insensitive" } });
+    const products = or.length
       ? await prisma.product.findMany({
-          where: {
-            deletedAt: null,
-            sku: { in: skus, mode: "insensitive" },
-          },
+          where: { deletedAt: null, OR: or },
           select: { id: true, name: true, sku: true, images: true },
         })
       : [];
+    const byId = new Map(products.map((product) => [product.id, product]));
     const bySku = new Map(
       products.map((product) => [product.sku.toLowerCase(), product]),
     );
@@ -147,20 +172,21 @@ export async function matchImagesToSkus(
     const matched: MatchedImage[] = [];
     const unmatched: UnmatchedImage[] = [];
 
-    for (const { filename, sku } of parsed) {
-      if (sku === null) {
-        unmatched.push({ filename, sku: null, reason: "no-sku" });
+    for (const { filename, token, isId } of parsed) {
+      if (token === null) {
+        unmatched.push({ filename, token: null, reason: "no-token" });
         continue;
       }
-      const product = bySku.get(sku.toLowerCase());
+      const product = isId ? byId.get(token) : bySku.get(token.toLowerCase());
       if (!product) {
-        unmatched.push({ filename, sku, reason: "unknown-sku" });
+        unmatched.push({ filename, token, reason: "unknown" });
         continue;
       }
       const currentImageCount = product.images.length;
       matched.push({
         filename,
-        sku,
+        token,
+        matchedBy: isId ? "id" : "sku",
         productId: product.id,
         productName: product.name,
         productSku: product.sku,

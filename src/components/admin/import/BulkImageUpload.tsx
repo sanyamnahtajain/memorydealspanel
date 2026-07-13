@@ -288,7 +288,7 @@ export function BulkImageUpload() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Bulk image upload"
-        description="Match photos to products by SKU in the filename (e.g. SKU123-1.jpg), then attach them all at once."
+        description="Name each photo after the product's id or SKU (e.g. 64b7f8a2e4b0c12345678901-1.jpg). Export the catalog CSV to get every product id, then attach them all at once."
         actions={
           hasSelection ? (
             <Button
@@ -332,7 +332,7 @@ export function BulkImageUpload() {
         <EmptyState
           illustration="empty-box"
           title="No images selected"
-          description="Choose product photos or a folder. Each filename should start with the product SKU."
+          description="Choose product photos or a folder. Each filename should start with the product id or SKU."
           action={
             <div className="flex flex-wrap items-center justify-center gap-2">
               <Button
@@ -462,9 +462,9 @@ function ReviewScreen({
                   {item.filename}
                 </span>
                 <span className="ms-auto shrink-0 text-xs text-muted-foreground">
-                  {item.reason === "no-sku"
-                    ? "No SKU in filename"
-                    : `Unknown SKU${item.sku ? ` "${item.sku}"` : ""}`}
+                  {item.reason === "no-token"
+                    ? "No id or SKU in filename"
+                    : `No product for "${item.token}"`}
                 </span>
               </li>
             ))}
