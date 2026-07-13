@@ -490,6 +490,14 @@ export async function countSearchForViewer(query: string): Promise<number> {
 export interface AdminGridOptions extends ListForViewerOptions {
   /** Include soft-deleted rows (deletedAt != null). Defaults to false. */
   includeDeleted?: boolean;
+  /**
+   * Load the ENTIRE catalog in one read (no pagination). The DealSheet is a
+   * client-side spreadsheet: its search / column filters / sort operate over
+   * the rows it holds, so to make "filter over the whole DB, not just the
+   * visible page" true, every product must be present. The grid is virtualized,
+   * so rendering thousands of rows is cheap. Defaults to false (paged).
+   */
+  all?: boolean;
 }
 
 /**
@@ -533,7 +541,9 @@ export async function listForAdminGrid(
   options?: AdminGridOptions,
 ): Promise<AdminGridProduct[]> {
   assertAdmin(viewer);
-  const { skip, take } = resolvePaging(options);
+  // `all` bypasses paging entirely so the client grid holds every product and
+  // its filters/search cover the whole DB, not just one page.
+  const paging = options?.all ? {} : resolvePaging(options);
   const where: Prisma.ProductWhereInput = options?.includeDeleted
     ? {}
     : { deletedAt: null };
@@ -542,8 +552,7 @@ export async function listForAdminGrid(
     where,
     select: ADMIN_GRID_SELECT,
     orderBy: STOREFRONT_ORDER,
-    skip,
-    take,
+    ...paging,
   });
   // Map WITHOUT the variant rows (none selected) — `toPricedProduct` yields
   // `variants: []`; we layer the real active count on top from `_count`.

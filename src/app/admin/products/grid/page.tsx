@@ -39,7 +39,7 @@ export default async function AdminProductsGridPage() {
   }
 
   const [products, categories, brands, taxProfile] = await Promise.all([
-    listForAdminGrid(viewer),
+    listForAdminGrid(viewer, { all: true }),
     listAll(viewer),
     listActiveBrands(),
     getSellerTaxProfile(),

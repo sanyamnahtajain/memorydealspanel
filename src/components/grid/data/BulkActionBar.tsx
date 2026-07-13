@@ -14,7 +14,8 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   IndianRupee,
   Tag,
-  CircleDot,
+  CircleCheck,
+  CircleSlash,
   Trash2,
   X,
   type LucideIcon,
@@ -60,7 +61,10 @@ export interface BulkActionBarProps {
 export function standardBulkActions(handlers: {
   onAdjustPrice: () => void;
   onAddTag: () => void;
-  onSetStatus: () => void;
+  /** Mark every selected row ACTIVE (published). */
+  onActivate: () => void;
+  /** Mark every selected row INACTIVE (hidden from the storefront). */
+  onDeactivate: () => void;
   onDelete: () => void;
   disabled?: boolean;
 }): BulkAction[] {
@@ -83,10 +87,18 @@ export function standardBulkActions(handlers: {
       disabled,
     },
     {
-      key: "set-status",
-      label: "Set status",
-      icon: CircleDot,
-      onClick: handlers.onSetStatus,
+      key: "activate",
+      label: "Set active",
+      icon: CircleCheck,
+      onClick: handlers.onActivate,
+      variant: "outline",
+      disabled,
+    },
+    {
+      key: "deactivate",
+      label: "Set inactive",
+      icon: CircleSlash,
+      onClick: handlers.onDeactivate,
       variant: "outline",
       disabled,
     },

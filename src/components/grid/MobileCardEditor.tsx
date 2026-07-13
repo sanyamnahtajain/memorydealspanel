@@ -23,6 +23,7 @@ import {
   GitBranchPlus,
   CheckCircle2,
   Check,
+  ListChecks,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -92,6 +93,25 @@ export function MobileCardEditor<Row extends GridRow = GridRow>({
 
   const checkedIds = React.useMemo(() => Array.from(checked), [checked]);
 
+  /** Ids currently visible after search/filter — the scope of "select all". */
+  const visibleIds = React.useMemo(
+    () => viewRows.map((r) => r.id),
+    [viewRows],
+  );
+  const allVisibleChecked =
+    visibleIds.length > 0 && visibleIds.every((id) => checked.has(id));
+
+  /** Enter selection mode with nothing checked (the discoverable entry point). */
+  const startSelecting = React.useCallback(() => {
+    setMultiSelect(true);
+    setChecked(new Set());
+  }, []);
+
+  /** Toggle every visible card on/off in one tap. */
+  const toggleSelectAll = React.useCallback(() => {
+    setChecked(allVisibleChecked ? new Set() : new Set(visibleIds));
+  }, [allVisibleChecked, visibleIds]);
+
   const renderCard = (row: Row) => (
     <MobileCard<Row>
       key={row.id}
@@ -123,6 +143,16 @@ export function MobileCardEditor<Row extends GridRow = GridRow>({
             <span className="text-sm font-medium tabular-nums">
               {checkedIds.length} selected
             </span>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="ml-auto"
+              onClick={toggleSelectAll}
+              disabled={visibleIds.length === 0}
+            >
+              {allVisibleChecked ? "Clear all" : "Select all"}
+            </Button>
           </>
         ) : (
           <>
@@ -155,9 +185,18 @@ export function MobileCardEditor<Row extends GridRow = GridRow>({
             >
               <SearchIcon />
             </Button>
-            <div className="ml-auto">
-              <MobileSaveStatus ctrl={ctrl} />
-            </div>
+            {/* Discoverable entry to multi-select — no long-press needed. */}
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="ml-auto"
+              onClick={startSelecting}
+            >
+              <ListChecks data-icon="inline-start" />
+              Select
+            </Button>
+            <MobileSaveStatus ctrl={ctrl} />
           </>
         )}
       </div>
@@ -258,24 +297,13 @@ export function MobileCardEditor<Row extends GridRow = GridRow>({
             });
             if (tag) ctrl.bulkAddTag(col.key, tag, checkedIds);
           },
-          onSetStatus: async () => {
-            const col = viewColumns.find((c) => c.type === "select");
-            if (!col?.options?.length) return;
-            const value = await prompt({
-              title: `Set ${col.header}`,
-              label: col.header,
-              kind: "select",
-              options: col.options.map((o) => ({
-                value: o.value,
-                label: o.label,
-              })),
-            });
-            if (value) {
-              const match = col.options.find(
-                (o) => o.value === value || o.label === value,
-              );
-              ctrl.bulkSetField(col.key, match?.value ?? value, checkedIds);
-            }
+          onActivate: () => {
+            const col = viewColumns.find((c) => c.type === "toggle");
+            if (col) ctrl.bulkSetField(col.key, true, checkedIds);
+          },
+          onDeactivate: () => {
+            const col = viewColumns.find((c) => c.type === "toggle");
+            if (col) ctrl.bulkSetField(col.key, false, checkedIds);
           },
           onDelete: () => {
             ctrl.bulkDelete(checkedIds);
@@ -339,8 +367,12 @@ function MobileCard<Row extends GridRow>({
       onPointerUp={clearPress}
       onPointerLeave={clearPress}
       onPointerCancel={clearPress}
+      // In selection mode the whole card is one big tap target so it's easy to
+      // pick rows on a phone; the fields are disabled so no edit fires.
+      onClick={multiSelect ? onToggleChecked : undefined}
       className={cn(
         "rounded-xl border border-border bg-card p-3 shadow-sm transition-colors",
+        multiSelect && "cursor-pointer",
         checked && "ring-2 ring-primary",
       )}
     >
@@ -350,7 +382,10 @@ function MobileCard<Row extends GridRow>({
             type="button"
             aria-label={checked ? "Deselect row" : "Select row"}
             aria-pressed={checked}
-            onClick={onToggleChecked}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleChecked();
+            }}
             className={cn(
               "flex size-5 shrink-0 items-center justify-center rounded-md border",
               checked

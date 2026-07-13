@@ -408,23 +408,13 @@ export function DealSheet<Row extends GridRow = GridRow>({
             if (!tag) return;
             ctrl.bulkAddTag(col.key, tag);
           },
-          onSetStatus: async () => {
-            const col = firstOfType(viewColumns, "select");
-            if (!col || !col.options?.length) return;
-            const value = await prompt({
-              title: `Set ${col.header}`,
-              label: col.header,
-              kind: "select",
-              options: col.options.map((o) => ({
-                value: o.value,
-                label: o.label,
-              })),
-            });
-            if (!value) return;
-            const match = col.options.find(
-              (o) => o.value === value || o.label === value,
-            );
-            ctrl.bulkSetField(col.key, match?.value ?? value);
+          onActivate: () => {
+            const col = firstOfType(viewColumns, "toggle");
+            if (col) ctrl.bulkSetField(col.key, true);
+          },
+          onDeactivate: () => {
+            const col = firstOfType(viewColumns, "toggle");
+            if (col) ctrl.bulkSetField(col.key, false);
           },
           onDelete: ctrl.bulkDelete,
         })}
