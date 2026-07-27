@@ -303,8 +303,8 @@ export function useGridController<Row extends GridRow>(
   }, [allRows, filters, columns, search]);
 
   const viewRows = React.useMemo(
-    () => applySort(searchFilteredRows, sort),
-    [searchFilteredRows, sort],
+    () => applySort(searchFilteredRows, sort, columns),
+    [searchFilteredRows, sort, columns],
   );
 
   /* ------------------------------ selection ----------------------------- */

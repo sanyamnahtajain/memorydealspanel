@@ -124,6 +124,12 @@ describe("cellText / applyFilters — display-aware search", () => {
     expect(applyFilters(data, { price: "₹3" }, cols).map((r) => r.id)).toEqual(["b"]);
   });
 
+  it("applySort sorts a computed column by its DERIVED value", () => {
+    // margins: a→400, b→200 (stored row.margin is 999 for both).
+    expect(applySort(data, [{ colKey: "margin", dir: "asc" }], cols).map((r) => r.id)).toEqual(["b", "a"]);
+    expect(applySort(data, [{ colKey: "margin", dir: "desc" }], cols).map((r) => r.id)).toEqual(["a", "b"]);
+  });
+
   it("cellText reproduces the on-screen text per column type", () => {
     expect(cellText(data[0], cols[1])).toContain("Electronics"); // select label
     expect(cellText(data[1], cols[2])).toContain("On Sale"); // multi-tag label

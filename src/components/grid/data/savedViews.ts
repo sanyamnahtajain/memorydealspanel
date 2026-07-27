@@ -109,23 +109,50 @@ export function applyFilters<Row extends GridRow>(
 }
 
 /**
+ * The raw comparable VALUE for a cell. `computed` columns derive from
+ * `compute(row)` (their `row[key]` is empty/stale), so sorting/comparison match
+ * the displayed data. All other columns read `row[key]` directly.
+ */
+export function cellValue<Row extends GridRow>(row: Row, col: ColumnDef<Row>): unknown {
+  if (col.type === "computed" && typeof col.compute === "function") {
+    try {
+      return col.compute(row);
+    } catch {
+      return null;
+    }
+  }
+  return row[col.key as keyof Row];
+}
+
+/**
  * Sort rows by a view's ordered {@link SortSpec} list (primary first). Returns
  * a new array; the input is not mutated. Uses a stable comparison that handles
  * numbers, strings, booleans and null/undefined (nullish sorts last on asc).
+ *
+ * When `columns` is provided, values are resolved via {@link cellValue} so
+ * `computed` columns sort by their DERIVED value (not the empty `row[key]`).
  */
 export function applySort<Row extends GridRow>(
   rows: Row[],
   sort: SortSpec[],
+  columns?: ColumnDef<Row>[],
 ): Row[] {
   if (sort.length === 0) return rows;
+  const colByKey = columns
+    ? new Map(columns.map((c) => [c.key as string, c]))
+    : null;
+  const valueOf = (row: Row, colKey: string): unknown => {
+    const col = colByKey?.get(colKey);
+    return col ? cellValue(row, col) : row[colKey as keyof Row];
+  };
   // Decorate-sort-undecorate keeps sort stable across engines.
   return rows
     .map((row, i) => ({ row, i }))
     .sort((a, b) => {
       for (const spec of sort) {
         const cmp = compareValues(
-          a.row[spec.colKey as keyof Row],
-          b.row[spec.colKey as keyof Row],
+          valueOf(a.row, spec.colKey),
+          valueOf(b.row, spec.colKey),
         );
         if (cmp !== 0) return spec.dir === "asc" ? cmp : -cmp;
       }
@@ -182,7 +209,7 @@ export function applyView<Row extends GridRow>(
   view: SavedView,
 ): { rows: Row[]; columns: ColumnDef<Row>[] } {
   const filtered = applyFilters(rows, view.filters, columns);
-  const sorted = applySort(filtered, view.sort);
+  const sorted = applySort(filtered, view.sort, columns);
   const laidOut = applyColumnLayout(columns, view);
   return { rows: sorted, columns: laidOut };
 }
