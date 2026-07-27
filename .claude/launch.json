@@ -1,0 +1,20 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dev",
+      "runtimeExecutable": "/Users/master/.nvm/versions/node/v20.20.2/bin/node",
+      "runtimeArgs": ["node_modules/next/dist/bin/next", "dev"],
+      "port": 3000
+    },
+    {
+      "name": "tradeos-dev",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd /Users/master/work/trade/code/tradeos && export PATH=\"$HOME/.nvm/versions/node/v20.20.2/bin:$PATH\" && exec npx next dev -p 3007"
+      ],
+      "port": 3007
+    }
+  ]
+}

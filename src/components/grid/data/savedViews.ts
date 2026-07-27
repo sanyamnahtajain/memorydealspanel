@@ -22,9 +22,72 @@ import type {
 /* -------------------------------------------------------------------------- */
 
 /**
+ * The canonical DISPLAY text for a cell — the SAME text the user sees rendered.
+ * Column search AND per-column filter both use this so they match what is on
+ * screen, not the raw stored value:
+ *
+ *   • `computed` columns derive from `compute(row)` (then `format`), NOT
+ *     `row[key]` (which is empty/stale for a derived column);
+ *   • `select` / `multi-tag` columns match the option LABEL the user sees (and
+ *     still the raw value, so a code can be searched too);
+ *   • other columns use `format(value)` when present (e.g. paise → "₹499.50").
+ *
+ * Pure + framework-free (no client/React imports) so it runs in tests/SSR.
+ */
+export function cellText<Row extends GridRow>(row: Row, col: ColumnDef<Row>): string {
+  // Computed columns are derived from the whole row — mirror ComputedCell.
+  if (col.type === "computed" && typeof col.compute === "function") {
+    let result: unknown;
+    try {
+      result = col.compute(row);
+    } catch {
+      return "";
+    }
+    if (result === null || result === undefined || result === "") return "";
+    if (col.format) {
+      try {
+        return col.format(result);
+      } catch {
+        /* fall through */
+      }
+    }
+    if (typeof result === "number") {
+      return Number.isFinite(result)
+        ? result.toLocaleString("en-IN", { maximumFractionDigits: 2 })
+        : "";
+    }
+    return String(result);
+  }
+
+  const value = row[col.key as keyof Row];
+  if (value === null || value === undefined || value === "") return "";
+
+  // select / multi-tag: match the visible LABEL(s) as well as the raw value.
+  if (col.options && col.options.length > 0) {
+    const labelOf = (v: unknown): string => {
+      const s = String(v);
+      const opt = col.options!.find((o) => o.value === s);
+      return opt ? `${opt.label} ${s}` : s;
+    };
+    return Array.isArray(value) ? value.map(labelOf).join(" ") : labelOf(value);
+  }
+
+  if (col.format) {
+    try {
+      return col.format(value);
+    } catch {
+      /* fall through to default stringify */
+    }
+  }
+  if (Array.isArray(value)) return value.join(" ");
+  return String(value);
+}
+
+/**
  * Filter rows by a view's per-column query map. A query matches when the
- * column's display/string value contains the query text (case-insensitive).
- * Empty queries are ignored. All active filters must match (AND).
+ * column's DISPLAY value (see {@link cellText}) contains the query text
+ * (case-insensitive). Empty queries are ignored. All active filters must match
+ * (AND).
  */
 export function applyFilters<Row extends GridRow>(
   rows: Row[],
@@ -38,26 +101,11 @@ export function applyFilters<Row extends GridRow>(
   return rows.filter((row) =>
     active.every(([key, query]) => {
       const col = colByKey.get(key);
-      const text = renderFilterText(row[key as keyof Row], col);
+      if (!col) return true; // stale filter (column removed) → ignore, don't hide
+      const text = cellText(row, col);
       return text.toLowerCase().includes(query.trim().toLowerCase());
     }),
   );
-}
-
-function renderFilterText<Row extends GridRow>(
-  value: unknown,
-  col?: ColumnDef<Row>,
-): string {
-  if (value === null || value === undefined) return "";
-  if (col?.format) {
-    try {
-      return col.format(value);
-    } catch {
-      /* fall through to default stringify */
-    }
-  }
-  if (Array.isArray(value)) return value.join(" ");
-  return String(value);
 }
 
 /**

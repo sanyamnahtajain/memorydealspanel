@@ -5,6 +5,7 @@ import {
   applyFilters,
   applySort,
   applyView,
+  cellText,
   createEmptyView,
   deserializeViews,
   normalizeView,
@@ -46,6 +47,88 @@ describe("applyFilters", () => {
   it("ignores empty queries", () => {
     const out = applyFilters(rows(), { name: "  " }, columns);
     expect(out).toHaveLength(3);
+  });
+});
+
+// Display-aware column search (bugfix): per-column filter + global search must
+// match the DISPLAYED cell text — option LABELS for select/multi-tag, the
+// DERIVED value for computed columns, and formatted text — not the raw
+// `row[key]`. These reproduce the reported "search on each column" failures.
+describe("cellText / applyFilters — display-aware search", () => {
+  interface R extends GridRow {
+    id: string;
+    name: string;
+    category: string; // stored option value ("elec"); shown as a label
+    tags: string[]; // multi-tag option values
+    price: number; // paise; formatted as ₹
+    margin: number; // stored value is intentionally WRONG; compute is the truth
+  }
+  const cols: ColumnDef<R>[] = [
+    { key: "name", header: "Name", type: "text" },
+    {
+      key: "category",
+      header: "Category",
+      type: "select",
+      options: [
+        { value: "elec", label: "Electronics" },
+        { value: "home", label: "Home & Kitchen" },
+      ],
+    },
+    {
+      key: "tags",
+      header: "Tags",
+      type: "multi-tag",
+      options: [
+        { value: "new", label: "New Arrival" },
+        { value: "sale", label: "On Sale" },
+      ],
+    },
+    {
+      key: "price",
+      header: "Price",
+      type: "currency",
+      format: (v) => `₹${((v as number) / 100).toFixed(2)}`,
+    },
+    {
+      key: "margin",
+      header: "Margin",
+      type: "computed",
+      compute: (r) => (r as R).price - 100, // derived, not the stored `margin`
+    },
+  ];
+  const data: R[] = [
+    { id: "a", name: "Cable", category: "elec", tags: ["new"], price: 500, margin: 999 },
+    { id: "b", name: "Pan", category: "home", tags: ["sale", "new"], price: 300, margin: 999 },
+  ];
+
+  it("select: matches the visible LABEL as well as the stored value", () => {
+    expect(applyFilters(data, { category: "Electronics" }, cols).map((r) => r.id)).toEqual(["a"]);
+    expect(applyFilters(data, { category: "kitchen" }, cols).map((r) => r.id)).toEqual(["b"]);
+    expect(applyFilters(data, { category: "elec" }, cols).map((r) => r.id)).toEqual(["a"]); // value still works
+  });
+
+  it("multi-tag: matches any option label in the list", () => {
+    expect(applyFilters(data, { tags: "On Sale" }, cols).map((r) => r.id)).toEqual(["b"]);
+    expect(applyFilters(data, { tags: "New Arrival" }, cols).map((r) => r.id)).toEqual(["a", "b"]);
+  });
+
+  it("computed: matches the DERIVED value, never the stale row[key]", () => {
+    // margin = price - 100 → a:400, b:200; stored margin is 999 for both.
+    expect(applyFilters(data, { margin: "400" }, cols).map((r) => r.id)).toEqual(["a"]);
+    expect(applyFilters(data, { margin: "200" }, cols).map((r) => r.id)).toEqual(["b"]);
+    expect(applyFilters(data, { margin: "999" }, cols)).toHaveLength(0); // proves compute, not row[key]
+  });
+
+  it("formatted: matches the formatted display text", () => {
+    expect(applyFilters(data, { price: "5.00" }, cols).map((r) => r.id)).toEqual(["a"]);
+    expect(applyFilters(data, { price: "₹3" }, cols).map((r) => r.id)).toEqual(["b"]);
+  });
+
+  it("cellText reproduces the on-screen text per column type", () => {
+    expect(cellText(data[0], cols[1])).toContain("Electronics"); // select label
+    expect(cellText(data[1], cols[2])).toContain("On Sale"); // multi-tag label
+    expect(cellText(data[0], cols[3])).toBe("₹5.00"); // formatted
+    expect(cellText(data[0], cols[4])).toBe("400"); // computed
   });
 });
 

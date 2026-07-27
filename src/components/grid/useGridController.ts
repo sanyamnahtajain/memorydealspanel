@@ -53,6 +53,7 @@ import {
   applyColumnLayout,
   applyFilters,
   applySort,
+  cellText,
   deleteView,
   loadViews,
   upsertView,
@@ -297,7 +298,7 @@ export function useGridController<Row extends GridRow>(
     const q = search.trim().toLowerCase();
     if (!q) return byFilter;
     return byFilter.filter((row) =>
-      columns.some((col) => matchesSearch(row[col.key], col, q)),
+      columns.some((col) => cellText(row, col).toLowerCase().includes(q)),
     );
   }, [allRows, filters, columns, search]);
 
@@ -664,7 +665,7 @@ export function useGridController<Row extends GridRow>(
     const out: CellCoord[] = [];
     for (const row of viewRows) {
       for (const col of viewColumns) {
-        if (matchesSearch(row[col.key], col, q)) {
+        if (cellText(row, col).toLowerCase().includes(q)) {
           out.push({ rowId: row.id, colKey: col.key });
         }
       }
@@ -823,30 +824,6 @@ function persistChanges<Row extends GridRow>(
   for (const [rowId, patch] of byRow) {
     save(rowId, patch as Partial<Row>);
   }
-}
-
-function matchesSearch<Row extends GridRow>(
-  value: unknown,
-  col: ColumnDef<Row>,
-  q: string,
-): boolean {
-  if (value === null || value === undefined) return false;
-  let text: string;
-  if (col.format) {
-    try {
-      text = col.format(value);
-    } catch {
-      text = defaultText(value);
-    }
-  } else {
-    text = defaultText(value);
-  }
-  return text.toLowerCase().includes(q);
-}
-
-function defaultText(value: unknown): string {
-  if (Array.isArray(value)) return value.join(" ");
-  return String(value);
 }
 
 function groupLabel<Row extends GridRow>(
