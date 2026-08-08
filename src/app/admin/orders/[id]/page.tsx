@@ -125,6 +125,15 @@ export default async function AdminOrderDetailPage({
           title={`Order #${order.orderNumber}`}
           backHref="/admin/orders"
           backLabel="Orders"
+          actions={
+            <a
+              href={`/api/order-pdf/${order.id}`}
+              download
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-input bg-background px-3.5 text-sm font-medium shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground"
+            >
+              Download PDF
+            </a>
+          }
         />
         <OrderDetailPanel order={order} />
       </div>
