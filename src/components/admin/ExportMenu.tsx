@@ -9,15 +9,21 @@ import { Tooltip } from "@/components/ui/tooltip"
 
 const EXPORTS = [
   {
-    format: "xlsx",
+    href: "/api/export?format=xlsx",
     label: "Excel",
     tooltip: "Download the full catalog as an .xlsx workbook",
     icon: FileSpreadsheet,
   },
   {
-    format: "csv",
+    href: "/api/export?format=csv",
     label: "CSV",
     tooltip: "Download the full catalog as a .csv file",
+    icon: FileText,
+  },
+  {
+    href: "/api/catalog-pdf",
+    label: "PDF",
+    tooltip: "Download the price list as a printable PDF",
     icon: FileText,
   },
 ] as const
@@ -50,10 +56,10 @@ export function ExportMenu({ label, className }: ExportMenuProps) {
         </span>
       ) : null}
       <div className="flex flex-wrap items-center gap-2">
-        {EXPORTS.map(({ format, label: fmtLabel, tooltip, icon: Icon }) => (
-          <Tooltip key={format} content={tooltip}>
+        {EXPORTS.map(({ href, label: fmtLabel, tooltip, icon: Icon }) => (
+          <Tooltip key={href} content={tooltip}>
             <a
-              href={`/api/export?format=${format}`}
+              href={href}
               download
               className={cn(
                 buttonVariants({ variant: "outline", size: "default" }),
