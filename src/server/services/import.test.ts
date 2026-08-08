@@ -405,6 +405,62 @@ describe("validateRows — create vs update & required fields", () => {
 });
 
 /* ------------------------------------------------------------------ */
+/* SKU-less wholesale catalogues (owner: BOAT WATCHES.xlsx)            */
+/* ------------------------------------------------------------------ */
+
+describe("validateRows — SKU-less rows (auto-generated SKU at commit)", () => {
+  const mapping = mapFor(FULL_HEADER);
+  const row = (over: Record<string, string>): RawRow => ({
+    Name: "POR 2730 MPORT MINO C",
+    SKU: "",
+    Brand: "PORTRONICS",
+    Category: "RAM",
+    "Price (₹)": "138",
+    "MRP (₹)": "",
+    MOQ: "1",
+    "Stock status": "IN_STOCK",
+    Status: "ACTIVE",
+    Tags: "",
+    Description: "",
+    ...over,
+  });
+
+  it("a blank SKU is a VALID create — no 'SKU is required' error", () => {
+    const res = validateRows([row({})], mapping, [], CATEGORIES);
+    expect(res.rows[0].errors).toEqual([]);
+    expect(res.rows[0].operation).toBe("create");
+    expect(res.summary.creates).toBe(1);
+  });
+
+  it("many blank-SKU rows don't trip the duplicate-SKU check", () => {
+    const res = validateRows(
+      [row({}), row({ Name: "POR 2729 HUB" }), row({ Name: "POR 1484 USB" })],
+      mapping,
+      [],
+      CATEGORIES,
+    );
+    for (const r of res.rows) expect(r.errors).toEqual([]);
+    expect(res.summary.creates).toBe(3);
+  });
+
+  it("a blank SKU never update-matches (updates still key on a provided SKU)", () => {
+    const res = validateRows([row({})], mapping, ["exist"], CATEGORIES);
+    expect(res.rows[0].operation).toBe("create");
+  });
+
+  it("still requires name/category/price for a SKU-less create", () => {
+    const res = validateRows(
+      [row({ Name: "", Category: "", "Price (₹)": "" })],
+      mapping,
+      [],
+      CATEGORIES,
+    );
+    const fields = res.rows[0].errors.map((e) => e.field).sort();
+    expect(fields).toEqual(["category", "name", "price"]);
+  });
+});
+
+/* ------------------------------------------------------------------ */
 /* error CSV & template                                                */
 /* ------------------------------------------------------------------ */
 

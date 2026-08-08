@@ -262,6 +262,8 @@ export async function commitImportAction(
     const result = await commitImport({
       rows: validated.rows,
       variantGroups: validated.variantGroups,
+      // De-dupe pool for the SKUs auto-generated for SKU-less create rows.
+      existingSkus,
     });
 
     const variantProductsWritten =

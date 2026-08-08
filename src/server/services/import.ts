@@ -99,7 +99,11 @@ export const IMPORT_COLUMNS: readonly ImportColumn[] = [
   {
     key: "sku",
     label: "SKU",
-    required: true,
+    // OPTIONAL (SKU-less wholesale catalogues, e.g. supplier price lists): a
+    // blank SKU is a NEW product whose SKU is AUTO-GENERATED at commit
+    // (uppercased name-slug, de-duped against catalog + batch). A provided SKU
+    // still update-matches and is dup-checked exactly as before.
+    required: false,
     kind: "text",
     aliases: ["sku", "code", "productcode", "itemcode", "partno", "partnumber"],
   },
@@ -754,11 +758,13 @@ export function validateRows(
     const push = (field: ImportField, message: string) =>
       errors.push({ field, message });
 
-    // sku (identity) — required, format-checked, dup-in-file flagged.
+    // sku (identity) — OPTIONAL: a blank SKU is a NEW product whose SKU is
+    // auto-generated at commit (SKU-less wholesale catalogues). A provided SKU
+    // is format-checked, dup-in-file flagged, and update-matched as before.
     const skuRaw = raw.sku;
     let skuLower = "";
     if (!skuRaw) {
-      push("sku", "SKU is required.");
+      // create with auto-generated SKU — no error.
     } else if (skuRaw.length > 64) {
       push("sku", "SKU is too long (max 64).");
     } else if (!SKU_RE.test(skuRaw)) {
@@ -1245,6 +1251,13 @@ export interface CommitInput {
   /** The full set of preview rows (invalid rows are skipped automatically). */
   rows: PreviewRow[];
   /**
+   * SKUs already in the catalog (any casing). Used to de-dupe the SKUs that are
+   * AUTO-GENERATED for create rows imported without one. Optional — when absent
+   * the generator still de-dupes against the batch itself, and the product
+   * service's unique-SKU invariant remains the final wall.
+   */
+  existingSkus?: Iterable<string>;
+  /**
    * Validated variant groups from {@link validateRows} (empty for a plain
    * single-product import). Each valid group is committed as ONE variant
    * product through the audited variants service; invalid groups are skipped
@@ -1252,6 +1265,21 @@ export interface CommitInput {
    * the single-product loop — they belong to these groups.
    */
   variantGroups?: VariantGroupSummary[];
+}
+
+/**
+ * Generate a unique SKU for a product imported WITHOUT one (SKU-less wholesale
+ * catalogues): uppercased name-slug, capped, de-duped against the catalog + the
+ * batch with a numeric suffix. Falls back to "SKU" when the name yields nothing.
+ */
+function makeUniqueSku(name: string | undefined, used: Set<string>): string {
+  const base =
+    slugify(name ?? "").toUpperCase().slice(0, 32).replace(/-+$/g, "") || "SKU";
+  let candidate = base;
+  let n = 2;
+  while (used.has(candidate.toLowerCase())) candidate = `${base}-${n++}`;
+  used.add(candidate.toLowerCase());
+  return candidate;
 }
 
 /**
@@ -1268,9 +1296,20 @@ export interface CommitInput {
 export async function commitImport({
   rows,
   variantGroups = [],
+  existingSkus = [],
 }: CommitInput): Promise<CommitResult> {
   let created = 0;
   let updated = 0;
+
+  // De-dupe pool for AUTO-GENERATED SKUs (rows imported without one): catalog
+  // SKUs + every provided SKU in this batch, lowercased. Generated SKUs are
+  // added as they are minted so in-batch generations can't collide either.
+  const usedSkus = new Set<string>();
+  for (const s of existingSkus) usedSkus.add(s.trim().toLowerCase());
+  for (const row of rows) {
+    const s = (row.values?.sku as string | undefined) ?? "";
+    if (s) usedSkus.add(s.trim().toLowerCase());
+  }
   const skipped: SkippedRow[] = [];
   const errorEntries: Array<{
     rowNumber: number;
@@ -1323,7 +1362,12 @@ export async function commitImport({
 
     try {
       if (row.operation === "create") {
-        const product = await createProduct(toCreateInput(row.values));
+        // Auto-generate a SKU for products imported without one (SKU-less
+        // wholesale catalogues) — uppercased name-slug, de-duped.
+        const values = row.values.sku
+          ? row.values
+          : { ...row.values, sku: makeUniqueSku(row.values.name as string | undefined, usedSkus) };
+        const product = await createProduct(toCreateInput(values));
         if (brandId) await linkProductBrand(product.id, brandId);
         created++;
       } else {
