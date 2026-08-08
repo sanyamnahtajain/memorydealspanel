@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/server/db";
 import type { ViewerContext } from "@/server/types/viewer";
@@ -62,15 +63,17 @@ export async function listActive(): Promise<CategoryDTO[]> {
 
 /**
  * A single ACTIVE category by slug, or null. Inactive categories are treated
- * as non-existent for the storefront.
+ * as non-existent for the storefront. Wrapped in React `cache` because every
+ * category view resolves the slug TWICE per request (generateMetadata + the
+ * page body) — this dedupes that to one query.
  */
-export async function getBySlug(slug: string): Promise<CategoryDTO | null> {
+export const getBySlug = cache(async (slug: string): Promise<CategoryDTO | null> => {
   const row = await prisma.category.findFirst({
     where: { slug, status: "ACTIVE" },
     select: CATEGORY_SELECT,
   });
   return row ? toCategoryDTO(row) : null;
-}
+});
 
 /**
  * Every category regardless of status, for admin management. Throws

@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { PAGE_SIZES } from "@/lib/constants";
@@ -91,15 +92,19 @@ export async function listBrandsWithCounts(): Promise<BrandWithCount[]> {
 
 /**
  * A single ACTIVE brand by slug, or null. Inactive brands are treated as
- * non-existent for the storefront (so their landing page 404s).
+ * non-existent for the storefront (so their landing page 404s). React-cached:
+ * brand views resolve the slug in generateMetadata AND the page body — one
+ * query instead of two per request.
  */
-export async function getBrandBySlug(slug: string): Promise<PublicBrand | null> {
-  const row = await prisma.brand.findFirst({
-    where: { slug, status: "ACTIVE" },
-    select: BRAND_SELECT,
-  });
-  return row ? toPublicBrand(row) : null;
-}
+export const getBrandBySlug = cache(
+  async (slug: string): Promise<PublicBrand | null> => {
+    const row = await prisma.brand.findFirst({
+      where: { slug, status: "ACTIVE" },
+      select: BRAND_SELECT,
+    });
+    return row ? toPublicBrand(row) : null;
+  },
+);
 
 /* ------------------------------------------------------------------ */
 /* Brand-scoped product reads (viewer-gated — the price gate lives here) */
@@ -116,6 +121,7 @@ const PUBLIC_PRODUCT_FIELDS = {
   description: true,
   specs: true,
   moq: true,
+  packMultiple: true,
   stockStatus: true,
   status: true,
   tags: true,

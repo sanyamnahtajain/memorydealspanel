@@ -1,10 +1,12 @@
 import "server-only";
 
+import { unstable_cache } from "next/cache";
+
 import { formatPaise } from "@/lib/money";
-import type { ViewerContext } from "@/server/types/viewer";
+import { canSeePrices, type ViewerContext } from "@/server/types/viewer";
 import {
   brandFacet,
-  computePriceBands,
+  priceBandCounts,
   specFacets,
   stockFacet,
   tagFacet,
@@ -153,15 +155,55 @@ export async function loadFacetData(
   viewer: ViewerContext,
   scope?: FacetScope,
 ): Promise<FacetData> {
+  const approved = canSeePrices(viewer);
+  // Search-scoped facets have an unbounded key space — compute those live.
+  if (scope?.search) {
+    return loadFacetDataLive(approved, scope);
+  }
+  return loadFacetDataCached(approved, scope?.categoryId ?? null, scope?.brandIds ?? null);
+}
+
+/** The uncached fan-out (also the body the cache wraps). */
+async function loadFacetDataLive(
+  approved: boolean,
+  scope?: FacetScope,
+): Promise<FacetData> {
   const [brands, specs, stock, tags, priceBandBuckets] = await Promise.all([
     brandFacet(scope),
     specFacets(scope),
     stockFacet(scope),
     tagFacet(scope),
-    computePriceBands(viewer, scope),
+    // The viewer gate, applied BEFORE the cache boundary: price bands are
+    // computed only for the approved gate class, so a cached payload keyed
+    // approved=false can never contain a band/count/amount.
+    approved ? priceBandCounts(scope) : Promise.resolve(null),
   ]);
   return buildFacetData({ brands, specs, stock, tags, priceBandBuckets });
 }
+
+/**
+ * Data-cached facet fan-out (T: storefront perf). Facet counts are identical
+ * for EVERY visitor in the same gate class and only drift as the catalogue
+ * changes, yet they cost ~8 Mongo round-trips per category/brand/search view —
+ * a large slice of the per-request latency on the (force-dynamic) listing
+ * pages. Cached for 120s keyed on {gate class, category, brands}: counts may
+ * lag admin edits by up to 2 minutes, which is harmless for filter chips.
+ * NEVER keyed on user identity; the approved flag keeps priced payloads and
+ * gated payloads in separate cache entries.
+ */
+const loadFacetDataCached = unstable_cache(
+  async (
+    approved: boolean,
+    categoryId: string | null,
+    brandIds: string[] | null,
+  ): Promise<FacetData> =>
+    loadFacetDataLive(approved, {
+      categoryId: categoryId ?? undefined,
+      brandIds: brandIds ?? undefined,
+    }),
+  ["storefront-facets"],
+  { revalidate: 120 },
+);
 
 /** All valid preset band ids (mirrors the DAL's `PriceBandId`). */
 const PRICE_BAND_IDS = ["0-100", "100-500", "500-1000", "1000+"] as const;

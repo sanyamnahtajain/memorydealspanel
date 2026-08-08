@@ -362,7 +362,18 @@ export async function computePriceBands(
 ): Promise<PriceBandBucket[] | null> {
   // THE GATE. Non-approved viewers get null — no band data, no prices.
   if (!canSeePrices(viewer)) return null;
+  return priceBandCounts(scope);
+}
 
+/**
+ * The UNGATED band computation. Callers MUST apply the viewer gate first
+ * (computePriceBands above, or the cached facet loader keyed on the approved
+ * flag) — this exists so the data-cache layer can key on `approved: boolean`
+ * instead of a viewer object.
+ */
+export async function priceBandCounts(
+  scope?: FacetScope,
+): Promise<PriceBandBucket[]> {
   const base = scopedWhere(scope);
   const counts = await Promise.all(
     PRICE_BANDS.map((b) => {
