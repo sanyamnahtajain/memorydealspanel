@@ -241,9 +241,15 @@ export default async function ProductDetailPage({ params }: PageParams) {
       ) : null}
 
       {product.description ? (
-        <p className="text-sm leading-relaxed text-foreground/80">
-          {product.description}
-        </p>
+        // Description BOX (owner note): a titled card, with the admin's typed
+        // line breaks preserved (whitespace-pre-line) instead of collapsing
+        // into one paragraph.
+        <section className="rounded-xl border border-border bg-muted/30 p-4">
+          <h2 className="text-sm font-semibold text-foreground">Description</h2>
+          <p className="mt-2 text-sm leading-relaxed whitespace-pre-line text-foreground/80">
+            {product.description}
+          </p>
+        </section>
       ) : null}
 
       <SpecSection specs={product.specs} />
