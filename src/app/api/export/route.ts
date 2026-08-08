@@ -6,6 +6,7 @@ import {
   workbookToCsv,
   workbookToXlsx,
 } from "@/server/actions/export";
+import { beautifyXlsx } from "@/server/services/xlsx-friendly";
 
 /**
  * GET /api/export — download the full catalog.
@@ -44,10 +45,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const { workbook } = await buildCatalogWorkbook();
     const filename = `memorydeals-catalog-${todayStamp()}.${format}`;
 
-    const body =
+    // XLSX gets the friendly-editing pass (frozen header, autofilter, widths,
+    // enum dropdowns) so export → edit → re-import is painless. CSV untouched.
+    const body: BodyInit =
       format === "csv"
         ? workbookToCsv(workbook)
-        : new Uint8Array(workbookToXlsx(workbook));
+        : Buffer.from(await beautifyXlsx(new Uint8Array(workbookToXlsx(workbook))));
 
     return new NextResponse(body, {
       status: 200,

@@ -9,6 +9,7 @@ import { assertAdmin, isForbiddenError } from "@/server/dal/guard";
 import { assertPermission } from "@/server/auth/require-permission";
 import { PERMISSIONS } from "@/lib/permissions";
 import { writeAudit } from "@/server/security/audit";
+import { beautifyXlsx } from "@/server/services/xlsx-friendly";
 import {
   parseWorkbook,
   autoMapColumns,
@@ -332,7 +333,9 @@ export async function downloadTemplate(): Promise<ActionResult<TemplateFile>> {
     assertAdmin(viewer);
     await assertPermission(viewer, PERMISSIONS.IMPORT_RUN);
 
-    const bytes = buildTemplateWorkbook();
+    // Friendly editing pass: frozen bold header, autofilter, widths, and
+    // dropdown pick-lists for Stock status / Status / Tax inclusive.
+    const bytes = await beautifyXlsx(buildTemplateWorkbook());
     return {
       ok: true,
       filename: "memorydeals-import-template.xlsx",
