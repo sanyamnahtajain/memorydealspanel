@@ -301,3 +301,32 @@
   transition-timing-function: var(--ease-spring);
   transition-duration: var(--dur-slow);
 }
+
+/* Bulk-edit grid scroller (DealSheet): keep BOTH scrollbars permanently
+   visible and easy to grab. macOS overlay scrollbars auto-hide, which made
+   the wide sheet feel unscrollable — a spreadsheet needs its rails. */
+[data-grid-scroll] {
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: var(--color-border) transparent;
+}
+[data-grid-scroll]::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+[data-grid-scroll]::-webkit-scrollbar-track {
+  background: transparent;
+}
+[data-grid-scroll]::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+[data-grid-scroll]::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted-foreground);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+[data-grid-scroll]::-webkit-scrollbar-corner {
+  background: transparent;
+}

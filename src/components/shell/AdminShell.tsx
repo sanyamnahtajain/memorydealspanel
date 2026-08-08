@@ -46,6 +46,15 @@ export interface AdminShellProps {
   onNotificationsClick?: () => void
   /** Badge counts keyed by nav href, e.g. `{ "/admin/requests": 5 }`. */
   badges?: NavBadges
+  /**
+   * Fill mode: the content wrapper becomes a viewport-height flex column so a
+   * full-bleed child (the bulk-edit spreadsheet) can own its OWN scrolling —
+   * the grid's sticky header stays put and its horizontal scrollbar sits at
+   * the bottom of the screen instead of the bottom of a long document.
+   * Content TALLER than the viewport (the mobile card editor) still
+   * page-scrolls as before, because `main` keeps `overflow-y-auto`.
+   */
+  fill?: boolean
 }
 
 /**
@@ -69,6 +78,7 @@ export function AdminShell({
   notificationCount,
   onNotificationsClick,
   badges,
+  fill = false,
 }: AdminShellProps) {
   const pathname = usePathname()
   const reducedMotion = useReducedMotion()
@@ -214,7 +224,14 @@ export function AdminShell({
           data-scroll-container
           className="flex-1 overflow-y-auto overscroll-contain"
         >
-          <div className="mx-auto w-full max-w-7xl px-4 pt-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:px-6 md:pt-6 md:pb-8">
+          <div
+            className={cn(
+              "mx-auto w-full max-w-7xl px-4 pt-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:px-6 md:pt-6 md:pb-8",
+              // Fill mode: pass the viewport height down so a spreadsheet child
+              // can flex to exactly the visible area and own its scrolling.
+              fill && "flex h-full min-h-0 flex-col md:pb-4",
+            )}
+          >
             {children}
           </div>
         </main>

@@ -43,9 +43,13 @@ export default async function AdminProductsGridPage() {
   // Stream: the shell + header paint immediately; the (large) catalog read
   // streams into the Suspense boundary behind a spreadsheet skeleton, so
   // navigating to Bulk edit is instant instead of freezing on the prior page.
+  // `fill` + the flex column below pin the grid to exactly the visible area:
+  // the sheet owns its scrolling (sticky header always in view, horizontal
+  // scrollbar at the bottom of the SCREEN), instead of growing content-tall
+  // and pushing both to the bottom of a very long page.
   return (
-    <AdminShell title="Bulk edit">
-      <div className="space-y-6">
+    <AdminShell title="Bulk edit" fill>
+      <div className="flex h-full min-h-0 flex-col gap-4">
         <PageHeader
           title="Bulk edit"
           description="Spreadsheet editing across your catalog. Changes autosave."
@@ -57,9 +61,11 @@ export default async function AdminProductsGridPage() {
           }
         />
 
-        <Suspense fallback={<GridSkeleton />}>
-          <GridData viewer={viewer} />
-        </Suspense>
+        <div className="min-h-0 flex-1">
+          <Suspense fallback={<GridSkeleton />}>
+            <GridData viewer={viewer} />
+          </Suspense>
+        </div>
       </div>
     </AdminShell>
   );

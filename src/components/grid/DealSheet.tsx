@@ -277,6 +277,10 @@ export function DealSheet<Row extends GridRow = GridRow>({
         aria-colcount={viewColumns.length}
         tabIndex={0}
         onKeyDown={onKeyDown}
+        // data-grid-scroll: always-visible themed scrollbars (globals.css) —
+        // macOS overlay scrollbars otherwise hide the horizontal one entirely,
+        // which made wide sheets feel unscrollable.
+        data-grid-scroll
         className="relative min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
       >
         {/* Sizing surface: header + body share one wide, tall canvas. */}
