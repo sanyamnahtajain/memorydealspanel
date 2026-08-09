@@ -96,6 +96,24 @@ export async function createSession(
   const ttl = subject.kind === "admin" ? ADMIN_TTL_MS : CUSTOMER_TTL_MS;
   const expiresAt = new Date(Date.now() + ttl);
 
+  // SINGLE ACTIVE SESSION: a new login revokes every other live session for
+  // this principal — the newest device wins and the older one is signed out on
+  // its next request. Revoked (not deleted) so the admin Sessions viewer keeps
+  // its audit trail. Runs BEFORE the new row is created, so a crash between
+  // the two steps can never leave two live sessions.
+  await prisma.session.updateMany({
+    where: {
+      ...(subject.kind === "admin"
+        ? { adminId: subject.adminId }
+        : { customerId: subject.customerId }),
+      // Mongo: an omitted optional column is ABSENT, not null — match both so
+      // rows created before this feature (no revokedAt key) are also revoked.
+      OR: [{ revokedAt: null }, { revokedAt: { isSet: false } }],
+      expiresAt: { gt: new Date() },
+    },
+    data: { revokedAt: new Date() },
+  });
+
   await prisma.session.create({
     data: {
       tokenHash,
@@ -104,6 +122,8 @@ export async function createSession(
       customerId: subject.kind === "customer" ? subject.customerId : null,
       ipAddress: normalizeContextValue(context?.ipAddress, 100),
       userAgent: normalizeContextValue(context?.userAgent, 512),
+      // Explicit null (not absent) so `revokedAt: null` filters match on Mongo.
+      revokedAt: null,
     },
   });
 
