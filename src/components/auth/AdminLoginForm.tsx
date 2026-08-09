@@ -6,6 +6,7 @@ import { Loader2, LockKeyhole, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { ScaleTap } from "@/components/motion/primitives";
 
@@ -160,10 +161,9 @@ export function AdminLoginForm({
             <Label htmlFor="admin-password" className="text-foreground/80">
               Password
             </Label>
-            <Input
+            <PasswordInput
               id="admin-password"
               name="password"
-              type="password"
               autoComplete="current-password"
               required
               value={password}
