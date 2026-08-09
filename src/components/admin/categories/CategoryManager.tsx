@@ -34,6 +34,8 @@ export interface CategoryChild {
   defaultHsnCode: string | null;
   /** GST default rate in basis points (null = none). */
   defaultGstRateBps: number | null;
+  /** Whether products here require a per-model breakdown by default. */
+  defaultAllocationOn: boolean;
 }
 
 export interface CategoryNode extends Omit<CategoryChild, "parentId"> {
@@ -264,6 +266,10 @@ export function CategoryManager({
             defaultGstRateBps,
           }
         : {};
+      // Allocation default is independent of the GST kill-switch.
+      const defaultAllocation = values.allocationDefaultOn
+        ? { kind: "DEVICE_MODEL" as const, required: true, modelIds: [] }
+        : null;
 
       if (dialog.mode === "edit") {
         const result = await updateCategoryAction({
@@ -272,6 +278,7 @@ export function CategoryManager({
             name: values.name,
             image: values.image,
             status: values.status,
+            defaultAllocation,
             ...taxFields,
           },
         });
@@ -284,6 +291,7 @@ export function CategoryManager({
           name: values.name,
           image: values.image ?? undefined,
           status: values.status,
+          defaultAllocation,
           ...taxFields,
           ...(parentId ? { parentId } : {}),
         });
@@ -453,6 +461,7 @@ export function CategoryManager({
                   dialog.target.defaultGstRateBps == null
                     ? null
                     : dialog.target.defaultGstRateBps / 100,
+                allocationDefaultOn: dialog.target.defaultAllocationOn,
               }
             : undefined
         }

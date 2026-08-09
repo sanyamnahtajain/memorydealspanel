@@ -116,6 +116,19 @@ export default async function EditProductPage({
 
   const profile = await getSellerTaxProfile();
 
+  // Names for the allocation allow-list chips (ids alone can't render).
+  const rawAllocation = parseAllocation(row.allocation);
+  const allocationModels =
+    rawAllocation && rawAllocation.modelIds.length > 0
+      ? (
+          await prisma.deviceModel.findMany({
+            where: { id: { in: rawAllocation.modelIds } },
+            select: { id: true, name: true },
+            orderBy: { name: "asc" },
+          })
+        ).map((m) => ({ id: m.id, name: m.name }))
+      : [];
+
   const priced = toPricedProduct(row);
   const product: EditorProduct = {
     id: priced.id,
@@ -173,7 +186,8 @@ export default async function EditProductPage({
           backLabel="Products"
         />
         <ProductEditorForm
-        initialAllocation={parseAllocation(row.allocation)}
+        initialAllocation={rawAllocation}
+        initialAllocationModels={allocationModels}
           product={product}
           tax={tax}
           brands={brands}

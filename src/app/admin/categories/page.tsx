@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import { prisma } from "@/server/db";
 import { getViewer } from "@/server/auth/viewer";
 import { isAdmin } from "@/server/types/viewer";
+import { parseAllocation } from "@/lib/allocation";
 import { getSellerTaxProfile } from "@/server/services/tax-profile";
 import { AdminShell } from "@/components/shell/AdminShell";
 import { PageHeader } from "@/components/common";
@@ -53,6 +54,7 @@ export default async function AdminCategoriesPage() {
         parentId: true,
         defaultHsnCode: true,
         defaultGstRateBps: true,
+        defaultAllocation: true,
         // Non-deleted products directly in this category.
         _count: {
           select: { products: { where: { deletedAt: null } } },
@@ -86,6 +88,7 @@ export default async function AdminCategoriesPage() {
       productCount: child._count.products,
       defaultHsnCode: child.defaultHsnCode ?? null,
       defaultGstRateBps: child.defaultGstRateBps ?? null,
+      defaultAllocationOn: parseAllocation(child.defaultAllocation)?.required ?? false,
     }));
     // Direct products + products in sub-categories, for the parent summary.
     const childProductTotal = children.reduce(
@@ -105,6 +108,7 @@ export default async function AdminCategoriesPage() {
       children,
       defaultHsnCode: root.defaultHsnCode ?? null,
       defaultGstRateBps: root.defaultGstRateBps ?? null,
+      defaultAllocationOn: parseAllocation(root.defaultAllocation)?.required ?? false,
     };
   });
 

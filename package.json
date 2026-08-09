@@ -12,7 +12,7 @@
     "test": "vitest",
     "test:run": "vitest run",
     "e2e": "playwright test",
-    "ci": "npm run typecheck && npm run lint && npm run test:run",
+    "ci": "npm run typecheck && npm run lint && vitest run --fileParallelism=false",
     "db:push": "prisma db push",
     "seed": "tsx prisma/seed.ts",
     "seed:prod": "tsx prisma/seed-prod.ts",

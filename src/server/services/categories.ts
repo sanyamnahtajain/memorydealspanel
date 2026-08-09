@@ -2,6 +2,8 @@ import { Prisma } from "@prisma/client";
 import type { EntityStatus } from "@/lib/schemas/shared";
 import { makeUniqueSlug } from "@/lib/slug";
 import { prisma } from "@/server/db";
+import { Prisma as PrismaRuntime } from "@prisma/client";
+import { parseAllocation, type Allocation } from "@/lib/allocation";
 
 /**
  * Category service layer — the single place that mutates categories.
@@ -30,6 +32,11 @@ export interface CategoryRecord {
   defaultHsnCode: string | null;
   /** GST default rate in basis points for this category (null = none). */
   defaultGstRateBps: number | null;
+  /**
+   * Default per-model allocation for products in this category (null = off).
+   * Products with their own allocation override this in either direction.
+   */
+  defaultAllocation: Allocation | null;
 }
 
 const CATEGORY_SELECT = {
@@ -42,6 +49,7 @@ const CATEGORY_SELECT = {
   parentId: true,
   defaultHsnCode: true,
   defaultGstRateBps: true,
+  defaultAllocation: true,
 } satisfies Prisma.CategorySelect;
 
 type CategoryRow = Prisma.CategoryGetPayload<{ select: typeof CATEGORY_SELECT }>;
@@ -57,6 +65,7 @@ function toRecord(row: CategoryRow): CategoryRecord {
     parentId: row.parentId ?? null,
     defaultHsnCode: row.defaultHsnCode ?? null,
     defaultGstRateBps: row.defaultGstRateBps ?? null,
+    defaultAllocation: parseAllocation(row.defaultAllocation),
   };
 }
 
@@ -89,6 +98,7 @@ export interface CreateCategoryData {
   parentId?: string | null;
   defaultHsnCode?: string | null;
   defaultGstRateBps?: number | null;
+  defaultAllocation?: Allocation | null;
 }
 
 /**
@@ -115,6 +125,10 @@ export async function createCategory(
       parentId,
       defaultHsnCode: data.defaultHsnCode ?? null,
       defaultGstRateBps: data.defaultGstRateBps ?? null,
+      defaultAllocation:
+        data.defaultAllocation === undefined || data.defaultAllocation === null
+          ? undefined
+          : (data.defaultAllocation as unknown as Prisma.InputJsonValue),
     },
     select: CATEGORY_SELECT,
   });
@@ -151,6 +165,7 @@ export interface UpdateCategoryData {
   parentId?: string | null;
   defaultHsnCode?: string | null;
   defaultGstRateBps?: number | null;
+  defaultAllocation?: Allocation | null;
 }
 
 /**
@@ -202,6 +217,11 @@ export async function updateCategory(
   }
   if (data.defaultGstRateBps !== undefined) {
     patch.defaultGstRateBps = data.defaultGstRateBps ?? null;
+  }
+  if (data.defaultAllocation !== undefined) {
+    // Present key writes the config; null clears it (Mongo Json: DbNull).
+    patch.defaultAllocation = (data.defaultAllocation ??
+      PrismaRuntime.DbNull) as Prisma.InputJsonValue;
   }
 
   const row = await prisma.category.update({

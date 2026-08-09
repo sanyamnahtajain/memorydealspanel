@@ -94,6 +94,7 @@ export async function createCategoryAction(
           status: data.status,
           defaultHsnCode: data.defaultHsnCode ?? null,
           defaultGstRateBps: data.defaultGstRateBps ?? null,
+          defaultAllocation: data.defaultAllocation ?? null,
         })
       : await createCategory({
           name: data.name,
@@ -103,6 +104,7 @@ export async function createCategoryAction(
           parentId: null,
           defaultHsnCode: data.defaultHsnCode ?? null,
           defaultGstRateBps: data.defaultGstRateBps ?? null,
+          defaultAllocation: data.defaultAllocation ?? null,
         });
 
     await writeAudit({

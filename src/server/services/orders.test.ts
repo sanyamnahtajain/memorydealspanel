@@ -122,6 +122,14 @@ async function addCartLine(
 
 beforeAll(async () => {
   await seedCategoryId();
+  // Pin the minimum order value OFF for this suite: the seed (and a dev DB an
+  // admin has touched) may carry ₹5,000, which would block every small-order
+  // placement below. The MOV describe block sets and resets its own values.
+  await prisma.storeSettings.upsert({
+    where: { key: "default" },
+    create: { key: "default", minOrderValuePaise: null },
+    update: { minOrderValuePaise: null },
+  });
 });
 
 afterEach(async () => {

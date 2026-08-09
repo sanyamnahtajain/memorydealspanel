@@ -41,7 +41,10 @@ import {
 } from "./SpecEditor";
 import { TagEditor } from "./TagEditor";
 import { ProductImagesField } from "./ProductImagesField";
-import { Switch } from "@/components/ui/switch";
+import {
+  AllocationField,
+  type AllocationModelRef,
+} from "./AllocationField";
 import type { Allocation } from "@/lib/allocation";
 import { VariantsSection } from "./variants";
 import { variantsActions as wiredVariantsActions } from "./variants/actions";
@@ -130,6 +133,8 @@ export interface ProductEditorFormProps {
   variantsActions?: VariantsActions;
   /** RAW allocation config (not the public projection) for the toggle. */
   initialAllocation?: Allocation | null;
+  /** Names for initialAllocation.modelIds, resolved server-side for the chips. */
+  initialAllocationModels?: AllocationModelRef[];
 }
 
 const STOCK_OPTIONS: { value: StockStatus; label: string }[] = [
@@ -250,17 +255,21 @@ export function ProductEditorForm({
   tax,
   variantsActions = wiredVariantsActions,
   initialAllocation = null,
+  initialAllocationModels = [],
 }: ProductEditorFormProps) {
   const router = useRouter();
   const isEdit = Boolean(product);
   const [state, setState] = React.useState<FormState>(() =>
     buildInitialState(product),
   );
-  // Allocation toggle: ON stores { required: true } (preserving any existing
-  // model restriction), OFF clears the override back to the category default.
+  // Allocation: ON stores { required: true, modelIds } (empty = all active
+  // models); OFF clears the override back to the category default.
   const [allocationOn, setAllocationOn] = React.useState(
     initialAllocation?.required ?? false,
   );
+  const [allocationModels, setAllocationModels] = React.useState<
+    AllocationModelRef[]
+  >(initialAllocationModels);
   const [pending, setPending] = React.useState(false);
   const [fieldError, setFieldError] = React.useState<string | null>(null);
 
@@ -367,7 +376,7 @@ export function ProductEditorForm({
         ? {
             kind: "DEVICE_MODEL" as const,
             required: true,
-            modelIds: initialAllocation?.modelIds ?? [],
+            modelIds: allocationModels.map((m) => m.id),
           }
         : null,
       stockStatus: state.stockStatus,
@@ -754,23 +763,13 @@ export function ProductEditorForm({
           title="Model allocation"
           description="Ask buyers to split the quantity across device models (e.g. tempered glass: 10 × Realme 11, 10 × S23 Ultra)."
         >
-          <label className="flex items-center justify-between gap-4 rounded-lg border border-border px-3 py-2.5">
-            <span className="text-sm">
-              <span className="font-medium text-foreground">
-                Require a per-model breakdown
-              </span>
-              <span className="mt-0.5 block text-xs text-muted-foreground">
-                Buyers pick models from the master list (Admin → Models) and set
-                a quantity for each; the cart line total follows the split.
-              </span>
-            </span>
-            <Switch
-              checked={allocationOn}
-              onCheckedChange={setAllocationOn}
-              disabled={pending}
-              aria-label="Require a per-model breakdown"
-            />
-          </label>
+          <AllocationField
+            enabled={allocationOn}
+            onEnabledChange={setAllocationOn}
+            models={allocationModels}
+            onModelsChange={setAllocationModels}
+            disabled={pending}
+          />
         </Section>
       </FadeUp>
 

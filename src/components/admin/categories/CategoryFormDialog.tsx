@@ -24,6 +24,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { Switch } from "@/components/ui/switch";
 import { useIsMobile } from "@/components/common";
 import { createCategoryImageUploadTargetAction } from "@/server/actions/categories";
 
@@ -35,6 +36,8 @@ export interface CategoryFormValues {
   defaultHsnCode: string | null;
   /** Default GST rate as a PERCENT (e.g. 18), or null when unset. */
   defaultGstRatePercent: number | null;
+  /** Default per-model breakdown requirement for products in this category. */
+  allocationDefaultOn: boolean;
 }
 
 interface CategoryFormDialogProps {
@@ -161,6 +164,9 @@ function CategoryFormBody({
       ? String(initial.defaultGstRatePercent)
       : "",
   );
+  const [allocationOn, setAllocationOn] = React.useState(
+    initial?.allocationDefaultOn ?? false,
+  );
   const [error, setError] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
@@ -232,6 +238,7 @@ function CategoryFormBody({
         status,
         defaultHsnCode,
         defaultGstRatePercent,
+        allocationDefaultOn: allocationOn,
       });
       if (result) {
         setError(result);
@@ -357,6 +364,27 @@ function CategoryFormBody({
           />
         </div>
       </div>
+
+      {/* Default per-model allocation for products in this category. A
+          product's own setting overrides in either direction. */}
+      <label className="flex items-center justify-between gap-4 rounded-lg border border-border px-3 py-2.5">
+        <span className="text-sm">
+          <span className="font-medium text-foreground">
+            Require per-model breakdown by default
+          </span>
+          <span className="mt-0.5 block text-xs text-muted-foreground">
+            Products in this category ask buyers to split quantities across
+            device models (e.g. tempered glass). Individual products can
+            override this.
+          </span>
+        </span>
+        <Switch
+          checked={allocationOn}
+          onCheckedChange={setAllocationOn}
+          disabled={busy}
+          aria-label="Require per-model breakdown by default"
+        />
+      </label>
 
       {showTaxDefaults ? (
         <div className="grid grid-cols-2 gap-3">

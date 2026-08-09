@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { entityStatusSchema, objectIdSchema } from "./shared";
 import { gstRateBpsSchema, hsnCodeSchema } from "./product";
+import { allocationSchema } from "@/lib/allocation";
 
 // Core field definitions WITHOUT defaults, so that the update schema's
 // .partial() means "leave unchanged" rather than "reset to default".
@@ -14,6 +15,8 @@ const categoryCoreSchema = z.object({
   // fallback in the effective-tax chain; `null`/absent means "no default here".
   defaultHsnCode: hsnCodeSchema.nullish(),
   defaultGstRateBps: gstRateBpsSchema.nullish(),
+  // Default per-model allocation for products in this category.
+  defaultAllocation: allocationSchema.nullish(),
 });
 
 /**
