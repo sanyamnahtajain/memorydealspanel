@@ -388,6 +388,7 @@ export async function saveProductVariantsAction(
       price: v.price,
       mrp: v.mrp,
       moq: v.moq,
+      packMultiple: v.packMultiple,
       stockStatus: v.stockStatus,
       status: v.status,
       isDefault: v.isDefault,
@@ -405,8 +406,15 @@ export async function saveProductVariantsAction(
     if (isForbiddenError(error)) {
       return { ok: false, error: "You are not allowed to edit variants." };
     }
-    const message =
-      error instanceof Error ? error.message : "Could not save variants.";
-    return { ok: false, error: message };
+    if (isVariantServiceError(error)) {
+      return { ok: false, error: error.message };
+    }
+    if (error instanceof z.ZodError) {
+      // A raw ZodError .message is a JSON blob — surface the first issue as a
+      // human sentence instead ("sku is required", "price must be positive"…).
+      return { ok: false, error: error.issues[0]?.message ?? "Invalid input." };
+    }
+    console.error("[actions/variants] saveProductVariants failed:", error);
+    return { ok: false, error: "Could not save variants. Please try again." };
   }
 }

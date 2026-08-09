@@ -30,8 +30,15 @@ import { MongoMemoryReplSet } from "mongodb-memory-server";
 
 const SYSTEM_MONGOD = "/opt/homebrew/bin/mongod";
 const MIN_MAJOR_VERSION = 5;
-const PORT = Number(process.env.DEV_DB_PORT ?? 27717);
-const REPL_SET_NAME = "memorydeals-rs";
+// Port + replica-set name MUST match the DATABASE_URL in .env / .env.example
+// (27018 / rs0local — the same endpoint scripts/local-mongo.sh serves). They
+// used to differ (27717 / memorydeals-rs), which meant `npm run dev:db`
+// started a DB the app never connected to: every Prisma call — and most
+// visibly the variant editor's save — just hung until timeout.
+// NOTE: a replica-set config is bound to its host:port, so if .devdb was
+// created under the old port, delete .devdb/ once and re-run (disposable).
+const PORT = Number(process.env.DEV_DB_PORT ?? 27018);
+const REPL_SET_NAME = "rs0local";
 const DB_NAME = "memorydeals";
 const ROOT = path.resolve(__dirname, "..");
 const DATA_DIR = path.join(ROOT, ".devdb", "data");

@@ -81,6 +81,7 @@ const VARIANT_SELECT = {
   price: true,
   mrp: true,
   moq: true,
+  packMultiple: true,
   stockStatus: true,
   status: true,
   images: true,
@@ -104,6 +105,7 @@ export interface AdminVariant {
   price: number;
   mrp: number | null;
   moq: number | null;
+  packMultiple: number | null;
   stockStatus: StockStatus;
   status: EntityStatus;
   images: {
@@ -131,6 +133,7 @@ function toAdminVariant(row: VariantRow): AdminVariant {
     price: row.price,
     mrp: row.mrp ?? null,
     moq: row.moq ?? null,
+    packMultiple: row.packMultiple ?? null,
     stockStatus: row.stockStatus,
     status: row.status,
     images: (row.images ?? []).map((image: ProductImage) => ({
@@ -807,6 +810,7 @@ export interface SaveProductVariantsInput {
     price: number;
     mrp: number | null;
     moq: number | null;
+    packMultiple: number | null;
     stockStatus: StockStatus;
     status: EntityStatus;
     isDefault: boolean;
@@ -820,6 +824,17 @@ export interface SaveProductVariantsInput {
  * variant rows (create new, update existing, delete removed), guarantees a
  * default, and recomputes the product's "from" price. Returns the canonical
  * rows so the editor can reconcile optimistic state.
+ *
+ * VALIDATE-FIRST, WRITE-ATOMICALLY. Every row is validated in memory — axis
+ * coverage, in-batch combo/SKU uniqueness, then ONE batched global SKU probe —
+ * before anything is written, and the writes run inside a single transaction.
+ * The previous implementation wrote `hasVariants: true` first and then
+ * validated row by row, so one bad row (duplicate SKU, stale option value)
+ * left the product flagged as a variant product with a partial row set: the
+ * admin saw an error, and the storefront — which requires
+ * `hasVariants && variants.length > 0` with ACTIVE rows — showed nothing.
+ * It also ran a full `recomputeFrom` after every row (O(N²) queries); the
+ * recompute now runs exactly once, after the transaction.
  */
 export async function saveProductVariants(
   productId: string,
@@ -834,41 +849,116 @@ export async function saveProductVariants(
     return { variants: [], fromPrice: p?.price ?? null };
   }
 
-  // Turn variants on without seeding a throwaway variant (we're about to
-  // reconcile the real set), then persist the option axes.
-  await prisma.product.update({
-    where: { id: productId },
-    data: { hasVariants: true },
-  });
-  await setOptionTypes(productId, input.optionTypes);
+  await loadProductOrThrow(productId);
+  const axes = optionTypesSchema.parse(input.optionTypes);
 
-  const existing = await listVariants(productId);
-  const kept = new Set<string>();
-  for (const d of input.variants) {
-    const fields = {
+  /* ---- 1. Validate every row in memory — nothing written yet. ---- */
+  const seenCombos = new Set<string>();
+  const seenSkus = new Set<string>();
+  const rows = input.variants.map((d) => {
+    // createVariantSchema validates sku shape, positive paise, mrp >= price…
+    // for updates too — the matrix always sends complete rows.
+    const parsed = createVariantSchema.parse({
       sku: d.sku,
       optionValues: d.optionValues,
       price: d.price,
       mrp: d.mrp ?? undefined,
       moq: d.moq ?? undefined,
+      packMultiple: d.packMultiple ?? undefined,
       stockStatus: d.stockStatus,
       status: d.status,
       isDefault: d.isDefault,
       sortOrder: d.sortOrder,
-    };
-    const saved = d.id
-      ? await upsertVariant(productId, { ...fields, id: d.id })
-      : await upsertVariant(productId, fields as CreateVariantInput);
-    kept.add(saved.id);
-  }
-  for (const ex of existing) {
-    if (!kept.has(ex.id)) await deleteVariant(ex.id);
+    });
+    const optionValues = normaliseOptionValues(axes, parsed.optionValues);
+
+    const combo = comboKey(optionValues);
+    if (seenCombos.has(combo)) {
+      throw new VariantServiceError(
+        "DUPLICATE_COMBO",
+        "Two variants use the same option combination.",
+      );
+    }
+    seenCombos.add(combo);
+
+    const skuLower = parsed.sku.toLowerCase();
+    if (seenSkus.has(skuLower)) {
+      throw new VariantServiceError(
+        "DUPLICATE_SKU",
+        `SKU "${parsed.sku}" is used by more than one row.`,
+      );
+    }
+    seenSkus.add(skuLower);
+
+    return { id: d.id, ...parsed, optionValues };
+  });
+
+  /* ---- 2. One batched global SKU probe (was 2 queries per row). ---- */
+  const ownIds = rows.flatMap((r) => (r.id ? [r.id] : []));
+  const skuFilters = rows.map((r) => ({
+    sku: { equals: r.sku, mode: "insensitive" as const },
+  }));
+  if (skuFilters.length > 0) {
+    const [productHits, variantHits] = await Promise.all([
+      prisma.product.findMany({
+        where: { OR: skuFilters },
+        select: { sku: true },
+      }),
+      prisma.productVariant.findMany({
+        where: { OR: skuFilters, id: { notIn: ownIds } },
+        select: { sku: true },
+      }),
+    ]);
+    const taken = new Set(
+      [...productHits, ...variantHits].map((h) => h.sku.toLowerCase()),
+    );
+    const clash = rows.find((r) => taken.has(r.sku.toLowerCase()));
+    if (clash) {
+      throw new VariantServiceError(
+        "DUPLICATE_SKU",
+        `SKU "${clash.sku}" is already in use.`,
+      );
+    }
   }
 
-  const after = await listVariants(productId);
-  if (after.length > 0 && !after.some((v) => v.isDefault)) {
-    await setDefaultVariant(after[0]!.id);
-  }
+  /* ---- 3. Atomic write: all rows land, or none do. ---- */
+  await prisma.$transaction(async (tx) => {
+    await tx.product.update({
+      where: { id: productId },
+      data: {
+        hasVariants: true,
+        optionTypes: axes as unknown as Prisma.InputJsonValue,
+      },
+    });
+    await tx.productVariant.deleteMany({
+      where: { productId, id: { notIn: ownIds } },
+    });
+    for (const r of rows) {
+      const data = {
+        sku: r.sku,
+        optionValues: r.optionValues as unknown as Prisma.InputJsonValue,
+        price: r.price,
+        mrp: r.mrp ?? null,
+        moq: r.moq ?? null,
+        packMultiple: r.packMultiple ?? null,
+        stockStatus: r.stockStatus,
+        status: r.status,
+        isDefault: r.isDefault,
+        sortOrder: r.sortOrder,
+      };
+      if (r.id) {
+        // Never touch images here — the matrix doesn't edit them.
+        await tx.productVariant.update({ where: { id: r.id }, data });
+      } else {
+        await tx.productVariant.create({
+          data: { ...data, productId, images: [] },
+        });
+      }
+    }
+  });
+
+  // One recompute for the whole batch: FROM price/stock + exactly one default.
+  await recomputeFrom(productId);
 
   const finalVariants = await listVariants(productId);
   const p = await prisma.product.findUnique({

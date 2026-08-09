@@ -8,6 +8,7 @@ import {
   generateMatrix,
   isVariantServiceError,
   listVariants,
+  saveProductVariants,
   setDefaultVariant,
   setOptionTypes,
   setVariantStatus,
@@ -428,5 +429,203 @@ describe("deleteVariant + setDefaultVariant", () => {
     const defaults = rows.filter((v) => v.isDefault);
     expect(defaults).toHaveLength(1);
     expect(defaults[0].id).toBe(target.id);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* saveProductVariants — the editor's batched save                     */
+/* ------------------------------------------------------------------ */
+
+describe("saveProductVariants (batched editor save)", () => {
+  const AXES = [{ name: "Capacity", values: ["10000mAh", "20000mAh"] }];
+
+  function draft(
+    sku: string,
+    capacity: string,
+    price: number,
+    extra?: Partial<{
+      id: string | null;
+      mrp: number | null;
+      moq: number | null;
+      isDefault: boolean;
+      sortOrder: number;
+    }>,
+  ) {
+    return {
+      id: extra?.id ?? null,
+      optionValues: { Capacity: capacity },
+      sku,
+      price,
+      mrp: extra?.mrp ?? null,
+      moq: extra?.moq ?? null,
+      packMultiple: null,
+      stockStatus: "IN_STOCK" as const,
+      status: "ACTIVE" as const,
+      isDefault: extra?.isDefault ?? false,
+      sortOrder: extra?.sortOrder ?? 0,
+    };
+  }
+
+  it("creates the full set atomically and recomputes the FROM facet", async () => {
+    const product = await makeProduct({ price: 999999 });
+    const a = uniqueSku("SPV-A");
+    const b = uniqueSku("SPV-B");
+
+    const result = await saveProductVariants(product.id, {
+      hasVariants: true,
+      optionTypes: AXES,
+      variants: [
+        draft(a, "10000mAh", 50000),
+        draft(b, "20000mAh", 80000, { sortOrder: 1 }),
+      ],
+    });
+
+    expect(result.variants).toHaveLength(2);
+    expect(result.fromPrice).toBe(50000);
+    const row = await prisma.product.findUnique({
+      where: { id: product.id },
+      select: { hasVariants: true, price: true },
+    });
+    expect(row?.hasVariants).toBe(true);
+    expect(row?.price).toBe(50000); // FROM = min active variant
+    // Exactly one default — the min-price row.
+    const defaults = result.variants.filter((v) => v.isDefault);
+    expect(defaults).toHaveLength(1);
+    expect(defaults[0].price).toBe(50000);
+  });
+
+  it("is atomic: one bad row leaves the product completely untouched", async () => {
+    const product = await makeProduct({ price: 777777 });
+
+    await expect(
+      saveProductVariants(product.id, {
+        hasVariants: true,
+        optionTypes: AXES,
+        variants: [
+          draft(uniqueSku("SPV-OK"), "10000mAh", 50000),
+          // Invalid: value not on the axis → whole save must be rejected.
+          draft(uniqueSku("SPV-BAD"), "99999mAh", 60000),
+        ],
+      }),
+    ).rejects.toSatisfy(
+      (e) => isVariantServiceError(e) && e.code === "INVALID_OPTION_VALUES",
+    );
+
+    const row = await prisma.product.findUnique({
+      where: { id: product.id },
+      select: { hasVariants: true, price: true },
+    });
+    // The old implementation left hasVariants=true with 0..k rows here — the
+    // exact partial state that made products vanish from the storefront.
+    expect(row?.hasVariants).toBe(false);
+    expect(row?.price).toBe(777777);
+    const count = await prisma.productVariant.count({
+      where: { productId: product.id },
+    });
+    expect(count).toBe(0);
+  });
+
+  it("rejects an in-batch duplicate SKU before writing anything", async () => {
+    const product = await makeProduct();
+    const dup = uniqueSku("SPV-DUP");
+
+    await expect(
+      saveProductVariants(product.id, {
+        hasVariants: true,
+        optionTypes: AXES,
+        variants: [
+          draft(dup, "10000mAh", 50000),
+          draft(dup, "20000mAh", 60000),
+        ],
+      }),
+    ).rejects.toSatisfy(
+      (e) => isVariantServiceError(e) && e.code === "DUPLICATE_SKU",
+    );
+
+    expect(
+      await prisma.productVariant.count({ where: { productId: product.id } }),
+    ).toBe(0);
+  });
+
+  it("allows two rows to swap option values in a single save", async () => {
+    const product = await makeProduct();
+    const a = uniqueSku("SPV-SWAP-A");
+    const b = uniqueSku("SPV-SWAP-B");
+
+    const first = await saveProductVariants(product.id, {
+      hasVariants: true,
+      optionTypes: AXES,
+      variants: [
+        draft(a, "10000mAh", 50000),
+        draft(b, "20000mAh", 60000, { sortOrder: 1 }),
+      ],
+    });
+    const [ra, rb] = first.variants;
+
+    // Swap the combos between the two persisted rows. The per-row upsert
+    // implementation used to reject this as DUPLICATE_COMBO because it
+    // compared against not-yet-updated siblings.
+    const swapped = await saveProductVariants(product.id, {
+      hasVariants: true,
+      optionTypes: AXES,
+      variants: [
+        draft(ra.sku, "20000mAh", ra.price, { id: ra.id }),
+        draft(rb.sku, "10000mAh", rb.price, { id: rb.id, sortOrder: 1 }),
+      ],
+    });
+
+    const byId = new Map(swapped.variants.map((v) => [v.id, v]));
+    expect(byId.get(ra.id)?.optionValues).toEqual({ Capacity: "20000mAh" });
+    expect(byId.get(rb.id)?.optionValues).toEqual({ Capacity: "10000mAh" });
+  });
+
+  it("deletes rows omitted from the batch", async () => {
+    const product = await makeProduct();
+    const a = uniqueSku("SPV-KEEP");
+    const b = uniqueSku("SPV-DROP");
+
+    const first = await saveProductVariants(product.id, {
+      hasVariants: true,
+      optionTypes: AXES,
+      variants: [
+        draft(a, "10000mAh", 50000),
+        draft(b, "20000mAh", 60000, { sortOrder: 1 }),
+      ],
+    });
+    const keep = first.variants.find((v) => v.sku === a)!;
+
+    const second = await saveProductVariants(product.id, {
+      hasVariants: true,
+      optionTypes: AXES,
+      variants: [draft(keep.sku, "10000mAh", keep.price, { id: keep.id })],
+    });
+
+    expect(second.variants).toHaveLength(1);
+    expect(second.variants[0].id).toBe(keep.id);
+    expect(
+      await prisma.productVariant.count({ where: { productId: product.id } }),
+    ).toBe(1);
+  });
+
+  it("hasVariants=false disables and returns the base price", async () => {
+    const product = await makeProduct({ price: 424242 });
+    await saveProductVariants(product.id, {
+      hasVariants: true,
+      optionTypes: AXES,
+      variants: [draft(uniqueSku("SPV-OFF"), "10000mAh", 50000)],
+    });
+
+    const off = await saveProductVariants(product.id, {
+      hasVariants: false,
+      optionTypes: [],
+      variants: [],
+    });
+
+    expect(off.variants).toHaveLength(0);
+    const row = await prisma.product.findUnique({
+      where: { id: product.id },
+      select: { hasVariants: true },
+    });
+    expect(row?.hasVariants).toBe(false);
   });
 });
