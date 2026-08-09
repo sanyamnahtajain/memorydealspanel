@@ -1,0 +1,644 @@
+Apple | iPhone 12
+Apple | iPhone 12 mini
+Apple | iPhone 12 Pro
+Apple | iPhone 12 Pro Max
+Apple | iPhone 13
+Apple | iPhone 13 mini
+Apple | iPhone 13 Pro
+Apple | iPhone 13 Pro Max
+Apple | iPhone SE (2022)
+Apple | iPhone 14
+Apple | iPhone 14 Plus
+Apple | iPhone 14 Pro
+Apple | iPhone 14 Pro Max
+Apple | iPhone 15
+Apple | iPhone 15 Plus
+Apple | iPhone 15 Pro
+Apple | iPhone 15 Pro Max
+Apple | iPhone 16
+Apple | iPhone 16 Plus
+Apple | iPhone 16 Pro
+Apple | iPhone 16 Pro Max
+Apple | iPhone 16e
+Apple | iPhone 17
+Apple | iPhone 17 Pro
+Apple | iPhone 17 Pro Max
+Apple | iPhone Air
+Samsung | Galaxy S21
+Samsung | Galaxy S21+
+Samsung | Galaxy S21 Ultra
+Samsung | Galaxy S21 FE 5G
+Samsung | Galaxy S22
+Samsung | Galaxy S22+
+Samsung | Galaxy S22 Ultra
+Samsung | Galaxy S23
+Samsung | Galaxy S23+
+Samsung | Galaxy S23 Ultra
+Samsung | Galaxy S23 FE
+Samsung | Galaxy S24
+Samsung | Galaxy S24+
+Samsung | Galaxy S24 Ultra
+Samsung | Galaxy S24 FE
+Samsung | Galaxy S25
+Samsung | Galaxy S25+
+Samsung | Galaxy S25 Ultra
+Samsung | Galaxy S25 Edge
+Samsung | Galaxy Z Fold3
+Samsung | Galaxy Z Fold4
+Samsung | Galaxy Z Fold5
+Samsung | Galaxy Z Fold6
+Samsung | Galaxy Z Fold7
+Samsung | Galaxy Z Flip3
+Samsung | Galaxy Z Flip4
+Samsung | Galaxy Z Flip5
+Samsung | Galaxy Z Flip6
+Samsung | Galaxy Z Flip7
+Samsung | Galaxy A03
+Samsung | Galaxy A03s
+Samsung | Galaxy A03 Core
+Samsung | Galaxy A04
+Samsung | Galaxy A04e
+Samsung | Galaxy A04s
+Samsung | Galaxy A05
+Samsung | Galaxy A05s
+Samsung | Galaxy A06
+Samsung | Galaxy A06 5G
+Samsung | Galaxy A13
+Samsung | Galaxy A13 5G
+Samsung | Galaxy A14
+Samsung | Galaxy A14 5G
+Samsung | Galaxy A15 5G
+Samsung | Galaxy A16 5G
+Samsung | Galaxy A17 5G
+Samsung | Galaxy A22
+Samsung | Galaxy A22 5G
+Samsung | Galaxy A23
+Samsung | Galaxy A23 5G
+Samsung | Galaxy A24
+Samsung | Galaxy A25 5G
+Samsung | Galaxy A26 5G
+Samsung | Galaxy A32
+Samsung | Galaxy A33 5G
+Samsung | Galaxy A34 5G
+Samsung | Galaxy A35 5G
+Samsung | Galaxy A36 5G
+Samsung | Galaxy A52
+Samsung | Galaxy A52s 5G
+Samsung | Galaxy A53 5G
+Samsung | Galaxy A54 5G
+Samsung | Galaxy A55 5G
+Samsung | Galaxy A56 5G
+Samsung | Galaxy A72
+Samsung | Galaxy A73 5G
+Samsung | Galaxy M12
+Samsung | Galaxy M13
+Samsung | Galaxy M13 5G
+Samsung | Galaxy M14 5G
+Samsung | Galaxy M15 5G
+Samsung | Galaxy M16 5G
+Samsung | Galaxy M21 2021
+Samsung | Galaxy M32
+Samsung | Galaxy M32 5G
+Samsung | Galaxy M33 5G
+Samsung | Galaxy M34 5G
+Samsung | Galaxy M35 5G
+Samsung | Galaxy M36 5G
+Samsung | Galaxy M42 5G
+Samsung | Galaxy M52 5G
+Samsung | Galaxy M53 5G
+Samsung | Galaxy M54 5G
+Samsung | Galaxy M55 5G
+Samsung | Galaxy M55s 5G
+Samsung | Galaxy M56 5G
+Samsung | Galaxy M62
+Samsung | Galaxy F05
+Samsung | Galaxy F06 5G
+Samsung | Galaxy F12
+Samsung | Galaxy F13
+Samsung | Galaxy F14 5G
+Samsung | Galaxy F15 5G
+Samsung | Galaxy F16 5G
+Samsung | Galaxy F22
+Samsung | Galaxy F23 5G
+Samsung | Galaxy F34 5G
+Samsung | Galaxy F54 5G
+Samsung | Galaxy F55 5G
+Samsung | Galaxy F62
+Xiaomi | Xiaomi Mi 11 Ultra
+Xiaomi | Xiaomi Mi 11X
+Xiaomi | Xiaomi Mi 11X Pro
+Xiaomi | Xiaomi Mi 11 Lite
+Xiaomi | Xiaomi 11 Lite NE 5G
+Xiaomi | Xiaomi 11i
+Xiaomi | Xiaomi 11i HyperCharge
+Xiaomi | Xiaomi 11T Pro
+Xiaomi | Xiaomi 12 Pro
+Xiaomi | Xiaomi 13 Pro
+Xiaomi | Xiaomi 14
+Xiaomi | Xiaomi 14 Ultra
+Xiaomi | Xiaomi 14 CIVI
+Xiaomi | Xiaomi 15
+Xiaomi | Xiaomi 15 Ultra
+Redmi | Redmi 10
+Redmi | Redmi 10A
+Redmi | Redmi 10 Prime
+Redmi | Redmi 10 Power
+Redmi | Redmi 11 Prime
+Redmi | Redmi 11 Prime 5G
+Redmi | Redmi 12
+Redmi | Redmi 12 5G
+Redmi | Redmi 12C
+Redmi | Redmi 13 5G
+Redmi | Redmi 13C
+Redmi | Redmi 13C 5G
+Redmi | Redmi 14C 5G
+Redmi | Redmi A1
+Redmi | Redmi A1+
+Redmi | Redmi A2
+Redmi | Redmi A2+
+Redmi | Redmi A3
+Redmi | Redmi A3X
+Redmi | Redmi A4 5G
+Redmi | Redmi A5
+Redmi | Redmi Note 10
+Redmi | Redmi Note 10S
+Redmi | Redmi Note 10 Pro
+Redmi | Redmi Note 10 Pro Max
+Redmi | Redmi Note 10T 5G
+Redmi | Redmi Note 11
+Redmi | Redmi Note 11S
+Redmi | Redmi Note 11T 5G
+Redmi | Redmi Note 11 Pro
+Redmi | Redmi Note 11 Pro+ 5G
+Redmi | Redmi Note 12
+Redmi | Redmi Note 12 5G
+Redmi | Redmi Note 12 Pro 5G
+Redmi | Redmi Note 12 Pro+ 5G
+Redmi | Redmi Note 13
+Redmi | Redmi Note 13 5G
+Redmi | Redmi Note 13 Pro 5G
+Redmi | Redmi Note 13 Pro+ 5G
+Redmi | Redmi Note 14 5G
+Redmi | Redmi Note 14 Pro 5G
+Redmi | Redmi Note 14 Pro+ 5G
+Poco | Poco C31
+Poco | Poco C50
+Poco | Poco C51
+Poco | Poco C55
+Poco | Poco C61
+Poco | Poco C65
+Poco | Poco C71
+Poco | Poco C75 5G
+Poco | Poco M3
+Poco | Poco M3 Pro 5G
+Poco | Poco M4 Pro
+Poco | Poco M4 Pro 5G
+Poco | Poco M4 5G
+Poco | Poco M5
+Poco | Poco M6 5G
+Poco | Poco M6 Pro 5G
+Poco | Poco M6 Plus 5G
+Poco | Poco M7 5G
+Poco | Poco M7 Pro 5G
+Poco | Poco X3 Pro
+Poco | Poco X4 Pro 5G
+Poco | Poco X5 5G
+Poco | Poco X5 Pro 5G
+Poco | Poco X6 5G
+Poco | Poco X6 Pro 5G
+Poco | Poco X6 Neo 5G
+Poco | Poco X7 5G
+Poco | Poco X7 Pro 5G
+Poco | Poco F3 GT
+Poco | Poco F4 5G
+Poco | Poco F5 5G
+Poco | Poco F6 5G
+Poco | Poco F7 5G
+Poco | Poco F7 Pro
+Poco | Poco F7 Ultra
+Realme | Realme 8
+Realme | Realme 8 5G
+Realme | Realme 8 Pro
+Realme | Realme 8i
+Realme | Realme 8s 5G
+Realme | Realme 9
+Realme | Realme 9 5G
+Realme | Realme 9 5G SE
+Realme | Realme 9i
+Realme | Realme 9i 5G
+Realme | Realme 9 Pro
+Realme | Realme 9 Pro+
+Realme | Realme 10
+Realme | Realme 10 Pro 5G
+Realme | Realme 10 Pro+ 5G
+Realme | Realme 11 5G
+Realme | Realme 11 Pro 5G
+Realme | Realme 11 Pro+ 5G
+Realme | Realme 11x 5G
+Realme | Realme 12 5G
+Realme | Realme 12+ 5G
+Realme | Realme 12 Pro 5G
+Realme | Realme 12 Pro+ 5G
+Realme | Realme 12x 5G
+Realme | Realme 13 5G
+Realme | Realme 13+ 5G
+Realme | Realme 13 Pro 5G
+Realme | Realme 13 Pro+ 5G
+Realme | Realme 14 5G
+Realme | Realme 14 Pro 5G
+Realme | Realme 14 Pro+ 5G
+Realme | Realme 14x 5G
+Realme | Realme 15 5G
+Realme | Realme 15 Pro 5G
+Realme | Realme GT 5G
+Realme | Realme GT Master Edition
+Realme | Realme GT Neo 2
+Realme | Realme GT Neo 3
+Realme | Realme GT Neo 3T
+Realme | Realme GT 2
+Realme | Realme GT 2 Pro
+Realme | Realme GT 6
+Realme | Realme GT 6T
+Realme | Realme GT 7
+Realme | Realme GT 7T
+Realme | Realme GT 7 Pro
+Realme | Realme X7 Max 5G
+Realme | Realme Narzo 30
+Realme | Realme Narzo 30 5G
+Realme | Realme Narzo 30A
+Realme | Realme Narzo 30 Pro 5G
+Realme | Realme Narzo 50
+Realme | Realme Narzo 50 5G
+Realme | Realme Narzo 50A
+Realme | Realme Narzo 50A Prime
+Realme | Realme Narzo 50i
+Realme | Realme Narzo 50i Prime
+Realme | Realme Narzo 50 Pro 5G
+Realme | Realme Narzo 60 5G
+Realme | Realme Narzo 60 Pro 5G
+Realme | Realme Narzo 60x 5G
+Realme | Realme Narzo 70 5G
+Realme | Realme Narzo 70 Pro 5G
+Realme | Realme Narzo 70x 5G
+Realme | Realme Narzo 70 Turbo 5G
+Realme | Realme Narzo 80x 5G
+Realme | Realme Narzo 80 Pro 5G
+Realme | Realme C11 2021
+Realme | Realme C21
+Realme | Realme C21Y
+Realme | Realme C25
+Realme | Realme C25Y
+Realme | Realme C25s
+Realme | Realme C30
+Realme | Realme C30s
+Realme | Realme C31
+Realme | Realme C33
+Realme | Realme C35
+Realme | Realme C53
+Realme | Realme C55
+Realme | Realme C61
+Realme | Realme C63
+Realme | Realme C63 5G
+Realme | Realme C65 5G
+Realme | Realme C75 5G
+Realme | Realme P1 5G
+Realme | Realme P1 Pro 5G
+Realme | Realme P3 5G
+Realme | Realme P3 Pro 5G
+Realme | Realme P3 Ultra 5G
+Realme | Realme P3x 5G
+Vivo | Vivo V21 5G
+Vivo | Vivo V21e
+Vivo | Vivo V23 5G
+Vivo | Vivo V23e
+Vivo | Vivo V23 Pro
+Vivo | Vivo V25 5G
+Vivo | Vivo V25 Pro
+Vivo | Vivo V27 5G
+Vivo | Vivo V27 Pro
+Vivo | Vivo V29 5G
+Vivo | Vivo V29e
+Vivo | Vivo V29 Pro
+Vivo | Vivo V30 5G
+Vivo | Vivo V30e
+Vivo | Vivo V30 Pro
+Vivo | Vivo V40 5G
+Vivo | Vivo V40e
+Vivo | Vivo V40 Pro
+Vivo | Vivo V50 5G
+Vivo | Vivo V50e
+Vivo | Vivo X60
+Vivo | Vivo X60 Pro
+Vivo | Vivo X60 Pro+
+Vivo | Vivo X70 Pro
+Vivo | Vivo X70 Pro+
+Vivo | Vivo X80
+Vivo | Vivo X80 Pro
+Vivo | Vivo X90
+Vivo | Vivo X90 Pro
+Vivo | Vivo X100
+Vivo | Vivo X100 Pro
+Vivo | Vivo X200
+Vivo | Vivo X200 Pro
+Vivo | Vivo X200 FE
+Vivo | Vivo X Fold3 Pro
+Vivo | Vivo T1 5G
+Vivo | Vivo T1x
+Vivo | Vivo T1 Pro 5G
+Vivo | Vivo T1 44W
+Vivo | Vivo T2 5G
+Vivo | Vivo T2x 5G
+Vivo | Vivo T2 Pro 5G
+Vivo | Vivo T3 5G
+Vivo | Vivo T3x 5G
+Vivo | Vivo T3 Pro 5G
+Vivo | Vivo T3 Ultra 5G
+Vivo | Vivo T3 Lite 5G
+Vivo | Vivo T4 5G
+Vivo | Vivo T4x 5G
+Vivo | Vivo T4 Pro 5G
+Vivo | Vivo T4 Ultra 5G
+Vivo | Vivo T4 Lite 5G
+Vivo | Vivo Y16
+Vivo | Vivo Y17s
+Vivo | Vivo Y21
+Vivo | Vivo Y21T
+Vivo | Vivo Y22
+Vivo | Vivo Y27
+Vivo | Vivo Y28 5G
+Vivo | Vivo Y28e 5G
+Vivo | Vivo Y33s
+Vivo | Vivo Y35
+Vivo | Vivo Y36
+Vivo | Vivo Y53s
+Vivo | Vivo Y56 5G
+Vivo | Vivo Y72 5G
+Vivo | Vivo Y75 4G
+Vivo | Vivo Y100 5G
+Vivo | Vivo Y200 5G
+Vivo | Vivo Y200e 5G
+Vivo | Vivo Y200 Pro 5G
+Vivo | Vivo Y300 5G
+Vivo | Vivo Y300 Plus 5G
+iQOO | iQOO 7
+iQOO | iQOO 7 Legend
+iQOO | iQOO 9 5G
+iQOO | iQOO 9 Pro
+iQOO | iQOO 9 SE
+iQOO | iQOO 9T 5G
+iQOO | iQOO 11 5G
+iQOO | iQOO 12 5G
+iQOO | iQOO 13 5G
+iQOO | iQOO Neo 6 5G
+iQOO | iQOO Neo 7 5G
+iQOO | iQOO Neo 7 Pro 5G
+iQOO | iQOO Neo 9 Pro 5G
+iQOO | iQOO Neo 10R 5G
+iQOO | iQOO Z3 5G
+iQOO | iQOO Z5 5G
+iQOO | iQOO Z6 5G
+iQOO | iQOO Z6 Lite 5G
+iQOO | iQOO Z6 Pro 5G
+iQOO | iQOO Z6 44W
+iQOO | iQOO Z7 5G
+iQOO | iQOO Z7 Pro 5G
+iQOO | iQOO Z7s 5G
+iQOO | iQOO Z9 5G
+iQOO | iQOO Z9x 5G
+iQOO | iQOO Z9s 5G
+iQOO | iQOO Z9s Pro 5G
+iQOO | iQOO Z9 Lite 5G
+iQOO | iQOO Z10 5G
+iQOO | iQOO Z10x 5G
+iQOO | iQOO Z10 Lite 5G
+iQOO | iQOO Z10R 5G
+Oppo | Oppo F19
+Oppo | Oppo F19 Pro
+Oppo | Oppo F19 Pro+ 5G
+Oppo | Oppo F19s
+Oppo | Oppo F21 Pro
+Oppo | Oppo F21s Pro
+Oppo | Oppo F23 5G
+Oppo | Oppo F25 Pro 5G
+Oppo | Oppo F27 5G
+Oppo | Oppo F27 Pro+ 5G
+Oppo | Oppo F29 5G
+Oppo | Oppo F29 Pro 5G
+Oppo | Oppo Reno 5 Pro 5G
+Oppo | Oppo Reno 6 5G
+Oppo | Oppo Reno 6 Pro 5G
+Oppo | Oppo Reno 7 5G
+Oppo | Oppo Reno 7 Pro 5G
+Oppo | Oppo Reno 8 5G
+Oppo | Oppo Reno 8 Pro 5G
+Oppo | Oppo Reno 8T 5G
+Oppo | Oppo Reno 10 5G
+Oppo | Oppo Reno 10 Pro 5G
+Oppo | Oppo Reno 10 Pro+ 5G
+Oppo | Oppo Reno 11 5G
+Oppo | Oppo Reno 11 Pro 5G
+Oppo | Oppo Reno 12 5G
+Oppo | Oppo Reno 12 Pro 5G
+Oppo | Oppo Reno 13 5G
+Oppo | Oppo Reno 13 Pro 5G
+Oppo | Oppo Reno 14 5G
+Oppo | Oppo Reno 14 Pro 5G
+Oppo | Oppo A16
+Oppo | Oppo A53s 5G
+Oppo | Oppo A54
+Oppo | Oppo A55
+Oppo | Oppo A57 2022
+Oppo | Oppo A58
+Oppo | Oppo A59 5G
+Oppo | Oppo A74 5G
+Oppo | Oppo A76
+Oppo | Oppo A77s
+Oppo | Oppo A78 5G
+Oppo | Oppo A79 5G
+Oppo | Oppo A3 5G
+Oppo | Oppo A3x 5G
+Oppo | Oppo A3 Pro 5G
+Oppo | Oppo A5 Pro 5G
+Oppo | Oppo K10
+Oppo | Oppo K10 5G
+Oppo | Oppo K12x 5G
+Oppo | Oppo K13 5G
+Oppo | Oppo K13x 5G
+Oppo | Oppo Find N2 Flip
+Oppo | Oppo Find N3 Flip
+Oppo | Oppo Find X8
+Oppo | Oppo Find X8 Pro
+OnePlus | OnePlus 9
+OnePlus | OnePlus 9 Pro
+OnePlus | OnePlus 9R
+OnePlus | OnePlus 9RT
+OnePlus | OnePlus 10 Pro
+OnePlus | OnePlus 10R
+OnePlus | OnePlus 10T
+OnePlus | OnePlus 11 5G
+OnePlus | OnePlus 11R 5G
+OnePlus | OnePlus 12
+OnePlus | OnePlus 12R
+OnePlus | OnePlus 13
+OnePlus | OnePlus 13R
+OnePlus | OnePlus 13s
+OnePlus | OnePlus Nord 2
+OnePlus | OnePlus Nord 2T
+OnePlus | OnePlus Nord 3
+OnePlus | OnePlus Nord 4
+OnePlus | OnePlus Nord 5
+OnePlus | OnePlus Nord CE 5G
+OnePlus | OnePlus Nord CE 2 5G
+OnePlus | OnePlus Nord CE 2 Lite 5G
+OnePlus | OnePlus Nord CE 3 5G
+OnePlus | OnePlus Nord CE 3 Lite 5G
+OnePlus | OnePlus Nord CE4
+OnePlus | OnePlus Nord CE4 Lite 5G
+OnePlus | OnePlus Nord CE5
+Motorola | Moto G30
+Motorola | Moto G40 Fusion
+Motorola | Moto G60
+Motorola | Moto G31
+Motorola | Moto G51 5G
+Motorola | Moto G71 5G
+Motorola | Moto G32
+Motorola | Moto G42
+Motorola | Moto G52
+Motorola | Moto G62 5G
+Motorola | Moto G72
+Motorola | Moto G82 5G
+Motorola | Moto G13
+Motorola | Moto G23
+Motorola | Moto G34 5G
+Motorola | Moto G54 5G
+Motorola | Moto G64 5G
+Motorola | Moto G84 5G
+Motorola | Moto G45 5G
+Motorola | Moto G35 5G
+Motorola | Moto G05
+Motorola | Moto G15
+Motorola | Moto G85 5G
+Motorola | Moto G96 5G
+Motorola | Motorola Edge 20
+Motorola | Motorola Edge 20 Fusion
+Motorola | Motorola Edge 30
+Motorola | Motorola Edge 30 Pro
+Motorola | Motorola Edge 30 Ultra
+Motorola | Motorola Edge 30 Fusion
+Motorola | Motorola Edge 40
+Motorola | Motorola Edge 40 Pro
+Motorola | Motorola Edge 40 Neo
+Motorola | Motorola Edge 50
+Motorola | Motorola Edge 50 Pro
+Motorola | Motorola Edge 50 Fusion
+Motorola | Motorola Edge 50 Neo
+Motorola | Motorola Edge 50 Ultra
+Motorola | Motorola Edge 60
+Motorola | Motorola Edge 60 Pro
+Motorola | Motorola Edge 60 Fusion
+Motorola | Motorola Edge 60 Stylus
+Motorola | Motorola Razr 40
+Motorola | Motorola Razr 40 Ultra
+Motorola | Motorola Razr 50
+Motorola | Motorola Razr 50 Ultra
+Motorola | Motorola Razr 60
+Motorola | Motorola Razr 60 Ultra
+Nothing | Nothing Phone (1)
+Nothing | Nothing Phone (2)
+Nothing | Nothing Phone (2a)
+Nothing | Nothing Phone (2a) Plus
+Nothing | Nothing Phone (3a)
+Nothing | Nothing Phone (3a) Pro
+Nothing | Nothing Phone (3)
+Nothing | CMF Phone 1
+Nothing | CMF Phone 2 Pro
+Google | Pixel 6a
+Google | Pixel 7
+Google | Pixel 7 Pro
+Google | Pixel 7a
+Google | Pixel 8
+Google | Pixel 8 Pro
+Google | Pixel 8a
+Google | Pixel 9
+Google | Pixel 9 Pro
+Google | Pixel 9 Pro XL
+Google | Pixel 9 Pro Fold
+Google | Pixel 9a
+Google | Pixel 10
+Google | Pixel 10 Pro
+Google | Pixel 10 Pro XL
+Infinix | Infinix Hot 11S
+Infinix | Infinix Hot 12 Play
+Infinix | Infinix Hot 30
+Infinix | Infinix Hot 30i
+Infinix | Infinix Hot 40i
+Infinix | Infinix Hot 40 Pro
+Infinix | Infinix Hot 50 5G
+Infinix | Infinix Note 10 Pro
+Infinix | Infinix Note 11
+Infinix | Infinix Note 11S
+Infinix | Infinix Note 12
+Infinix | Infinix Note 12 Pro 5G
+Infinix | Infinix Note 30 5G
+Infinix | Infinix Note 40
+Infinix | Infinix Note 40 Pro 5G
+Infinix | Infinix Note 50x 5G
+Infinix | Infinix Note 50s 5G
+Infinix | Infinix Smart 6
+Infinix | Infinix Smart 7
+Infinix | Infinix Smart 8
+Infinix | Infinix Smart 9
+Infinix | Infinix Zero 5G
+Infinix | Infinix Zero 30 5G
+Infinix | Infinix GT 10 Pro
+Infinix | Infinix GT 20 Pro
+Infinix | Infinix GT 30 Pro
+Tecno | Tecno Spark 10 Pro
+Tecno | Tecno Spark 20
+Tecno | Tecno Spark 20 Pro
+Tecno | Tecno Spark 20 Pro+
+Tecno | Tecno Spark 30
+Tecno | Tecno Spark 30 Pro
+Tecno | Tecno Camon 20
+Tecno | Tecno Camon 20 Pro 5G
+Tecno | Tecno Camon 30 5G
+Tecno | Tecno Camon 30 Premier 5G
+Tecno | Tecno Pova 5G
+Tecno | Tecno Pova 5
+Tecno | Tecno Pova 5 Pro 5G
+Tecno | Tecno Pova 6 Pro 5G
+Tecno | Tecno Pova 6 Neo 5G
+Tecno | Tecno Pova 7 5G
+Tecno | Tecno Pova 7 Pro 5G
+Tecno | Tecno Phantom X
+Tecno | Tecno Phantom V Fold
+Tecno | Tecno Phantom V Flip
+Honor | Honor 90 5G
+Honor | Honor 200 5G
+Honor | Honor 200 Pro 5G
+Honor | Honor X9b 5G
+Nokia | Nokia G21
+Nokia | Nokia G42 5G
+Lava | Lava Blaze
+Lava | Lava Blaze 2
+Lava | Lava Blaze Pro 5G
+Lava | Lava Agni 5G
+Lava | Lava Agni 2 5G
+Lava | Lava Agni 3 5G
+Lava | Lava Yuva 2
+Lava | Lava Yuva 3
+Lava | Lava O2
+Lava | Lava Storm 5G
+Micromax | Micromax IN Note 1
+Micromax | Micromax IN Note 2
+Micromax | Micromax IN 2b
+Micromax | Micromax IN 2c
+itel | itel S23
+itel | itel S23+
+itel | itel A60
+itel | itel A70
+Asus | Asus ROG Phone 5
+Asus | Asus ROG Phone 6
+Asus | Asus ROG Phone 7
+Asus | Asus ROG Phone 8
+Asus | Asus ROG Phone 9
