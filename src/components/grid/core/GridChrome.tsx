@@ -221,7 +221,13 @@ export interface GridHeaderRowProps<Row extends GridRow = GridRow>
   selectedColumns?: ReadonlySet<string>;
   /** Header row height in px (density). */
   height: number;
-  /** Left inset (pinned width) applied so non-pinned headers start correctly. */
+  /**
+   * Width of the row-number gutter to the left of the columns. Pinned column
+   * headers stick at `gutter + preceding pinned widths` — without a concrete
+   * `left`, CSS `position: sticky` never sticks on the inline axis, which is
+   * exactly the bug that made the pinned Name column scroll out of view.
+   */
+  gutterWidth?: number;
   className?: string;
 }
 
@@ -233,6 +239,7 @@ export function GridHeaderRow<Row extends GridRow = GridRow>({
   filters,
   selectedColumns,
   height,
+  gutterWidth = 0,
   className,
   onSort,
   onSelectColumn,
@@ -248,6 +255,20 @@ export function GridHeaderRow<Row extends GridRow = GridRow>({
     [sort],
   );
 
+  // Sticky offsets for pinned columns (ordered pinned-first): gutter width +
+  // the widths of the pinned columns before each one. Precomputed in a pure
+  // pass — the React Compiler forbids accumulating during JSX rendering.
+  const pinnedOffsets = React.useMemo(() => {
+    const map = new Map<string, number>();
+    let left = gutterWidth;
+    for (const col of columns) {
+      if (col.pinned !== "left") continue;
+      map.set(col.key, left);
+      left += widths[col.key] ?? col.width ?? DEFAULT_COL_WIDTH;
+    }
+    return map;
+  }, [columns, widths, gutterWidth]);
+
   return (
     <div
       role="row"
@@ -259,6 +280,7 @@ export function GridHeaderRow<Row extends GridRow = GridRow>({
           key={col.key}
           col={col}
           width={widths[col.key] ?? col.width ?? DEFAULT_COL_WIDTH}
+          pinnedLeft={pinnedOffsets.get(col.key)}
           height={height}
           sort={sortFor(col.key)}
           filter={filters?.[col.key] ?? ""}
@@ -288,6 +310,8 @@ const MIN_COL_WIDTH = 56;
 interface GridHeaderCellProps<Row extends GridRow> {
   col: ColumnDef<Row>;
   width: number;
+  /** Sticky-left offset in px when the column is pinned. */
+  pinnedLeft?: number;
   height: number;
   sort?: SortSpec;
   filter: string;
@@ -313,6 +337,7 @@ function GridHeaderCell<Row extends GridRow>({
   selected,
   dragging,
   dropTarget,
+  pinnedLeft,
   onSort,
   onSelectColumn,
   onResize,
@@ -374,10 +399,10 @@ function GridHeaderCell<Row extends GridRow>({
         e.preventDefault();
         onDrop(col.key);
       }}
-      style={{ width, height }}
+      style={{ width, height, left: pinned ? pinnedLeft : undefined }}
       className={cn(
         "group/header relative flex shrink-0 flex-col justify-center border-r border-b border-border bg-muted/60 text-left transition-colors",
-        pinned && "sticky z-20",
+        pinned && "sticky z-20 shadow-[1px_0_0_0_var(--border)]",
         selected && "bg-primary/10",
         dragging && "opacity-50",
         dropTarget && "before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-primary",

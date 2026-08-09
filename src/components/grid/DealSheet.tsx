@@ -799,6 +799,19 @@ const GridBodyRow = React.memo(function GridBodyRow<Row extends GridRow>({
   const status = ctrl.getRowStatus(row.id);
   const rowSelected = ctrl.selectedRowIds.includes(row.id);
 
+  // Sticky offsets for pinned cells: gutter + preceding pinned widths — a
+  // pure precompute (no accumulation during JSX; React Compiler rule).
+  const pinnedOffsets = React.useMemo(() => {
+    const map = new Map<string, number>();
+    let left = gutterWidth;
+    for (const col of columns) {
+      if (col.pinned !== "left") continue;
+      map.set(col.key, left);
+      left += widthOf(col);
+    }
+    return map;
+  }, [columns, widthOf, gutterWidth]);
+
   return (
     <div
       role="row"
@@ -814,20 +827,18 @@ const GridBodyRow = React.memo(function GridBodyRow<Row extends GridRow>({
         onSelect={(opts) => ctrl.selection.selectRow(row.id, opts)}
       />
 
-      {columns.map((col) => {
-        const coord: CellCoord = { rowId: row.id, colKey: col.key };
-        return (
-          <GridCell<Row>
-            key={col.key}
-            coord={coord}
-            column={col}
-            row={row}
-            width={widthOf(col)}
-            height={height}
-            ctrl={ctrl}
-          />
-        );
-      })}
+      {columns.map((col) => (
+        <GridCell<Row>
+          key={col.key}
+          coord={{ rowId: row.id, colKey: col.key }}
+          column={col}
+          row={row}
+          width={widthOf(col)}
+          pinnedLeft={pinnedOffsets.get(col.key)}
+          height={height}
+          ctrl={ctrl}
+        />
+      ))}
 
       {/* Per-row save-status pill + conflict chip. */}
       <RowStatusPill status={status} onRetry={() => ctrl.retryRow(row.id)} />
@@ -844,6 +855,8 @@ interface CellProps<Row extends GridRow> {
   column: ColumnDef<Row>;
   row: Row;
   width: number;
+  /** Sticky-left offset in px when the column is pinned. */
+  pinnedLeft?: number;
   height: number;
   ctrl: ReturnType<typeof useGridController<Row>>;
 }
@@ -853,6 +866,7 @@ function GridCell<Row extends GridRow>({
   column,
   row,
   width,
+  pinnedLeft,
   height,
   ctrl,
 }: CellProps<Row>) {
@@ -896,7 +910,7 @@ function GridCell<Row extends GridRow>({
         if (e.buttons === 1) ctrl.selection.extendTo(coord);
       }}
       onDoubleClick={onDoubleClick}
-      style={{ width, height }}
+      style={{ width, height, left: pinned ? pinnedLeft : undefined }}
       className={cn(
         "relative shrink-0 overflow-hidden border-r border-b border-border/70 text-sm",
         pinned && "sticky z-10 bg-card shadow-[1px_0_0_0_var(--border)]",
