@@ -102,8 +102,11 @@ export default async function CategoryPage({
   const sort = toDiscoverSort(urlParams.get("sort"));
   const categoryId = category.id;
 
-  // Facets (bounded aggregations) + first faceted page, both viewer-gated.
-  const [facets, firstPage] = await Promise.all([
+  // ONE parallel round: facets + first page (viewer-gated) alongside the
+  // viewer-scoped chrome reads (wishlist, cart badge). These used to run as
+  // three sequential awaits — on a remote database that is three round-trips
+  // of pure added latency on every category view.
+  const [facets, firstPage, wishlistState, cartCount] = await Promise.all([
     loadFacetData(viewer, { categoryId }),
     discoverProducts(
       viewer,
@@ -114,16 +117,13 @@ export default async function CategoryPage({
         limit: PAGE_SIZES.storefront,
       }),
     ),
+    // Wishlist state: header badge + heart fills. Empty for anon/admin.
+    wishlistStateForViewer(viewer),
+    // Header cart badge — a count only for an approved customer.
+    cartCountForViewer(viewer),
   ]);
 
   const items: ListingItem[] = buildListingItems(firstPage.items, viewer);
-
-  // Wishlist state for the current customer: seeds the header badge count and
-  // each product heart's filled state. Empty for anon/admin. Carries no price.
-  const wishlistState = await wishlistStateForViewer(viewer);
-
-  // Header cart badge — a count only for an approved customer, else undefined.
-  const cartCount = await cartCountForViewer(viewer);
 
   // Load-more re-runs the SAME faceted query for the next offset window. The
   // selection is captured server-side so gated viewers can never inject a price

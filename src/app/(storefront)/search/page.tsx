@@ -87,12 +87,12 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   const [categories, viewer] = await Promise.all([listActive(), getViewer()]);
   const categoryChips = categories.map((c) => ({ name: c.name, slug: c.slug }));
 
-  // Wishlist state for the current customer: seeds the header badge count and
-  // each product heart's filled state. Empty for anon/admin. Carries no price.
-  const wishlistState = await wishlistStateForViewer(viewer);
-
-  // Header cart badge — a count only for an approved customer, else undefined.
-  const cartCount = await cartCountForViewer(viewer);
+  // Wishlist state (badge + heart fills) and the cart badge count in ONE
+  // parallel round — they are independent viewer-scoped reads.
+  const [wishlistState, cartCount] = await Promise.all([
+    wishlistStateForViewer(viewer),
+    cartCountForViewer(viewer),
+  ]);
 
   const approved = canSeePrices(viewer);
   const urlParams = toSearchParams(raw);
