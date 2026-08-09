@@ -54,6 +54,7 @@ export type ImportField =
   | "price"
   | "mrp"
   | "moq"
+  | "packMultiple"
   | "stock"
   | "status"
   | "tags"
@@ -141,6 +142,13 @@ export const IMPORT_COLUMNS: readonly ImportColumn[] = [
     required: false,
     kind: "int",
     aliases: ["moq", "minqty", "minorder", "minimumorderquantity"],
+  },
+  {
+    key: "packMultiple",
+    label: "Pack of",
+    required: false,
+    kind: "int",
+    aliases: ["packmultiple", "packof", "packsize", "boxqty", "boxsize", "caseqty", "multiple"],
   },
   {
     key: "stock",
@@ -321,6 +329,7 @@ export interface CoercedRow {
   price?: number; // paise
   mrp?: number; // paise
   moq?: number;
+  packMultiple?: number;
   stockStatus?: StockStatus;
   status?: EntityStatus;
   tags?: string[];
@@ -649,6 +658,7 @@ export function resolveVariantContext(
     price: mapping.price,
     mrp: mapping.mrp,
     moq: mapping.moq,
+    packMultiple: mapping.packMultiple,
     stock: mapping.stock,
     status: mapping.status,
     hsnCode: mapping.hsnCode,
@@ -842,6 +852,17 @@ export function validateRows(
       const n = parseIntSafe(moqRaw);
       if (n === null || n <= 0) push("moq", `"${moqRaw}" is not a valid MOQ.`);
       else values.moq = n;
+    }
+
+    // packMultiple — optional integer >= 2 (a "pack of 1" is no pack at all).
+    const packRaw = raw.packMultiple;
+    if (packRaw) {
+      const n = parseIntSafe(packRaw);
+      if (n === null || n < 2) {
+        push("packMultiple", `"${packRaw}" is not a valid pack size (min 2).`);
+      } else {
+        values.packMultiple = n;
+      }
     }
 
     // stock — optional enum.
@@ -1077,6 +1098,7 @@ function toCreateInput(values: CoercedRow): CreateProductInput {
     price: values.price as number,
     mrp: values.mrp,
     moq: values.moq,
+    packMultiple: values.packMultiple,
     stockStatus: values.stockStatus ?? "IN_STOCK",
     status: values.status ?? "ACTIVE",
     tags: values.tags ?? [],
@@ -1098,6 +1120,7 @@ function toUpdatePatch(values: CoercedRow): UpdateProductInput {
   if (values.price !== undefined) patch.price = values.price;
   if (values.mrp !== undefined) patch.mrp = values.mrp;
   if (values.moq !== undefined) patch.moq = values.moq;
+  if (values.packMultiple !== undefined) patch.packMultiple = values.packMultiple;
   if (values.stockStatus !== undefined) patch.stockStatus = values.stockStatus;
   if (values.status !== undefined) patch.status = values.status;
   if (values.tags !== undefined) patch.tags = values.tags;
@@ -1191,6 +1214,7 @@ export function buildTemplateWorkbook(): Uint8Array {
     "4,999",
     "6,499",
     "10",
+    "", // Pack of — blank ⇒ any quantity above the MOQ
     "IN_STOCK",
     "ACTIVE",
     "ddr4,gaming",
@@ -1492,6 +1516,7 @@ async function commitVariantGroups(
           price: v.price,
           mrp: v.mrp,
           moq: v.moq,
+          packMultiple: v.packMultiple,
           stockStatus: v.stockStatus,
           status: v.status,
           isDefault: i === 0,

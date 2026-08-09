@@ -6,9 +6,19 @@ import { canSeePrices } from "@/server/types/viewer";
 import type { StockStatus } from "@/lib/schemas/shared";
 import {
   MAX_CART_LINES,
-  MAX_QTY_PER_LINE,
   MIN_QTY_PER_LINE,
+  MAX_BREAKDOWN_ENTRIES,
 } from "@/lib/schemas/cart";
+import {
+  clampQuantity as clampQty,
+  minOrderableQty,
+  normaliseMoq,
+  normalisePack,
+} from "@/lib/quantity";
+import {
+  resolveEffectiveAllocation,
+  type Allocation,
+} from "@/lib/allocation";
 import {
   computeLineTax,
   determineSupplyType,
@@ -54,10 +64,22 @@ import { getSellerTaxProfile } from "@/server/services/tax-profile";
 /** Raised when the cart cannot be mutated for a business reason. */
 export class CartError extends Error {
   readonly code: CartErrorCode;
-  constructor(code: CartErrorCode, message: string) {
+  /**
+   * Machine-readable context for the client. BREAKDOWN_SUM_MISMATCH carries
+   * `{ requiredTotal, mergedTotal }` so the builder can re-open pre-filled and
+   * ask the buyer to distribute the missing units — the server never invents a
+   * per-model split (money follows quantity; quantity must equal the sum).
+   */
+  readonly details?: Record<string, number>;
+  constructor(
+    code: CartErrorCode,
+    message: string,
+    details?: Record<string, number>,
+  ) {
     super(message);
     this.name = "CartError";
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -66,6 +88,9 @@ export type CartErrorCode =
   | "PRODUCT_UNAVAILABLE"
   | "VARIANT_UNAVAILABLE"
   | "OUT_OF_STOCK"
+  | "BREAKDOWN_REQUIRED"
+  | "BREAKDOWN_INVALID"
+  | "BREAKDOWN_SUM_MISMATCH"
   | "LINE_LIMIT"
   | "NOT_IN_CART";
 
@@ -79,7 +104,9 @@ export type CartLineIssue =
   | "inactive" // product/variant inactive or soft-deleted — excluded from an order
   | "out-of-stock" // stockStatus OUT_OF_STOCK — blocks ordering this line
   | "low-stock" // stockStatus LOW — orderable, but warn
-  | "below-moq"; // stored qty is under the live MOQ (clamped on next update)
+  | "below-moq" // stored qty is under the live MOQ (clamped on next update)
+  | "off-pack" // stored qty is not a multiple of the live pack size
+  | "breakdown-mismatch"; // per-model split missing/stale — fix before ordering
 
 /** A single resolved cart line, gated to the viewer. */
 export interface CartLine {
@@ -99,6 +126,12 @@ export interface CartLine {
   quantity: number;
   /** The live minimum order quantity for this line (>= 1). */
   moq: number;
+  /** The live pack multiple for this line (1 = no pack constraint). */
+  packMultiple: number;
+  /** Whether this product requires a per-model quantity breakdown. */
+  allocationRequired: boolean;
+  /** Resolved per-model split with display names, when the line carries one. */
+  breakdown: { modelId: string; name: string; qty: number }[] | null;
   /** Live stock status of the ordered unit. */
   stockStatus: StockStatus;
   /**
@@ -239,6 +272,10 @@ interface ResolvedUnit {
   imageUrl: string | null;
   variantLabel: string | null;
   moq: number;
+  /** Normalised pack multiple (1 = no pack constraint). */
+  packMultiple: number;
+  /** Effective per-model allocation config (product over category), or null. */
+  allocation: Allocation | null;
   stockStatus: StockStatus;
   /** Paise — authoritative server price. Never sent to a gated viewer. */
   pricePaise: number;
@@ -259,6 +296,7 @@ const PRODUCT_SELECT = {
   brandRef: { select: { name: true } },
   price: true,
   moq: true,
+  packMultiple: true,
   stockStatus: true,
   status: true,
   deletedAt: true,
@@ -268,7 +306,14 @@ const PRODUCT_SELECT = {
   hsnCode: true,
   gstRateBps: true,
   taxTreatment: true,
-  category: { select: { defaultHsnCode: true, defaultGstRateBps: true } },
+  allocation: true,
+  category: {
+    select: {
+      defaultHsnCode: true,
+      defaultGstRateBps: true,
+      defaultAllocation: true,
+    },
+  },
   images: { select: { url: true, thumbUrl: true, isPrimary: true, sortOrder: true } },
 } satisfies Prisma.ProductSelect;
 
@@ -278,6 +323,7 @@ const VARIANT_SELECT = {
   optionValues: true,
   price: true,
   moq: true,
+  packMultiple: true,
   stockStatus: true,
   status: true,
   hsnCode: true,
@@ -421,6 +467,11 @@ async function resolveUnit(
         imageUrl: firstImageUrl(product),
         variantLabel: null,
         moq: normaliseMoq(product.moq),
+        packMultiple: normalisePack(product.packMultiple),
+        allocation: resolveEffectiveAllocation(
+          product.allocation,
+          product.category?.defaultAllocation,
+        ),
         stockStatus: "OUT_OF_STOCK",
         // Variant gone → fall back to the product price for display; the line
         // is inactive anyway (excluded from any order).
@@ -440,6 +491,11 @@ async function resolveUnit(
     imageUrl: firstImageUrl(product),
     variantLabel: null,
     moq: normaliseMoq(product.moq),
+    packMultiple: normalisePack(product.packMultiple),
+    allocation: resolveEffectiveAllocation(
+      product.allocation,
+      product.category?.defaultAllocation,
+    ),
     stockStatus: product.stockStatus,
     pricePaise: product.price,
     // A variant-based product ordered without a variant is not orderable.
@@ -463,6 +519,11 @@ function resolveVariantUnit(
     imageUrl: firstImageUrl(product),
     variantLabel: variantLabel(variant.optionValues),
     moq: normaliseMoq(variant.moq ?? product.moq),
+    packMultiple: normalisePack(variant.packMultiple ?? product.packMultiple),
+    allocation: resolveEffectiveAllocation(
+      product.allocation,
+      product.category?.defaultAllocation,
+    ),
     stockStatus: variant.stockStatus,
     pricePaise: variant.price,
     effectiveTax: variantEffectiveTax(ctx, product, variant),
@@ -470,24 +531,10 @@ function resolveVariantUnit(
   };
 }
 
-/** A product's MOQ is optional; treat missing/invalid as the absolute floor. */
-function normaliseMoq(moq: number | null | undefined): number {
-  if (typeof moq !== "number" || !Number.isFinite(moq) || moq < MIN_QTY_PER_LINE) {
-    return MIN_QTY_PER_LINE;
-  }
-  return Math.min(Math.trunc(moq), MAX_QTY_PER_LINE);
-}
-
-/**
- * Clamp a requested quantity into the valid window for a unit: at least the
- * live MOQ (never below), at most the per-line ceiling. Non-integers are
- * truncated defensively (the schema already blocks them at the edge).
- */
-export function clampQuantity(requested: number, moq: number): number {
-  const q = Number.isFinite(requested) ? Math.trunc(requested) : moq;
-  const floor = Math.max(MIN_QTY_PER_LINE, moq);
-  return Math.min(MAX_QTY_PER_LINE, Math.max(floor, q));
-}
+// MOQ + pack-multiple clamping lives in src/lib/quantity.ts — ONE shared,
+// pure implementation used by this service, the orders twin, and the client
+// steppers, so all four always agree. Re-exported for existing importers.
+export { clampQuantity } from "@/lib/quantity";
 
 // ---------------------------------------------------------------------------
 // Reads
@@ -508,7 +555,12 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
   const rows = await prisma.cartItem.findMany({
     where: { customerId: viewer.customerId },
     orderBy: { createdAt: "asc" },
-    select: { productId: true, variantId: true, quantity: true },
+    select: {
+      productId: true,
+      variantId: true,
+      quantity: true,
+      breakdown: true,
+    },
   });
 
   // GST context + the buyer's place of supply — ONLY when the viewer is priced
@@ -520,6 +572,20 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
         resolveCustomerPlaceOfSupply(viewer.customerId),
       ])
     : [null, null];
+
+  // Resolve every referenced model name in ONE query (breakdown display).
+  const allModelIds = [
+    ...new Set(
+      rows.flatMap((r) => parseStoredBreakdown(r.breakdown).map((e) => e.modelId)),
+    ),
+  ];
+  const modelRows = allModelIds.length
+    ? await prisma.deviceModel.findMany({
+        where: { id: { in: allModelIds } },
+        select: { id: true, name: true, status: true },
+      })
+    : [];
+  const modelById = new Map(modelRows.map((m) => [m.id, m]));
 
   const lines: CartLine[] = [];
   let itemCount = 0;
@@ -542,6 +608,7 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
     let imageUrl: string | null;
     let variantLbl: string | null;
     let moq: number;
+    let packMultiple: number;
     let stockStatus: StockStatus;
     let pricePaise: number | null;
 
@@ -554,6 +621,7 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
       imageUrl = null;
       variantLbl = null;
       moq = MIN_QTY_PER_LINE;
+      packMultiple = 1;
       stockStatus = "OUT_OF_STOCK";
       pricePaise = null;
     } else {
@@ -563,13 +631,37 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
       imageUrl = unit.imageUrl;
       variantLbl = unit.variantLabel;
       moq = unit.moq;
+      packMultiple = unit.packMultiple;
       stockStatus = unit.stockStatus;
       pricePaise = priced ? unit.pricePaise : null;
 
       if (!unit.active) issues.push("inactive");
       if (unit.stockStatus === "OUT_OF_STOCK") issues.push("out-of-stock");
       else if (unit.stockStatus === "LOW") issues.push("low-stock");
-      if (row.quantity < unit.moq) issues.push("below-moq");
+      if (row.quantity < minOrderableQty(unit.moq, unit.packMultiple)) {
+        issues.push("below-moq");
+      } else if (unit.packMultiple > 1 && row.quantity % unit.packMultiple !== 0) {
+        issues.push("off-pack");
+      }
+
+      // Allocation health: a required line must carry a split that sums to the
+      // quantity and references only live models. Anything else is flagged —
+      // placement treats it as fatal (the server never repairs a split).
+      if (unit.allocation?.required) {
+        const entries = parseStoredBreakdown(row.breakdown);
+        const sum = entries.reduce((acc, e) => acc + e.qty, 0);
+        const allowed =
+          unit.allocation.modelIds.length > 0
+            ? new Set(unit.allocation.modelIds)
+            : null;
+        const modelsOk = entries.every((e) => {
+          const m = modelById.get(e.modelId);
+          return m && m.status === "ACTIVE" && (!allowed || allowed.has(e.modelId));
+        });
+        if (entries.length === 0 || sum !== row.quantity || !modelsOk) {
+          issues.push("breakdown-mismatch");
+        }
+      }
 
       available =
         unit.active && unit.stockStatus !== "OUT_OF_STOCK";
@@ -611,6 +703,17 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
       variantLabel: variantLbl,
       quantity: row.quantity,
       moq,
+      packMultiple,
+      allocationRequired: unit?.allocation?.required ?? false,
+      breakdown: (() => {
+        const entries = parseStoredBreakdown(row.breakdown);
+        if (entries.length === 0) return null;
+        return entries.map((e) => ({
+          modelId: e.modelId,
+          name: modelById.get(e.modelId)?.name ?? "Removed model",
+          qty: e.qty,
+        }));
+      })(),
       stockStatus,
       unitPricePaise: pricePaise,
       lineTotalPaise,
@@ -730,6 +833,89 @@ export interface CartMutationResult {
   clamped: boolean;
 }
 
+type BreakdownEntry = { modelId: string; qty: number };
+
+/** Parse a STORED breakdown JSON defensively — corrupt data yields []. */
+function parseStoredBreakdown(raw: unknown): BreakdownEntry[] {
+  if (!Array.isArray(raw)) return [];
+  const out: BreakdownEntry[] = [];
+  for (const e of raw) {
+    if (
+      e &&
+      typeof e === "object" &&
+      typeof (e as BreakdownEntry).modelId === "string" &&
+      Number.isSafeInteger((e as BreakdownEntry).qty) &&
+      (e as BreakdownEntry).qty > 0
+    ) {
+      out.push({ modelId: (e as BreakdownEntry).modelId, qty: (e as BreakdownEntry).qty });
+    }
+  }
+  return out;
+}
+
+/**
+ * Validate a merged breakdown against the allocation config and the live
+ * DeviceModel master: every model must exist, be ACTIVE, and (when the
+ * allocation restricts) be on the allow-list. Throws BREAKDOWN_INVALID naming
+ * the first offending model so the buyer knows what to fix.
+ */
+async function assertBreakdownModels(
+  allocation: Allocation,
+  entries: BreakdownEntry[],
+): Promise<void> {
+  const ids = entries.map((e) => e.modelId);
+  const rows = await prisma.deviceModel.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, name: true, status: true },
+  });
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const allowed =
+    allocation.modelIds.length > 0 ? new Set(allocation.modelIds) : null;
+  for (const e of entries) {
+    const row = byId.get(e.modelId);
+    if (!row || row.status !== "ACTIVE") {
+      throw new CartError(
+        "BREAKDOWN_INVALID",
+        "One of the selected models is no longer available — remove it and retry.",
+      );
+    }
+    if (allowed && !allowed.has(e.modelId)) {
+      throw new CartError(
+        "BREAKDOWN_INVALID",
+        `"${row.name}" is not available for this product.`,
+      );
+    }
+  }
+}
+
+/**
+ * Resolve the final (quantity, breakdown) for an allocation-required line.
+ *
+ * The invariant this protects: `quantity === sum(breakdown)` at ALL times —
+ * money follows quantity, and the split is what the seller packs. So when the
+ * MOQ/pack clamp would CHANGE the total, we REJECT with the corrected total
+ * in `details` instead of silently inventing per-model quantities; the client
+ * re-opens the builder pre-filled and asks the buyer to place the remainder.
+ */
+function settleBreakdownTotal(
+  unit: ResolvedUnit,
+  entries: BreakdownEntry[],
+): { quantity: number; breakdown: BreakdownEntry[] } {
+  const total = entries.reduce((acc, e) => acc + e.qty, 0);
+  const clamped = clampQty(total, unit.moq, unit.packMultiple);
+  if (clamped !== total) {
+    throw new CartError(
+      "BREAKDOWN_SUM_MISMATCH",
+      unit.packMultiple > 1
+        ? `This product is sold in packs of ${unit.packMultiple} (minimum ${minOrderableQty(unit.moq, unit.packMultiple)}). Adjust the split to total ${clamped}.`
+        : `Minimum order is ${unit.moq}. Adjust the split to total ${clamped}.`,
+      { requiredTotal: clamped, providedTotal: total },
+    );
+  }
+  return { quantity: total, breakdown: entries };
+}
+
+
 /**
  * Add a unit to the cart, or increment it when the exact (product, variant)
  * line already exists. Validates the product is live + orderable, clamps the
@@ -740,7 +926,12 @@ export interface CartMutationResult {
  */
 export async function addToCart(
   viewer: CustomerViewer,
-  input: { productId: string; variantId?: string | null; quantity: number },
+  input: {
+    productId: string;
+    variantId?: string | null;
+    quantity: number;
+    breakdown?: { modelId: string; qty: number }[];
+  },
 ): Promise<CartMutationResult> {
   await assertApproved(viewer);
   const customerId = viewer.customerId;
@@ -759,7 +950,7 @@ export async function addToCart(
 
   const existing = await prisma.cartItem.findFirst({
     where: { customerId, productId: input.productId, variantId },
-    select: { id: true, quantity: true },
+    select: { id: true, quantity: true, breakdown: true },
   });
 
   // Enforce the distinct-line ceiling only when adding a NEW line.
@@ -773,8 +964,59 @@ export async function addToCart(
     }
   }
 
+  // ---- Allocation products: the breakdown IS the quantity. ----------------
+  if (unit.allocation?.required) {
+    if (!input.breakdown || input.breakdown.length === 0) {
+      throw new CartError(
+        "BREAKDOWN_REQUIRED",
+        "Choose the models and quantities for this product first.",
+      );
+    }
+    // Merge per-model with the stored split (repeat adds accumulate).
+    const merged = new Map<string, number>();
+    for (const e of parseStoredBreakdown(existing?.breakdown)) {
+      merged.set(e.modelId, (merged.get(e.modelId) ?? 0) + e.qty);
+    }
+    for (const e of input.breakdown) {
+      merged.set(e.modelId, (merged.get(e.modelId) ?? 0) + e.qty);
+    }
+    const entries = [...merged.entries()].map(([modelId, qty]) => ({
+      modelId,
+      qty,
+    }));
+    if (entries.length > MAX_BREAKDOWN_ENTRIES) {
+      throw new CartError(
+        "BREAKDOWN_INVALID",
+        `A line can carry at most ${MAX_BREAKDOWN_ENTRIES} models.`,
+      );
+    }
+    await assertBreakdownModels(unit.allocation, entries);
+    const settled = settleBreakdownTotal(unit, entries);
+
+    if (existing) {
+      await prisma.cartItem.update({
+        where: { id: existing.id },
+        data: {
+          quantity: settled.quantity,
+          breakdown: settled.breakdown as unknown as Prisma.InputJsonValue,
+        },
+        select: { id: true },
+      });
+    } else {
+      await createLine(
+        customerId,
+        input.productId,
+        variantId,
+        settled.quantity,
+        settled.breakdown,
+      );
+    }
+    return summarise(customerId, settled.quantity, false);
+  }
+
+  // ---- Normal products (stray breakdowns are simply ignored). -------------
   const desired = (existing?.quantity ?? 0) + input.quantity;
-  const quantity = clampQuantity(desired, unit.moq);
+  const quantity = clampQty(desired, unit.moq, unit.packMultiple);
   const clamped = quantity !== desired;
 
   if (existing) {
@@ -800,10 +1042,21 @@ async function createLine(
   productId: string,
   variantId: string | null,
   quantity: number,
+  breakdown?: BreakdownEntry[],
 ): Promise<void> {
+  const breakdownJson =
+    breakdown && breakdown.length > 0
+      ? (breakdown as unknown as Prisma.InputJsonValue)
+      : undefined;
   try {
     await prisma.cartItem.create({
-      data: { customerId, productId, variantId, quantity },
+      data: {
+        customerId,
+        productId,
+        variantId,
+        quantity,
+        ...(breakdownJson !== undefined ? { breakdown: breakdownJson } : {}),
+      },
       select: { id: true },
     });
   } catch (error) {
@@ -813,7 +1066,10 @@ async function createLine(
     ) {
       await prisma.cartItem.updateMany({
         where: { customerId, productId, variantId },
-        data: { quantity },
+        data: {
+          quantity,
+          ...(breakdownJson !== undefined ? { breakdown: breakdownJson } : {}),
+        },
       });
       return;
     }
@@ -828,7 +1084,12 @@ async function createLine(
  */
 export async function updateQuantity(
   viewer: CustomerViewer,
-  input: { productId: string; variantId?: string | null; quantity: number },
+  input: {
+    productId: string;
+    variantId?: string | null;
+    quantity: number;
+    breakdown?: { modelId: string; qty: number }[];
+  },
 ): Promise<CartMutationResult> {
   await assertApproved(viewer);
   const customerId = viewer.customerId;
@@ -842,7 +1103,51 @@ export async function updateQuantity(
     );
   }
 
-  const quantity = clampQuantity(input.quantity, unit.moq);
+  // Allocation lines are edited by REPLACING the whole split (the cart's edit
+  // dialog sends the complete breakdown); a bare quantity write is rejected
+  // because the server will not invent per-model quantities.
+  if (unit.allocation?.required) {
+    if (!input.breakdown || input.breakdown.length === 0) {
+      throw new CartError(
+        "BREAKDOWN_REQUIRED",
+        "Edit the per-model quantities for this product instead.",
+      );
+    }
+    await assertBreakdownModels(unit.allocation, input.breakdown);
+    const settled = settleBreakdownTotal(unit, input.breakdown);
+    const row = await prisma.cartItem.findFirst({
+      where: { customerId, productId: input.productId, variantId },
+      select: { id: true },
+    });
+    if (row) {
+      await prisma.cartItem.update({
+        where: { id: row.id },
+        data: {
+          quantity: settled.quantity,
+          breakdown: settled.breakdown as unknown as Prisma.InputJsonValue,
+        },
+        select: { id: true },
+      });
+    } else {
+      const lineCount = await prisma.cartItem.count({ where: { customerId } });
+      if (lineCount >= MAX_CART_LINES) {
+        throw new CartError(
+          "LINE_LIMIT",
+          `A cart can hold at most ${MAX_CART_LINES} different products.`,
+        );
+      }
+      await createLine(
+        customerId,
+        input.productId,
+        variantId,
+        settled.quantity,
+        settled.breakdown,
+      );
+    }
+    return summarise(customerId, settled.quantity, false);
+  }
+
+  const quantity = clampQty(input.quantity, unit.moq, unit.packMultiple);
   const clamped = quantity !== input.quantity;
 
   const existing = await prisma.cartItem.findFirst({

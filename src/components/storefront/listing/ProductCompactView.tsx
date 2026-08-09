@@ -165,7 +165,13 @@ function CompactRow({
             e.stopPropagation();
           }}
         >
-          <QuickAddToCart productId={product.id} moq={product.moq} />
+          product.allocation?.required ? null : (
+            <QuickAddToCart
+              productId={product.id}
+              moq={product.moq}
+              packMultiple={product.packMultiple}
+            />
+          )
         </div>
       ) : null}
     </Link>

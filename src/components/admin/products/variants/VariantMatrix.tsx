@@ -154,6 +154,8 @@ export function VariantMatrix({
               <TableHead className="min-w-[9rem]">SKU</TableHead>
               <TableHead className="w-28">Price</TableHead>
               <TableHead className="w-28">MRP</TableHead>
+              <TableHead className="w-20">MOQ</TableHead>
+              <TableHead className="w-20">Pack</TableHead>
               <TableHead className="w-32">Stock</TableHead>
               <TableHead className="w-28">Status</TableHead>
               <TableHead className="w-16 text-center">Photos</TableHead>
@@ -207,6 +209,41 @@ export function VariantMatrix({
                     paise={row.mrp}
                     disabled={disabled}
                     onChange={(paise) => updateRow(row.key, { mrp: paise })}
+                  />
+                </TableCell>
+
+                {/* MOQ + pack override the product's values; empty = inherit. */}
+                <TableCell>
+                  <Input
+                    aria-label={`MOQ for ${variantLabel(row.optionValues)}`}
+                    inputMode="numeric"
+                    value={row.moq == null ? "" : String(row.moq)}
+                    disabled={disabled}
+                    onChange={(e) => {
+                      const digits = e.target.value.replace(/[^\d]/g, "");
+                      updateRow(row.key, {
+                        moq: digits === "" ? null : Number(digits),
+                      });
+                    }}
+                    placeholder="—"
+                    className="h-8 w-16 font-tabular"
+                  />
+                </TableCell>
+
+                <TableCell>
+                  <Input
+                    aria-label={`Pack multiple for ${variantLabel(row.optionValues)}`}
+                    inputMode="numeric"
+                    value={row.packMultiple == null ? "" : String(row.packMultiple)}
+                    disabled={disabled}
+                    onChange={(e) => {
+                      const digits = e.target.value.replace(/[^\d]/g, "");
+                      updateRow(row.key, {
+                        packMultiple: digits === "" ? null : Number(digits),
+                      });
+                    }}
+                    placeholder="—"
+                    className="h-8 w-16 font-tabular"
                   />
                 </TableCell>
 

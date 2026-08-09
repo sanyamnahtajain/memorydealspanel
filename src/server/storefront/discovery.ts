@@ -47,6 +47,7 @@ const PUBLIC_FIELDS = {
   description: true,
   specs: true,
   moq: true,
+  packMultiple: true,
   stockStatus: true,
   status: true,
   tags: true,

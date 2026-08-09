@@ -92,6 +92,8 @@ export interface OrderLineDTO {
   lineTotalPaise: number;
   /** Frozen per-line GST breakup; null for a pre-GST order. */
   tax: OrderLineTaxDTO | null;
+  /** Frozen per-model split for allocation lines, when present. */
+  breakdown: { modelName: string; qty: number }[] | null;
 }
 
 /** One HSN summary row for the invoice-style tax table. */
@@ -164,6 +166,7 @@ function toDetailDTO(detail: OrderDetail): OrderDetailDTO {
       quantity: line.quantity,
       unitPricePaise: line.unitPricePaise,
       lineTotalPaise: line.lineTotalPaise,
+      breakdown: line.breakdown ?? null,
       tax: line.tax
         ? {
             hsnCode: line.tax.hsnCode,

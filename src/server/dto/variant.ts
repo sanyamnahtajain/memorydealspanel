@@ -43,6 +43,13 @@ export interface PublicVariant {
   sku: string;
   /** Chosen value per option axis (see {@link VariantOptionValues}). */
   optionValues: VariantOptionValues;
+  /**
+   * Variant-level minimum order quantity, when set (falls back to the
+   * product's at the point of use). NON-MONETARY — safe for every viewer.
+   */
+  moq: number | null;
+  /** Variant-level pack multiple override, when set. NON-MONETARY. */
+  packMultiple: number | null;
   stockStatus: StockStatus;
   /** Whether this is the product's default (pre-selected) variant. */
   isDefault: boolean;
@@ -87,6 +94,8 @@ export interface PublicVariantSource {
   id: string;
   sku: string;
   optionValues: Prisma.JsonValue;
+  moq?: number | null;
+  packMultiple?: number | null;
   stockStatus: StockStatus;
   isDefault: boolean;
   sortOrder: number;
@@ -133,6 +142,8 @@ export function toPublicVariant(
     id: row.id,
     sku: row.sku,
     optionValues: toOptionValues(row.optionValues),
+    moq: row.moq ?? null,
+    packMultiple: row.packMultiple ?? null,
     stockStatus: row.stockStatus,
     isDefault: row.isDefault,
     sortOrder: row.sortOrder,

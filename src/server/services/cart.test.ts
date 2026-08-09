@@ -83,6 +83,7 @@ async function makeProduct(
     deletedAt?: Date | null;
     stockStatus?: "IN_STOCK" | "LOW" | "OUT_OF_STOCK";
     moq?: number | null;
+    packMultiple?: number | null;
     price?: number;
   } = {},
 ): Promise<string> {
@@ -97,6 +98,7 @@ async function makeProduct(
       price: overrides.price ?? 49900,
       mrp: 59900,
       moq: overrides.moq ?? null,
+      packMultiple: overrides.packMultiple ?? null,
       stockStatus: overrides.stockStatus ?? "IN_STOCK",
       status: overrides.status ?? "ACTIVE",
       deletedAt: overrides.deletedAt ?? null,
@@ -158,6 +160,42 @@ describe("addToCart — clamps & caps", () => {
     expect(result.quantity).toBe(10);
     expect(result.clamped).toBe(true);
     expect(result.itemCount).toBe(10);
+  });
+
+  it("rounds an off-pack quantity UP to the next pack multiple", async () => {
+    const customerId = await makeCustomer("pack");
+    const productId = await makeProduct({ moq: 10, packMultiple: 10 });
+
+    const result = await addToCart(approvedViewer(customerId), {
+      productId,
+      quantity: 25,
+    });
+    expect(result.quantity).toBe(30);
+    expect(result.clamped).toBe(true);
+  });
+
+  it("pack-aligns the floor when MOQ is not a multiple", async () => {
+    const customerId = await makeCustomer("packfloor");
+    const productId = await makeProduct({ moq: 15, packMultiple: 10 });
+
+    const result = await addToCart(approvedViewer(customerId), {
+      productId,
+      quantity: 1,
+    });
+    expect(result.quantity).toBe(20); // smallest pack multiple >= MOQ 15
+  });
+
+  it("re-aligns a merged add onto the pack", async () => {
+    const customerId = await makeCustomer("packmerge");
+    const productId = await makeProduct({ moq: 10, packMultiple: 10 });
+
+    await addToCart(approvedViewer(customerId), { productId, quantity: 10 });
+    const merged = await addToCart(approvedViewer(customerId), {
+      productId,
+      quantity: 5, // 10 + 5 = 15 → rounds to 20
+    });
+    expect(merged.quantity).toBe(20);
+    expect(merged.clamped).toBe(true);
   });
 
   it("caps an absurd quantity at the per-line ceiling", async () => {
@@ -358,5 +396,227 @@ describe("updateQuantity & clearCart", () => {
 
     await clearCart(customerId);
     expect(await cartItemCount(customerId)).toBe(0);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Allocation breakdowns (per-model quantity splits)                   */
+/* ------------------------------------------------------------------ */
+
+describe("addToCart — allocation breakdowns", () => {
+  const createdModelIds = new Set<string>();
+
+  async function makeModel(name: string): Promise<string> {
+    const row = await prisma.deviceModel.create({
+      data: {
+        name: `${name} ${uniqueSku("M")}`,
+        slug: `${name.toLowerCase()}-${uniqueSku("m").toLowerCase()}`,
+        status: "ACTIVE",
+      },
+      select: { id: true },
+    });
+    createdModelIds.add(row.id);
+    return row.id;
+  }
+
+  async function makeAllocProduct(overrides?: {
+    moq?: number;
+    packMultiple?: number;
+    modelIds?: string[];
+  }): Promise<string> {
+    const productId = await makeProduct({
+      moq: overrides?.moq ?? null,
+      packMultiple: overrides?.packMultiple ?? null,
+    });
+    await prisma.product.update({
+      where: { id: productId },
+      data: {
+        allocation: {
+          kind: "DEVICE_MODEL",
+          required: true,
+          modelIds: overrides?.modelIds ?? [],
+        },
+      },
+    });
+    return productId;
+  }
+
+  afterEach(async () => {
+    if (createdModelIds.size === 0) return;
+    await prisma.deviceModel.deleteMany({
+      where: { id: { in: [...createdModelIds] } },
+    });
+    createdModelIds.clear();
+  });
+
+  it("rejects an allocation product without a breakdown", async () => {
+    const customerId = await makeCustomer("alloc-req");
+    const productId = await makeAllocProduct();
+
+    await expect(
+      addToCart(approvedViewer(customerId), { productId, quantity: 10 }),
+    ).rejects.toMatchObject({ code: "BREAKDOWN_REQUIRED" });
+  });
+
+  it("stores a valid breakdown and sums it into the quantity", async () => {
+    const customerId = await makeCustomer("alloc-ok");
+    const productId = await makeAllocProduct();
+    const m1 = await makeModel("Realme");
+    const m2 = await makeModel("S23");
+
+    const result = await addToCart(approvedViewer(customerId), {
+      productId,
+      quantity: 30,
+      breakdown: [
+        { modelId: m1, qty: 10 },
+        { modelId: m2, qty: 20 },
+      ],
+    });
+    expect(result.quantity).toBe(30);
+
+    const row = await prisma.cartItem.findFirst({
+      where: { customerId, productId },
+      select: { quantity: true, breakdown: true },
+    });
+    expect(row?.quantity).toBe(30);
+    expect(row?.breakdown).toEqual([
+      { modelId: m1, qty: 10 },
+      { modelId: m2, qty: 20 },
+    ]);
+  });
+
+  it("merges repeat adds per model", async () => {
+    const customerId = await makeCustomer("alloc-merge");
+    const productId = await makeAllocProduct();
+    const m1 = await makeModel("Realme");
+    const m2 = await makeModel("S23");
+
+    await addToCart(approvedViewer(customerId), {
+      productId,
+      quantity: 10,
+      breakdown: [{ modelId: m1, qty: 10 }],
+    });
+    const merged = await addToCart(approvedViewer(customerId), {
+      productId,
+      quantity: 15,
+      breakdown: [
+        { modelId: m1, qty: 5 },
+        { modelId: m2, qty: 10 },
+      ],
+    });
+    expect(merged.quantity).toBe(25);
+
+    const row = await prisma.cartItem.findFirst({
+      where: { customerId, productId },
+      select: { breakdown: true },
+    });
+    const map = new Map(
+      (row?.breakdown as { modelId: string; qty: number }[]).map((e) => [
+        e.modelId,
+        e.qty,
+      ]),
+    );
+    expect(map.get(m1)).toBe(15);
+    expect(map.get(m2)).toBe(10);
+  });
+
+  it("rejects when the MOQ clamp would change the total (never invents a split)", async () => {
+    const customerId = await makeCustomer("alloc-moq");
+    const productId = await makeAllocProduct({ moq: 50 });
+    const m1 = await makeModel("Realme");
+
+    await expect(
+      addToCart(approvedViewer(customerId), {
+        productId,
+        quantity: 30,
+        breakdown: [{ modelId: m1, qty: 30 }],
+      }),
+    ).rejects.toMatchObject({
+      code: "BREAKDOWN_SUM_MISMATCH",
+      details: { requiredTotal: 50, providedTotal: 30 },
+    });
+
+    expect(
+      await prisma.cartItem.count({ where: { customerId, productId } }),
+    ).toBe(0);
+  });
+
+  it("rejects models outside the product's allow-list", async () => {
+    const customerId = await makeCustomer("alloc-allow");
+    const allowed = await makeModel("Allowed");
+    const outsider = await makeModel("Outsider");
+    const productId = await makeAllocProduct({ modelIds: [allowed] });
+
+    await expect(
+      addToCart(approvedViewer(customerId), {
+        productId,
+        quantity: 5,
+        breakdown: [{ modelId: outsider, qty: 5 }],
+      }),
+    ).rejects.toMatchObject({ code: "BREAKDOWN_INVALID" });
+  });
+
+  it("rejects inactive models", async () => {
+    const customerId = await makeCustomer("alloc-inactive");
+    const productId = await makeAllocProduct();
+    const m1 = await makeModel("Dead");
+    await prisma.deviceModel.update({
+      where: { id: m1 },
+      data: { status: "INACTIVE" },
+    });
+
+    await expect(
+      addToCart(approvedViewer(customerId), {
+        productId,
+        quantity: 5,
+        breakdown: [{ modelId: m1, qty: 5 }],
+      }),
+    ).rejects.toMatchObject({ code: "BREAKDOWN_INVALID" });
+  });
+
+  it("ignores a stray breakdown on a normal product", async () => {
+    const customerId = await makeCustomer("alloc-stray");
+    const productId = await makeProduct();
+    const m1 = await makeModel("Stray");
+
+    const result = await addToCart(approvedViewer(customerId), {
+      productId,
+      quantity: 4,
+      breakdown: [{ modelId: m1, qty: 4 }],
+    });
+    expect(result.quantity).toBe(4);
+    const row = await prisma.cartItem.findFirst({
+      where: { customerId, productId },
+      select: { breakdown: true },
+    });
+    expect(row?.breakdown ?? null).toBeNull();
+  });
+
+  it("getCart resolves model names and flags a stale split", async () => {
+    const customerId = await makeCustomer("alloc-read");
+    const productId = await makeAllocProduct();
+    const m1 = await makeModel("Readable");
+
+    await addToCart(approvedViewer(customerId), {
+      productId,
+      quantity: 5,
+      breakdown: [{ modelId: m1, qty: 5 }],
+    });
+
+    let cart = await getCart(approvedViewer(customerId));
+    let line = cart.lines.find((l) => l.productId === productId);
+    expect(line?.allocationRequired).toBe(true);
+    expect(line?.breakdown?.[0]?.qty).toBe(5);
+    expect(line?.breakdown?.[0]?.name).toContain("Readable");
+    expect(line?.issues).not.toContain("breakdown-mismatch");
+
+    // Deactivate the model behind the cart's back → flagged, not repaired.
+    await prisma.deviceModel.update({
+      where: { id: m1 },
+      data: { status: "INACTIVE" },
+    });
+    cart = await getCart(approvedViewer(customerId));
+    line = cart.lines.find((l) => l.productId === productId);
+    expect(line?.issues).toContain("breakdown-mismatch");
   });
 });

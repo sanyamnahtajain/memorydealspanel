@@ -251,6 +251,11 @@ function OrderLineRow({
             {line.variantLabel}
           </p>
         ) : null}
+        {line.breakdown && line.breakdown.length > 0 ? (
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {line.breakdown.map((b) => `${b.qty} × ${b.modelName}`).join(" · ")}
+          </p>
+        ) : null}
         <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
           Qty {line.quantity}
           {priced && line.unitPricePaise !== null

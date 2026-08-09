@@ -60,6 +60,8 @@ export interface OrderItemSnapshot {
    * order (those lines have no tax and render exactly as before).
    */
   tax?: OrderItemTaxSnapshot;
+  /** Frozen per-model split for allocation lines, when present. */
+  breakdown?: { modelName: string; qty: number }[];
 }
 
 /** Coerce a persisted per-line GST blob into a typed snapshot, or undefined. */

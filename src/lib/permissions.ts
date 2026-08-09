@@ -13,6 +13,7 @@ export const PERMISSIONS = {
   PRODUCTS_DELETE: "products.delete",
   CATEGORIES_MANAGE: "categories.manage",
   BRANDS_MANAGE: "brands.manage",
+  DEVICE_MODELS_MANAGE: "devicemodels.manage",
   IMPORT_RUN: "import.run",
   EXPORT_DATA: "export.data",
   // Customers & access
@@ -44,6 +45,7 @@ export const PERMISSION_GROUPS: {
       { key: PERMISSIONS.PRODUCTS_EDIT, label: "Edit products", description: "Create, edit, and bulk-edit products (incl. prices)." },
       { key: PERMISSIONS.PRODUCTS_DELETE, label: "Delete products", description: "Move products to trash / restore." },
       { key: PERMISSIONS.CATEGORIES_MANAGE, label: "Manage categories", description: "Create, edit, reorder, and delete categories." },
+      { key: PERMISSIONS.DEVICE_MODELS_MANAGE, label: "Manage device models", description: "Maintain the phone/device model master used by per-model order breakdowns." },
       { key: PERMISSIONS.BRANDS_MANAGE, label: "Manage brands", description: "Create, edit, and delete brands." },
       { key: PERMISSIONS.IMPORT_RUN, label: "Import data", description: "Bulk-import products from CSV/XLSX." },
       { key: PERMISSIONS.EXPORT_DATA, label: "Export data", description: "Download the catalog export." },

@@ -382,3 +382,171 @@ describe("getOrderForCustomer — IDOR", () => {
     expect(asOther).toBeNull();
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* Minimum order value (StoreSettings)                                 */
+/* ------------------------------------------------------------------ */
+
+describe("placeOrder — minimum order value", () => {
+  async function setMov(paise: number | null): Promise<void> {
+    await prisma.storeSettings.upsert({
+      where: { key: "default" },
+      create: { key: "default", minOrderValuePaise: paise },
+      update: { minOrderValuePaise: paise },
+    });
+  }
+
+  afterEach(async () => {
+    await setMov(null); // never leak a minimum into other suites
+  });
+
+  it("blocks placement below the minimum with an actionable message", async () => {
+    await setMov(500_000); // ₹5,000
+    const customerId = await makeCustomer();
+    await grantAccess(customerId);
+    const productId = await makeProduct({ price: 100_000 }); // ₹1,000
+    await addCartLine(customerId, productId, 1);
+
+    const result = await placeOrder(customerId, {});
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe("below-minimum");
+      expect(result.message).toContain("more to place an order");
+    }
+    // Nothing was placed.
+    expect(await prisma.order.count({ where: { customerId } })).toBe(0);
+  });
+
+  it("places an order exactly at the minimum", async () => {
+    await setMov(500_000);
+    const customerId = await makeCustomer();
+    await grantAccess(customerId);
+    const productId = await makeProduct({ price: 100_000 });
+    await addCartLine(customerId, productId, 5); // 5 × ₹1,000 = ₹5,000
+
+    const result = await placeOrder(customerId, {});
+    expect(result.ok).toBe(true);
+  });
+
+  it("ignores the gate when unset or zero", async () => {
+    await setMov(0);
+    const customerId = await makeCustomer();
+    await grantAccess(customerId);
+    const productId = await makeProduct({ price: 5_000 }); // ₹50
+    await addCartLine(customerId, productId, 1);
+
+    const result = await placeOrder(customerId, {});
+    expect(result.ok).toBe(true);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Allocation breakdowns at placement                                  */
+/* ------------------------------------------------------------------ */
+
+describe("placeOrder — allocation breakdowns", () => {
+  const modelIds = new Set<string>();
+
+  async function makeModel(name: string): Promise<{ id: string; name: string }> {
+    const unique = `${name} ${uniqueSku("OM")}`;
+    const row = await prisma.deviceModel.create({
+      data: {
+        name: unique,
+        slug: unique.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+        status: "ACTIVE",
+      },
+      select: { id: true, name: true },
+    });
+    modelIds.add(row.id);
+    return row;
+  }
+
+  afterEach(async () => {
+    if (modelIds.size === 0) return;
+    await prisma.deviceModel.deleteMany({ where: { id: { in: [...modelIds] } } });
+    modelIds.clear();
+  });
+
+  async function makeAllocProduct(): Promise<string> {
+    const productId = await makeProduct({ price: 10000 });
+    await prisma.product.update({
+      where: { id: productId },
+      data: { allocation: { kind: "DEVICE_MODEL", required: true, modelIds: [] } },
+    });
+    return productId;
+  }
+
+  it("snapshots the split with frozen model names", async () => {
+    const customerId = await makeCustomer();
+    await grantAccess(customerId);
+    const productId = await makeAllocProduct();
+    const m1 = await makeModel("Realme 11");
+    const m2 = await makeModel("S23 Ultra");
+
+    await prisma.cartItem.create({
+      data: {
+        customerId,
+        productId,
+        quantity: 30,
+        breakdown: [
+          { modelId: m1.id, qty: 10 },
+          { modelId: m2.id, qty: 20 },
+        ],
+      },
+    });
+
+    const result = await placeOrder(customerId, {});
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const item = (result.order.items as { breakdown?: { modelName: string; qty: number }[] }[])[0];
+      expect(item.breakdown).toEqual([
+        { modelName: m1.name, qty: 10 },
+        { modelName: m2.name, qty: 20 },
+      ]);
+    }
+  });
+
+  it("blocks placement when the stored split does not sum to the quantity", async () => {
+    const customerId = await makeCustomer();
+    await grantAccess(customerId);
+    const productId = await makeAllocProduct();
+    const m1 = await makeModel("Tampered");
+
+    // Forced desync via direct write (the service itself can't produce this).
+    await prisma.cartItem.create({
+      data: {
+        customerId,
+        productId,
+        quantity: 30,
+        breakdown: [{ modelId: m1.id, qty: 10 }],
+      },
+    });
+
+    const result = await placeOrder(customerId, {});
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe("empty");
+  });
+
+  it("blocks placement when a model went inactive after adding", async () => {
+    const customerId = await makeCustomer();
+    await grantAccess(customerId);
+    const productId = await makeAllocProduct();
+    const m1 = await makeModel("Ghost");
+
+    await prisma.cartItem.create({
+      data: {
+        customerId,
+        productId,
+        quantity: 10,
+        breakdown: [{ modelId: m1.id, qty: 10 }],
+      },
+    });
+    await prisma.deviceModel.update({
+      where: { id: m1.id },
+      data: { status: "INACTIVE" },
+    });
+
+    const result = await placeOrder(customerId, {});
+    expect(result.ok).toBe(false);
+  });
+});

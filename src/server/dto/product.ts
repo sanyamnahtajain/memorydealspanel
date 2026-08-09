@@ -1,3 +1,8 @@
+import {
+  resolveEffectiveAllocation,
+  toPublicAllocation,
+  type PublicAllocation,
+} from "@/lib/allocation";
 import type { Prisma, ProductImage } from "@prisma/client";
 import type { EntityStatus, StockStatus } from "@/lib/schemas/shared";
 import type { TaxTreatment } from "@/lib/gst";
@@ -75,6 +80,14 @@ export interface PublicProduct {
   description: string | null;
   specs: unknown;
   moq: number | null;
+  /** Pack multiple (order in multiples of this), when set. NON-MONETARY. */
+  packMultiple: number | null;
+  /**
+   * Per-model allocation requirement for the buy flow, or null. Deliberately
+   * WITHOUT the raw id allow-list (can be hundreds of ids) — the picker
+   * searches server-side with the restriction applied there.
+   */
+  allocation: PublicAllocation | null;
   stockStatus: StockStatus;
   status: EntityStatus;
   tags: string[];
@@ -147,6 +160,11 @@ export interface PublicSource {
   description: string | null;
   specs: Prisma.JsonValue;
   moq: number | null;
+  /** Optional on sources so narrower legacy selects still map (⇒ null). */
+  packMultiple?: number | null;
+  allocation?: unknown;
+  /** Loose on purpose: sources may carry a wider category select. */
+  category?: ({ defaultAllocation?: unknown } & Record<string, unknown>) | null;
   stockStatus: StockStatus;
   status: EntityStatus;
   tags: string[];
@@ -335,6 +353,10 @@ export function toPublicProduct(
     description: row.description ?? null,
     specs: row.specs ?? null,
     moq: row.moq ?? null,
+    packMultiple: row.packMultiple ?? null,
+    allocation: toPublicAllocation(
+      resolveEffectiveAllocation(row.allocation, row.category?.defaultAllocation),
+    ),
     stockStatus: row.stockStatus,
     status: row.status,
     tags: row.tags ?? [],

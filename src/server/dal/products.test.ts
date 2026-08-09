@@ -90,7 +90,12 @@ async function firstActiveSlug(): Promise<string> {
   const row = await prisma.product.findFirst({
     where: { status: "ACTIVE", deletedAt: null },
     select: { slug: true },
-    orderBy: { createdAt: "desc" },
+    // OLDEST first: `desc` grabbed the newest active product, which in a
+    // parallel run is usually another suite's transient fixture — it could be
+    // hard-deleted between this lookup and the assertions (a flake that got
+    // likelier as more suites created products). The oldest row is stable
+    // seed data.
+    orderBy: { createdAt: "asc" },
   });
   if (!row) throw new Error("seed missing: no active product");
   return row.slug;

@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import { Tooltip } from "@/components/ui/tooltip";
 import { springs } from "@/components/motion/tokens";
 import { cn } from "@/lib/utils";
-import { MIN_QTY_PER_LINE } from "@/lib/schemas/cart";
+import { minOrderableQty } from "@/lib/quantity";
 import { addToCartAction } from "@/server/actions/cart";
 import { broadcastCartCount } from "./CartBadge";
 
@@ -32,6 +32,8 @@ export interface QuickAddToCartProps {
   variantId?: string | null;
   /** MOQ floor — the quantity a single quick-add contributes. Defaults to 1. */
   moq?: number | null;
+  /** Pack multiple — the quick-add quantity is aligned onto it. */
+  packMultiple?: number | null;
   className?: string;
 }
 
@@ -39,6 +41,7 @@ export function QuickAddToCart({
   productId,
   variantId = null,
   moq,
+  packMultiple,
   className,
 }: QuickAddToCartProps) {
   const router = useRouter();
@@ -54,10 +57,12 @@ export function QuickAddToCart({
     [],
   );
 
-  const quantity = React.useMemo(() => {
-    const m = typeof moq === "number" && moq >= MIN_QTY_PER_LINE ? Math.trunc(moq) : MIN_QTY_PER_LINE;
-    return m;
-  }, [moq]);
+  // The smallest orderable quantity: pack-aligned MOQ (shared helper keeps
+  // this identical to the server clamp).
+  const quantity = React.useMemo(
+    () => minOrderableQty(moq, packMultiple),
+    [moq, packMultiple],
+  );
 
   function handleAdd(e: React.MouseEvent) {
     // Live inside a card link — never follow it on a quick-add tap.

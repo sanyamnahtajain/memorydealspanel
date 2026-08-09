@@ -32,6 +32,7 @@ function makeVariant(over: Partial<EditorVariant>): EditorVariant {
     price: 10000,
     mrp: null,
     moq: null,
+    packMultiple: null,
     stockStatus: "IN_STOCK",
     status: "ACTIVE",
     isDefault: false,

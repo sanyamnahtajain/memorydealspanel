@@ -41,6 +41,8 @@ import {
 } from "./SpecEditor";
 import { TagEditor } from "./TagEditor";
 import { ProductImagesField } from "./ProductImagesField";
+import { Switch } from "@/components/ui/switch";
+import type { Allocation } from "@/lib/allocation";
 import { VariantsSection } from "./variants";
 import { variantsActions as wiredVariantsActions } from "./variants/actions";
 import type {
@@ -69,6 +71,7 @@ export type EditorProduct = Pick<
   | "price"
   | "mrp"
   | "moq"
+  | "packMultiple"
   | "stockStatus"
   | "status"
   | "tags"
@@ -125,6 +128,8 @@ export interface ProductEditorFormProps {
    * shows a "not connected" toast, so the UI never crashes if left unwired.
    */
   variantsActions?: VariantsActions;
+  /** RAW allocation config (not the public projection) for the toggle. */
+  initialAllocation?: Allocation | null;
 }
 
 const STOCK_OPTIONS: { value: StockStatus; label: string }[] = [
@@ -143,6 +148,7 @@ interface FormState {
   priceInput: string;
   mrpInput: string;
   moq: string;
+  packMultiple: string;
   stockStatus: StockStatus;
   status: EntityStatus;
   tags: string[];
@@ -191,6 +197,8 @@ function buildInitialState(product?: EditorProduct): FormState {
     priceInput: paiseToInput(product?.price),
     mrpInput: paiseToInput(product?.mrp),
     moq: product?.moq != null ? String(product.moq) : "",
+    packMultiple:
+      product?.packMultiple != null ? String(product.packMultiple) : "",
     stockStatus: product?.stockStatus ?? "IN_STOCK",
     status: product?.status ?? "ACTIVE",
     tags: product?.tags ?? [],
@@ -241,11 +249,17 @@ export function ProductEditorForm({
   product,
   tax,
   variantsActions = wiredVariantsActions,
+  initialAllocation = null,
 }: ProductEditorFormProps) {
   const router = useRouter();
   const isEdit = Boolean(product);
   const [state, setState] = React.useState<FormState>(() =>
     buildInitialState(product),
+  );
+  // Allocation toggle: ON stores { required: true } (preserving any existing
+  // model restriction), OFF clears the override back to the category default.
+  const [allocationOn, setAllocationOn] = React.useState(
+    initialAllocation?.required ?? false,
   );
   const [pending, setPending] = React.useState(false);
   const [fieldError, setFieldError] = React.useState<string | null>(null);
@@ -332,6 +346,8 @@ export function ProductEditorForm({
     }
 
     const moqValue = state.moq.trim() === "" ? undefined : Number(state.moq);
+    const packValue =
+      state.packMultiple.trim() === "" ? undefined : Number(state.packMultiple);
 
     const raw: CreateProductInput = {
       categoryId: state.categoryId,
@@ -346,6 +362,14 @@ export function ProductEditorForm({
       price: pricePaise,
       mrp: mrpPaise ?? undefined,
       moq: moqValue,
+      packMultiple: packValue,
+      allocation: allocationOn
+        ? {
+            kind: "DEVICE_MODEL" as const,
+            required: true,
+            modelIds: initialAllocation?.modelIds ?? [],
+          }
+        : null,
       stockStatus: state.stockStatus,
       status: state.status,
       tags: state.tags,
@@ -535,6 +559,22 @@ export function ProductEditorForm({
                 className="font-tabular"
               />
             </Field>
+            <Field
+              label="Pack of"
+              htmlFor="packMultiple"
+              hint="Sold in boxes: quantities round up to a multiple of this. Leave empty for any quantity."
+            >
+              <Input
+                id="packMultiple"
+                inputMode="numeric"
+                value={state.packMultiple}
+                onChange={(e) =>
+                  set("packMultiple", e.target.value.replace(/[^\d]/g, ""))
+                }
+                placeholder="—"
+                className="font-tabular"
+              />
+            </Field>
           </div>
 
           {!hasVariants && pricePaise != null ? (
@@ -706,6 +746,31 @@ export function ProductEditorForm({
             onStateChange={onVariantStateChange}
             disabled={pending}
           />
+        </Section>
+      </FadeUp>
+
+      <FadeUp delay={0.09}>
+        <Section
+          title="Model allocation"
+          description="Ask buyers to split the quantity across device models (e.g. tempered glass: 10 × Realme 11, 10 × S23 Ultra)."
+        >
+          <label className="flex items-center justify-between gap-4 rounded-lg border border-border px-3 py-2.5">
+            <span className="text-sm">
+              <span className="font-medium text-foreground">
+                Require a per-model breakdown
+              </span>
+              <span className="mt-0.5 block text-xs text-muted-foreground">
+                Buyers pick models from the master list (Admin → Models) and set
+                a quantity for each; the cart line total follows the split.
+              </span>
+            </span>
+            <Switch
+              checked={allocationOn}
+              onCheckedChange={setAllocationOn}
+              disabled={pending}
+              aria-label="Require a per-model breakdown"
+            />
+          </label>
         </Section>
       </FadeUp>
 

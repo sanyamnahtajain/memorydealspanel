@@ -55,6 +55,8 @@ export interface VariantSelectorProps {
   productId?: string;
   /** Product-level MOQ — the add-to-cart quantity floor. */
   moq?: number | null;
+  /** Product-level pack multiple (variant override applied per selection). */
+  packMultiple?: number | null;
   /** Axis definitions (name + allowed values), from `Product.optionTypes`. */
   optionTypes: ProductOptionType[];
   /** ACTIVE variants, gated by the DAL to the viewer's tier. */
@@ -130,6 +132,7 @@ export function VariantSelector({
   productName,
   productId,
   moq,
+  packMultiple,
   optionTypes,
   variants,
   showPrices,
@@ -289,7 +292,8 @@ export function VariantSelector({
         <AddToCartButton
           productId={productId}
           variantId={selected?.id ?? null}
-          moq={moq}
+          moq={selected?.moq ?? moq}
+          packMultiple={selected?.packMultiple ?? packMultiple}
           canAdd={showPrices && selected != null}
           isCustomer={status !== undefined}
           outOfStock={

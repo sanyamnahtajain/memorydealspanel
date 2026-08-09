@@ -84,6 +84,9 @@ model Category {
   // set their own. gstRateBps is basis points (1800 = 18.00%).
   defaultHsnCode    String?
   defaultGstRateBps Int?
+  // Default allocation config inherited by products with allocation = null
+  // (same inheritance idea as the GST defaults above).
+  defaultAllocation Json?
   parentId  String?      @db.ObjectId
   parent    Category?    @relation("SubCategories", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   children  Category[]   @relation("SubCategories")
@@ -119,6 +122,9 @@ model Product {
   price       Int // paise
   mrp         Int? // paise
   moq         Int?
+  // Order in multiples of this (boxes/packs): MOQ 10 + packMultiple 10 ⇒
+  // 10, 20, 30… while MOQ 10 + null ⇒ any qty ≥ 10. null/1 = no constraint.
+  packMultiple Int?
   // GST (Phase 13): optional per-product override; null ⇒ inherit the
   // category default, then the SellerTaxProfile default. gstRateBps is basis
   // points (1800 = 18.00%). taxTreatment null ⇒ inherit the profile mode.
@@ -140,6 +146,11 @@ model Product {
   // (e.g. [{ name: "Capacity", values: ["10000mAh","20000mAh"] }]).
   hasVariants Boolean          @default(false)
   optionTypes Json?
+  // Per-model quantity allocation (screen protectors etc.). Shape:
+  //   { kind: "DEVICE_MODEL", required: boolean, modelIds: string[] }
+  // null ⇒ inherit the category's defaultAllocation; explicit required:false
+  // ⇒ override the category OFF. Empty modelIds ⇒ every ACTIVE model allowed.
+  allocation Json?
   variants    ProductVariant[]
   deletedAt   DateTime?
   createdAt   DateTime       @default(now())
@@ -348,6 +359,8 @@ model ProductVariant {
   price        Int // paise
   mrp          Int? // paise
   moq          Int?
+  // Pack multiple override; null ⇒ inherit the parent product's.
+  packMultiple Int?
   // GST (Phase 13): per-variant override; null ⇒ inherit the parent product.
   hsnCode      String?
   gstRateBps   Int?
@@ -375,6 +388,9 @@ model CartItem {
   product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   variantId  String?  @db.ObjectId
   quantity   Int
+  // Per-model quantity split for allocation products: [{ modelId, qty }],
+  // validated server-side to sum EXACTLY to `quantity`. null for normal lines.
+  breakdown  Json?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -442,4 +458,37 @@ model SellerTaxProfile {
   defaultHsnCode    String?
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
+}
+
+// ── Store settings ──────────────────────────────────────────────────────────
+// A single settings document for order-flow configuration (the SellerTaxProfile
+// pattern): exactly one row (fixed `key`), upserted on first read. Extend this
+// model for future store-wide knobs instead of adding new singletons.
+model StoreSettings {
+  id  String @id @default(auto()) @map("_id") @db.ObjectId
+  key String @unique @default("default")
+  // Minimum order value in integer paise. null/0 = no minimum (feature off).
+  minOrderValuePaise Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ── Device models (allocation master) ───────────────────────────────────────
+// The master list of phone/device models that per-model quantity breakdowns
+// reference (e.g. tempered glass: "10 × Realme 11, 10 × S23 Ultra"). Managed
+// like the Brand master: admin CRUD + bulk paste, ACTIVE/INACTIVE lifecycle.
+// Deactivate rather than delete once orders/carts reference a model.
+model DeviceModel {
+  id        String       @id @default(auto()) @map("_id") @db.ObjectId
+  name      String       @unique
+  slug      String       @unique
+  // Grouping label for the picker ("Samsung", "Realme"); free text on purpose.
+  brandName String?
+  status    EntityStatus @default(ACTIVE)
+  sortOrder Int          @default(0)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@index([status, sortOrder])
+  @@index([brandName])
 }

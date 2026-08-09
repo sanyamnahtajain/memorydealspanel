@@ -36,6 +36,7 @@ export interface VariantProductViewProps {
   productId: string;
   /** Product-level MOQ — the add-to-cart quantity floor. */
   moq?: number | null;
+  packMultiple?: number | null;
   optionTypes: ProductOptionType[];
   variants: Array<PublicVariant | PricedVariant>;
   showPrices: boolean;
@@ -51,6 +52,7 @@ export function VariantProductView({
   productImages,
   productId,
   moq,
+  packMultiple,
   optionTypes,
   variants,
   showPrices,
@@ -89,6 +91,7 @@ export function VariantProductView({
             productName={productName}
             productId={productId}
             moq={moq}
+            packMultiple={packMultiple}
             optionTypes={optionTypes}
             variants={variants}
             showPrices={showPrices}

@@ -1,3 +1,4 @@
+import { Prisma as PrismaRuntime } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { makeUniqueSlug } from "@/lib/slug";
@@ -44,6 +45,7 @@ const PRICED_SELECT = {
   description: true,
   specs: true,
   moq: true,
+  packMultiple: true,
   stockStatus: true,
   status: true,
   tags: true,
@@ -264,6 +266,11 @@ export async function createProduct(
         price: data.price,
         mrp: data.mrp,
         moq: data.moq,
+        packMultiple: data.packMultiple,
+        allocation:
+          data.allocation === undefined
+            ? undefined
+            : ((data.allocation ?? PrismaRuntime.DbNull) as Prisma.InputJsonValue),
         stockStatus: data.stockStatus,
         status: data.status,
         tags: data.tags,
@@ -357,6 +364,13 @@ export async function updateProduct(
   if (data.price !== undefined) update.price = data.price;
   if (data.mrp !== undefined) update.mrp = data.mrp;
   if (data.moq !== undefined) update.moq = data.moq;
+  if (data.packMultiple !== undefined) update.packMultiple = data.packMultiple;
+  if (data.allocation !== undefined) {
+    // Present key writes the config; explicit null clears back to "inherit
+    // the category default" (Mongo Json: DbNull, not JS null).
+    update.allocation = (data.allocation ??
+      PrismaRuntime.DbNull) as Prisma.InputJsonValue;
+  }
   if (data.stockStatus !== undefined) update.stockStatus = data.stockStatus;
   if (data.status !== undefined) update.status = data.status;
   if (data.tags !== undefined) update.tags = data.tags;

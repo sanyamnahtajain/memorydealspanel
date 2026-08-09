@@ -60,6 +60,8 @@ const publicProduct: PublicProduct = {
   description: "High-density desktop memory.",
   specs: null,
   moq: 10,
+  packMultiple: null,
+  allocation: null,
   stockStatus: "IN_STOCK",
   status: "ACTIVE",
   tags: ["ddr4"],

@@ -10,7 +10,12 @@ import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { springs } from "@/components/motion/tokens";
 import { cn } from "@/lib/utils";
-import { MAX_QTY_PER_LINE, MIN_QTY_PER_LINE } from "@/lib/schemas/cart";
+import {
+  clampQuantity,
+  maxOrderableQty,
+  minOrderableQty,
+  normalisePack,
+} from "@/lib/quantity";
 import { addToCartAction } from "@/server/actions/cart";
 import { broadcastCartCount } from "./CartBadge";
 
@@ -33,6 +38,8 @@ export interface AddToCartButtonProps {
   variantId?: string | null;
   /** The product/variant MOQ — the stepper's floor. Defaults to 1. */
   moq?: number | null;
+  /** Order in multiples of this (boxes). null/1 = any quantity. */
+  packMultiple?: number | null;
   /** Whether this viewer may add to cart (APPROVED). */
   canAdd: boolean;
   /**
@@ -47,16 +54,11 @@ export interface AddToCartButtonProps {
   className?: string;
 }
 
-/** Clamp a candidate quantity into the [floor, cap] window. */
-function clamp(value: number, floor: number): number {
-  if (!Number.isFinite(value)) return floor;
-  return Math.min(MAX_QTY_PER_LINE, Math.max(floor, Math.trunc(value)));
-}
-
 export function AddToCartButton({
   productId,
   variantId = null,
   moq,
+  packMultiple,
   canAdd,
   isCustomer = false,
   outOfStock = false,
@@ -65,15 +67,19 @@ export function AddToCartButton({
 }: AddToCartButtonProps) {
   const router = useRouter();
   const reduced = useReducedMotion();
-  const floor = React.useMemo(() => {
-    const m = typeof moq === "number" && moq >= MIN_QTY_PER_LINE ? Math.trunc(moq) : MIN_QTY_PER_LINE;
-    return Math.min(MAX_QTY_PER_LINE, m);
-  }, [moq]);
+  // Floor is the pack-aligned MOQ; the +/- step is one pack. Shared helpers
+  // (src/lib/quantity) keep this identical to the server's clamp.
+  const pack = React.useMemo(() => normalisePack(packMultiple), [packMultiple]);
+  const floor = React.useMemo(
+    () => minOrderableQty(moq, packMultiple),
+    [moq, packMultiple],
+  );
+  const cap = React.useMemo(() => maxOrderableQty(packMultiple), [packMultiple]);
 
   const [qty, setQty] = React.useState(floor);
   const [pending, startTransition] = React.useTransition();
 
-  // Re-seed the quantity to the floor when the MOQ changes (e.g. variant swap).
+  // Re-seed the quantity to the floor when MOQ/pack change (e.g. variant swap).
   const [seenFloor, setSeenFloor] = React.useState(floor);
   if (seenFloor !== floor) {
     setSeenFloor(floor);
@@ -118,10 +124,11 @@ export function AddToCartButton({
   }
 
   const canDecrement = qty > floor && !pending;
-  const canIncrement = qty < MAX_QTY_PER_LINE && !pending;
+  const canIncrement = qty < cap && !pending;
 
   function step(delta: number) {
-    setQty((q) => clamp(q + delta, floor));
+    // One press = one pack (or one unit without a pack).
+    setQty((q) => clampQuantity(q + delta * pack, moq, packMultiple));
   }
 
   function onInputChange(raw: string) {
@@ -131,12 +138,14 @@ export function AddToCartButton({
     }
     const parsed = Number(raw);
     if (Number.isNaN(parsed)) return;
-    setQty(clamp(parsed, floor));
+    // While typing, only bound the value — snap to the pack on blur/submit so
+    // "2" doesn't jump to "10" mid-keystroke when the user wants "25".
+    setQty(Math.min(cap, Math.max(1, Math.trunc(parsed))));
   }
 
   function handleAdd() {
     if (pending) return;
-    const quantity = clamp(qty, floor);
+    const quantity = clampQuantity(qty, moq, packMultiple);
 
     startTransition(async () => {
       const result = await addToCartAction({
@@ -149,7 +158,9 @@ export function AddToCartButton({
         broadcastCartCount(result.itemCount);
         toast.success(
           result.clamped
-            ? `Added — quantity adjusted to ${result.quantity} (minimum order).`
+            ? pack > 1
+              ? `Added — quantity adjusted to ${result.quantity} (packs of ${pack}).`
+              : `Added — quantity adjusted to ${result.quantity} (minimum order).`
             : "Added to cart.",
           {
             action: {
@@ -184,7 +195,7 @@ export function AddToCartButton({
         aria-label="Quantity"
         className="inline-flex h-11 items-center rounded-lg border border-border bg-background"
       >
-        <Tooltip content={floor > 1 ? `Minimum order is ${floor}` : "Decrease"}>
+        <Tooltip content={pack > 1 ? `Sold in packs of ${pack} — minimum ${floor}` : floor > 1 ? `Minimum order is ${floor}` : "Decrease"}>
           <button
             type="button"
             aria-label="Decrease quantity"
@@ -207,7 +218,7 @@ export function AddToCartButton({
           aria-label="Quantity"
           value={qty}
           onChange={(e) => onInputChange(e.target.value)}
-          onBlur={() => setQty((q) => clamp(q, floor))}
+          onBlur={() => setQty((q) => clampQuantity(q, moq, packMultiple))}
           className={cn(
             "h-full w-12 border-x border-border bg-transparent text-center text-sm font-medium tabular-nums",
             "outline-none focus-visible:bg-muted/40",

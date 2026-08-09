@@ -50,6 +50,7 @@ export interface EditorVariant {
   /** MRP, integer paise, when set. */
   mrp: number | null;
   moq: number | null;
+  packMultiple: number | null;
   stockStatus: StockStatus;
   status: EntityStatus;
   /** Exactly one variant is the default (the pre-selected combination). */
@@ -70,6 +71,7 @@ export interface VariantDraft {
   price: number;
   mrp: number | null;
   moq: number | null;
+  packMultiple: number | null;
   stockStatus: StockStatus;
   status: EntityStatus;
   isDefault: boolean;

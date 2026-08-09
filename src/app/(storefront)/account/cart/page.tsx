@@ -6,6 +6,7 @@ import { prisma } from "@/server/db";
 import { resolveViewer } from "@/server/auth/viewer";
 import { canSeePrices, isCustomer } from "@/server/types/viewer";
 import { getCart, cartCountForViewer } from "@/server/services/cart";
+import { getMinOrderValuePaise } from "@/server/services/store-settings";
 import { APP_NAME } from "@/lib/constants";
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -45,6 +46,8 @@ export default async function CartPage() {
 
   const cart = await getCart(viewer);
   const canOrder = canSeePrices(viewer);
+  // MOV drives the shortfall banner — an AMOUNT, so only for a priced viewer.
+  const minOrderValuePaise = cart.priced ? await getMinOrderValuePaise() : null;
   // Header cart badge — count only for an approved customer, else undefined.
   const cartCount = await cartCountForViewer(viewer);
 
@@ -70,6 +73,9 @@ export default async function CartPage() {
     imageUrl: l.imageUrl,
     quantity: l.quantity,
     moq: l.moq,
+    packMultiple: l.packMultiple,
+    allocationRequired: l.allocationRequired,
+    breakdown: l.breakdown,
     stockStatus: l.stockStatus,
     unitPricePaise: l.unitPricePaise,
     lineTotalPaise: l.lineTotalPaise,
@@ -125,6 +131,7 @@ export default async function CartPage() {
                 priced={cart.priced}
                 canOrder={canOrder}
                 initialTax={cart.tax}
+                minOrderValuePaise={minOrderValuePaise}
               />
             </FadeUp>
           )}

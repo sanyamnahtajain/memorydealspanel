@@ -3,6 +3,7 @@ import {
   Building2,
   Database,
   Palette,
+  ShoppingCart,
   UserCog,
 } from "lucide-react";
 
@@ -14,6 +15,8 @@ import { PageHeader } from "@/components/common";
 import { SignOutButton } from "@/components/admin/SignOutButton";
 import { ExportMenu } from "@/components/admin/ExportMenu";
 import { PreferencesPanel } from "@/components/preferences/PreferencesPanel";
+import { StoreSettingsForm } from "@/components/admin/settings/StoreSettingsForm";
+import { getStoreSettings } from "@/server/services/store-settings";
 
 export const metadata: Metadata = {
   title: "Settings — MemoryDeals Admin",
@@ -32,10 +35,13 @@ const dateFmt = new Intl.DateTimeFormat("en-IN", {
 export default async function AdminSettingsPage() {
   const viewer = await requireAdminPage();
 
-  const admin = await prisma.admin.findUnique({
-    where: { id: viewer.adminId },
-    select: { name: true, email: true, createdAt: true },
-  });
+  const [admin, storeSettings] = await Promise.all([
+    prisma.admin.findUnique({
+      where: { id: viewer.adminId },
+      select: { name: true, email: true, createdAt: true },
+    }),
+    getStoreSettings(),
+  ]);
 
   return (
     <AdminShell title="Settings">
@@ -53,6 +59,17 @@ export default async function AdminSettingsPage() {
           description="Theme, layout density, default view, and motion — applied instantly and remembered on this device."
         >
           <PreferencesPanel />
+        </SettingsSection>
+
+        {/* Ordering — the configurable minimum order value. */}
+        <SettingsSection
+          icon={ShoppingCart}
+          title="Ordering"
+          description="Rules applied to every customer order."
+        >
+          <StoreSettingsForm
+            initialMinOrderValuePaise={storeSettings.minOrderValuePaise}
+          />
         </SettingsSection>
 
         <div className="grid gap-6 lg:grid-cols-2">

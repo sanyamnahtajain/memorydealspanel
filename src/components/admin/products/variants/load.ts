@@ -21,6 +21,7 @@ export interface PersistedVariant {
   price: number;
   mrp: number | null;
   moq: number | null;
+  packMultiple: number | null;
   stockStatus: StockStatus;
   status: EntityStatus;
   isDefault: boolean;
@@ -78,6 +79,7 @@ export function toEditorVariants(rows: PersistedVariant[]): EditorVariant[] {
         price: row.price,
         mrp: row.mrp,
         moq: row.moq,
+        packMultiple: row.packMultiple,
         stockStatus: row.stockStatus,
         status: row.status,
         isDefault: row.isDefault,

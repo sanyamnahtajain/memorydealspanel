@@ -33,7 +33,12 @@ const placeOrderSchema = z.object({
 });
 
 /** The typed failure reasons a placement can return. */
-export type PlaceOrderErrorCode = "empty" | "access" | "rate-limit" | "too-large";
+export type PlaceOrderErrorCode =
+  | "empty"
+  | "access"
+  | "rate-limit"
+  | "too-large"
+  | "below-minimum";
 
 /** Client-facing result: the order number on success, or a typed failure. */
 export type PlaceOrderActionResult =

@@ -182,6 +182,11 @@ function OrderLineRow({ line }: { line: OrderLineDTO }) {
         <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
           Qty {line.quantity} · {formatPaise(line.unitPricePaise)} each
         </p>
+        {line.breakdown && line.breakdown.length > 0 ? (
+          <p className="mt-0.5 text-[0.65rem] leading-relaxed text-muted-foreground">
+            {line.breakdown.map((b) => `${b.qty} × ${b.modelName}`).join(" · ")}
+          </p>
+        ) : null}
         {line.tax ? (
           <p className="mt-0.5 text-[0.65rem] text-muted-foreground">
             {line.tax.taxInclusive ? "incl." : "+"} {line.tax.gstRateBps / 100}% GST

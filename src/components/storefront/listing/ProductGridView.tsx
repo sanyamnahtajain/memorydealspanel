@@ -153,11 +153,14 @@ function GridCard({
         <div className="mt-auto flex items-end justify-between gap-2 pt-2">
           <div className="min-w-0">{item.priceSlot}</div>
           {quickAdd ? (
-            <QuickAddToCart
-              productId={product.id}
-              moq={product.moq}
-              className="shrink-0"
-            />
+            product.allocation?.required ? null : (
+              <QuickAddToCart
+                productId={product.id}
+                moq={product.moq}
+                packMultiple={product.packMultiple}
+                className="shrink-0"
+              />
+            )
           ) : null}
         </div>
       </div>

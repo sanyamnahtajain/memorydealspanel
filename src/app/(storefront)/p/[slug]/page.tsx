@@ -21,6 +21,7 @@ import { SpecTable } from "@/components/storefront/SpecTable";
 import { renderPriceSlot } from "@/components/storefront/priceSlot";
 import { HeartButton } from "@/components/storefront/wishlist/HeartButton";
 import { AddToCartButton } from "@/components/storefront/cart/AddToCartButton";
+import { AllocationAddToCart } from "@/components/storefront/allocation/AllocationAddToCart";
 import { wishlistProductIds } from "@/server/services/wishlist";
 import { cartCountForViewer } from "@/server/services/cart";
 import { recordProductView } from "@/server/services/pageviews";
@@ -131,12 +132,6 @@ export default async function ProductDetailPage({ params }: PageParams) {
   const showPrices = canSeePrices(viewer);
   const customerStatus = isCustomer(viewer) ? viewer.status : undefined;
 
-  // GST view preference — only wording of the tax line; inert while GST is off.
-  const taxProfile = await getSellerTaxProfile();
-  const gstView = taxProfile.gstEnabled
-    ? await getGstViewPreference()
-    : undefined;
-
   // Record the view for the dashboard's "Most viewed" aggregation. Best-effort
   // analytics: never throws, not awaited into render, reads nothing gated.
   void recordProductView(
@@ -144,10 +139,12 @@ export default async function ProductDetailPage({ params }: PageParams) {
     isCustomer(viewer) ? viewer.customerId : null,
   );
 
-  // Category (breadcrumb) + related products (same category), both gated. We
-  // over-fetch by one so we can drop the current product and still fill the
-  // rail. `renderPriceSlot` produces the per-viewer price cell server-side.
-  const [category, relatedRaw, savedIds, cartCount] = await Promise.all([
+  // Category (breadcrumb) + related products (same category), both gated,
+  // PLUS the tax profile — one parallel round instead of a sequential await
+  // before it. We over-fetch related by one so we can drop the current
+  // product and still fill the rail.
+  const [taxProfile, category, relatedRaw, savedIds, cartCount] = await Promise.all([
+    getSellerTaxProfile(),
     resolveCategory(product.categoryId),
     listByCategoryForViewer(viewer, product.categoryId, {
       page: 1,
@@ -162,6 +159,11 @@ export default async function ProductDetailPage({ params }: PageParams) {
     // Header cart badge — a count only for an approved customer, else undefined.
     cartCountForViewer(viewer),
   ]);
+
+  // GST view preference — only wording of the tax line; inert while GST is off.
+  const gstView = taxProfile.gstEnabled
+    ? await getGstViewPreference()
+    : undefined;
 
   const initialSaved = savedIds.has(product.id);
 
@@ -231,12 +233,25 @@ export default async function ProductDetailPage({ params }: PageParams) {
 
   const heroFooter = (
     <>
-      {product.moq ? (
+      {product.moq || product.packMultiple ? (
         <p className="text-sm text-muted-foreground">
-          Minimum order quantity:{" "}
-          <span className="font-medium text-foreground">
-            {product.moq} units
-          </span>
+          {product.moq ? (
+            <>
+              Minimum order quantity:{" "}
+              <span className="font-medium text-foreground">
+                {product.moq} units
+              </span>
+            </>
+          ) : null}
+          {product.packMultiple ? (
+            <>
+              {product.moq ? " · " : null}
+              Sold in packs of{" "}
+              <span className="font-medium text-foreground">
+                {product.packMultiple}
+              </span>
+            </>
+          ) : null}
         </p>
       ) : null}
 
@@ -292,6 +307,7 @@ export default async function ProductDetailPage({ params }: PageParams) {
             productImages={product.images}
             productId={product.id}
             moq={product.moq}
+            packMultiple={product.packMultiple}
             optionTypes={product.optionTypes}
             variants={product.variants}
             showPrices={showPrices}
@@ -326,13 +342,25 @@ export default async function ProductDetailPage({ params }: PageParams) {
                     unapproved/anon viewer sees a locked CTA that routes to
                     login/request-access; OUT_OF_STOCK is blocked. It sends only
                     { productId, quantity } — never a price. */}
-                <AddToCartButton
-                  productId={product.id}
-                  moq={product.moq}
-                  canAdd={canAdd}
-                  isCustomer={isCustomer(viewer)}
-                  outOfStock={product.stockStatus === "OUT_OF_STOCK"}
-                />
+                {product.allocation?.required ? (
+                  <AllocationAddToCart
+                    productId={product.id}
+                    moq={product.moq}
+                    packMultiple={product.packMultiple}
+                    canAdd={canAdd}
+                    isCustomer={isCustomer(viewer)}
+                    outOfStock={product.stockStatus === "OUT_OF_STOCK"}
+                  />
+                ) : (
+                  <AddToCartButton
+                    productId={product.id}
+                    moq={product.moq}
+                    packMultiple={product.packMultiple}
+                    canAdd={canAdd}
+                    isCustomer={isCustomer(viewer)}
+                    outOfStock={product.stockStatus === "OUT_OF_STOCK"}
+                  />
+                )}
 
                 {/* Inline Enquire — hidden on mobile where the sticky bar owns it. */}
                 <div className="hidden md:block">
@@ -398,6 +426,8 @@ function toPublicShape(p: PublicProduct | PricedProduct): PublicProduct {
     description: p.description,
     specs: p.specs,
     moq: p.moq,
+    packMultiple: p.packMultiple,
+    allocation: p.allocation,
     stockStatus: p.stockStatus,
     status: p.status,
     tags: p.tags,

@@ -40,6 +40,8 @@ export interface OrderHistoryLine {
   sku: string;
   brand: string | null;
   variantLabel: string | null;
+  /** Frozen per-model split for allocation lines, when present. */
+  breakdown?: { modelName: string; qty: number }[] | null;
   imageUrl: string | null;
   quantity: number;
   /** null when the viewer is price-gated. */

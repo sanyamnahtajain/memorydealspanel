@@ -330,6 +330,7 @@ const LIST_SELECT = {
   description: true,
   specs: true,
   moq: true,
+  packMultiple: true,
   stockStatus: true,
   status: true,
   tags: true,

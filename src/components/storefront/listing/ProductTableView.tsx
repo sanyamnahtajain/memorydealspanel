@@ -263,7 +263,13 @@ function TableRow({
         <td className="px-2 py-2 text-right">
           {quickAdd ? (
             <div className="flex justify-end">
-              <QuickAddToCart productId={product.id} moq={product.moq} />
+              product.allocation?.required ? null : (
+                <QuickAddToCart
+                  productId={product.id}
+                  moq={product.moq}
+                  packMultiple={product.packMultiple}
+                />
+              )
             </div>
           ) : null}
         </td>

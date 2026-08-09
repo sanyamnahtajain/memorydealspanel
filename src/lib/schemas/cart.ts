@@ -50,11 +50,58 @@ export const quantitySchema = z
  * products split into purchasable variants. NO price field exists on this
  * schema by design.
  */
-export const addToCartSchema = z.object({
-  productId: objectIdSchema,
-  variantId: objectIdSchema.optional(),
-  quantity: quantitySchema,
+/** Max distinct models a single line's breakdown may reference. */
+export const MAX_BREAKDOWN_ENTRIES = 500;
+
+/** One per-model slice of a line's quantity. Strict positive integers only. */
+export const breakdownEntrySchema = z.object({
+  modelId: objectIdSchema,
+  qty: z
+    .number()
+    .int("Model quantity must be a whole number.")
+    .min(1, "Each model needs at least 1 unit.")
+    .max(MAX_QTY_PER_LINE)
+    .refine((v) => Number.isSafeInteger(v), "Model quantity is out of range."),
 });
+
+/**
+ * A per-model quantity breakdown. Distinct model ids; the SUM must equal the
+ * line quantity — enforced by the superRefine on the mutation schemas below,
+ * and re-validated server-side (the schema is a first gate, not the last).
+ */
+export const breakdownSchema = z
+  .array(breakdownEntrySchema)
+  .min(1, "Pick at least one model.")
+  .max(MAX_BREAKDOWN_ENTRIES)
+  .refine(
+    (entries) => new Set(entries.map((e) => e.modelId)).size === entries.length,
+    "Each model may appear only once.",
+  );
+export type BreakdownInput = z.infer<typeof breakdownSchema>;
+
+const withBreakdownSum = <T extends z.ZodRawShape>(shape: z.ZodObject<T>) =>
+  shape.superRefine((value, ctx) => {
+    const v = value as { quantity: number; breakdown?: BreakdownInput };
+    if (!v.breakdown) return;
+    const sum = v.breakdown.reduce((acc, e) => acc + e.qty, 0);
+    if (sum !== v.quantity) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["breakdown"],
+        message: "The per-model quantities must add up to the total quantity.",
+      });
+    }
+  });
+
+export const addToCartSchema = withBreakdownSum(
+  z.object({
+    productId: objectIdSchema,
+    variantId: objectIdSchema.optional(),
+    quantity: quantitySchema,
+    /** Per-model split — REQUIRED by allocation products (validated server-side). */
+    breakdown: breakdownSchema.optional(),
+  }),
+);
 export type AddToCartInput = z.infer<typeof addToCartSchema>;
 
 /** Update-quantity input — same shape as add (the server sets, not increments). */

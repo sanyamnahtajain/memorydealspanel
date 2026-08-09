@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { allocationSchema } from "@/lib/allocation";
 import { MAX_IMAGES_PER_PRODUCT } from "../constants";
 import {
   entityStatusSchema,
@@ -84,6 +85,10 @@ const productCoreSchema = z.object({
   price: paiseSchema,
   mrp: paiseSchema.optional(),
   moq: z.number().int().positive().optional(),
+  // Order in multiples of this (boxes). 1 is meaningless — omit instead.
+  packMultiple: z.number().int().min(2).max(10_000).optional(),
+  // Per-model allocation config. null clears back to the category default.
+  allocation: allocationSchema.nullable().optional(),
   stockStatus: stockStatusSchema,
   status: entityStatusSchema,
   tags: z.array(z.string().trim().min(1)).max(20),

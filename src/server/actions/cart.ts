@@ -45,12 +45,19 @@ export type CartActionReason =
   | "needs-approval" // pending/expired/blocked customer → request access
   | "invalid" // malformed input
   | "unavailable" // product/variant gone or out of stock
+  | "breakdown" // per-model split missing/short — client re-opens the builder
   | "rate-limited" // too many requests
   | "error"; // unexpected server fault
 
 export type CartActionResult =
   | { ok: true; quantity: number; itemCount: number; lineCount: number; clamped: boolean }
-  | { ok: false; reason: CartActionReason; message: string };
+  | {
+      ok: false;
+      reason: CartActionReason;
+      message: string;
+      /** BREAKDOWN_SUM_MISMATCH context: the total the split must reach. */
+      requiredTotal?: number;
+    };
 
 /** Rate limits (per customer). Generous for add, present to bound scripting. */
 const ADD_LIMIT = { points: 30, window: 60 } as const; // 30/min
@@ -103,6 +110,10 @@ function reasonForCartError(error: CartError): CartActionReason {
     case "VARIANT_UNAVAILABLE":
     case "OUT_OF_STOCK":
       return "unavailable";
+    case "BREAKDOWN_REQUIRED":
+    case "BREAKDOWN_INVALID":
+    case "BREAKDOWN_SUM_MISMATCH":
+      return "breakdown";
     case "LINE_LIMIT":
     case "NOT_IN_CART":
       return "invalid";
@@ -249,6 +260,9 @@ function handleMutationError(error: unknown, op: string): CartActionResult {
       ok: false,
       reason: reasonForCartError(error),
       message: error.message,
+      ...(error.details?.requiredTotal !== undefined
+        ? { requiredTotal: error.details.requiredTotal }
+        : {}),
     };
   }
   console.error(`[actions/cart] ${op} failed:`, error);

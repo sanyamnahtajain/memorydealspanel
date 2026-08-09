@@ -2,13 +2,18 @@ import { randomBytes } from "node:crypto";
 
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/server/db";
-import { assertPaise } from "@/lib/money";
+import { assertPaise, formatPaise } from "@/lib/money";
 import {
   MAX_CART_LINES,
   MAX_CART_NOTE_LENGTH,
   MAX_QTY_PER_LINE,
   MIN_QTY_PER_LINE,
 } from "@/lib/schemas/cart";
+import { clampQuantity as clampQty } from "@/lib/quantity";
+import { getMinOrderValuePaise } from "@/server/services/store-settings";
+import {
+  resolveEffectiveAllocation,
+} from "@/lib/allocation";
 import { limit } from "@/server/security/ratelimit";
 import { writeAudit } from "@/server/security/audit";
 import { sendPushToAdmin } from "@/server/notify/push";
@@ -135,6 +140,8 @@ export type CartLineIssue =
   | "variant-removed" // variant missing or inactive
   | "out-of-stock" // stock is OUT_OF_STOCK
   | "below-moq" // clamped up to the product MOQ
+  | "pack-rounded" // rounded up to the pack multiple
+  | "breakdown-mismatch" // per-model split missing/stale/short — FATAL
   | "clamped"; // clamped down to the per-line cap
 
 /**
@@ -162,6 +169,8 @@ export interface PricedCartLine {
   orderable: boolean;
   /** Non-fatal warnings (e.g. below-moq clamp, low stock) + fatal reasons. */
   issues: CartLineIssue[];
+  /** Per-model split with FROZEN names, for allocation lines. */
+  breakdown: { modelName: string; qty: number }[] | null;
   /**
    * The resolved effective tax (variant→product→category→profile) for THIS
    * line, or `null` when the GST kill-switch is off. Used to freeze the per-line
@@ -231,6 +240,7 @@ const CART_PRODUCT_SELECT = {
   brandRef: { select: { name: true } },
   price: true,
   moq: true,
+  packMultiple: true,
   stockStatus: true,
   status: true,
   deletedAt: true,
@@ -238,7 +248,14 @@ const CART_PRODUCT_SELECT = {
   hsnCode: true,
   gstRateBps: true,
   taxTreatment: true,
-  category: { select: { defaultHsnCode: true, defaultGstRateBps: true } },
+  allocation: true,
+  category: {
+    select: {
+      defaultHsnCode: true,
+      defaultGstRateBps: true,
+      defaultAllocation: true,
+    },
+  },
   images: { select: { url: true, thumbUrl: true, isPrimary: true } },
   variants: {
     select: {
@@ -247,6 +264,7 @@ const CART_PRODUCT_SELECT = {
       optionValues: true,
       price: true,
       moq: true,
+      packMultiple: true,
       stockStatus: true,
       status: true,
       hsnCode: true,
@@ -268,21 +286,23 @@ function variantLabel(optionValues: Prisma.JsonValue | null | undefined): string
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
-/** Clamp a requested quantity into [max(MOQ, MIN), cap], tracking why it moved. */
+/**
+ * Clamp a requested quantity into the valid window (shared helper in
+ * src/lib/quantity — MOQ floor + pack-multiple rounding + cap), tracking WHY
+ * the value moved so the placement diff can tell the customer.
+ */
 function clampQuantity(
   requested: number,
   moq: number,
+  packMultiple: number | null,
 ): { quantity: number; issues: CartLineIssue[] } {
   const issues: CartLineIssue[] = [];
-  const floor = Math.max(moq, MIN_QTY_PER_LINE);
-  let quantity = requested;
-  if (quantity < floor) {
-    quantity = floor;
-    issues.push("below-moq");
-  }
-  if (quantity > MAX_QTY_PER_LINE) {
-    quantity = MAX_QTY_PER_LINE;
-    issues.push("clamped");
+  const quantity = clampQty(requested, moq, packMultiple);
+  if (quantity !== requested) {
+    const floor = Math.max(moq, MIN_QTY_PER_LINE);
+    if (requested < floor) issues.push("below-moq");
+    else if (requested > quantity) issues.push("clamped");
+    else issues.push("pack-rounded");
   }
   return { quantity, issues };
 }
@@ -380,6 +400,8 @@ function priceLine(
   variantId: string | null,
   requestedQuantity: number,
   ctx: TaxContext | null,
+  storedBreakdown: unknown = null,
+  modelById: Map<string, { name: string; status: string }> = new Map(),
 ): PricedCartLine | null {
   // Product vanished entirely (hard-deleted) — drop the line silently; it can
   // no longer be represented. (Soft-delete is handled below as "unavailable".)
@@ -387,7 +409,7 @@ function priceLine(
     return null;
   }
 
-  const base: Omit<PricedCartLine, "unitPricePaise" | "lineTotalPaise" | "orderable" | "quantity" | "issues" | "effectiveTax"> & {
+  const base: Omit<PricedCartLine, "unitPricePaise" | "lineTotalPaise" | "orderable" | "quantity" | "issues" | "effectiveTax" | "breakdown"> & {
     quantity: number;
   } = {
     productId: product.id,
@@ -410,6 +432,7 @@ function priceLine(
   let unitPricePaise = product.price;
   let stockStatus = product.stockStatus as StockStatus;
   let moq = product.moq ?? MIN_QTY_PER_LINE;
+  let packMultiple = product.packMultiple ?? null;
   let sku = product.sku;
   let vLabel: string | null = null;
   let variantMissing = false;
@@ -423,6 +446,7 @@ function priceLine(
       unitPricePaise = variant.price;
       stockStatus = variant.stockStatus as StockStatus;
       moq = variant.moq ?? product.moq ?? MIN_QTY_PER_LINE;
+      packMultiple = variant.packMultiple ?? product.packMultiple ?? null;
       sku = variant.sku;
       vLabel = variantLabel(variant.optionValues);
       resolvedVariant = variant;
@@ -432,7 +456,7 @@ function priceLine(
     variantMissing = true;
   }
 
-  const { quantity, issues } = clampQuantity(requestedQuantity, moq);
+  const { quantity, issues } = clampQuantity(requestedQuantity, moq, packMultiple);
 
   // Effective GST for THIS unit (null when the kill-switch is off). The paise
   // breakup is derived later from this + the SERVER unit price — never trusted.
@@ -445,10 +469,62 @@ function priceLine(
 
   const outOfStock = stockStatus === "OUT_OF_STOCK";
 
+  // ---- Allocation lines: the split must be present, live, and EXACT. ------
+  // Unlike below-moq (which clamps), any mismatch is FATAL: the split is what
+  // the seller packs, and money follows quantity — the server never repairs a
+  // per-model distribution on the customer's behalf.
+  const allocation = resolveEffectiveAllocation(
+    product.allocation,
+    product.category?.defaultAllocation,
+  );
+  const entries = Array.isArray(storedBreakdown)
+    ? (storedBreakdown as { modelId?: unknown; qty?: unknown }[])
+        .filter(
+          (e) =>
+            e &&
+            typeof e.modelId === "string" &&
+            Number.isSafeInteger(e.qty) &&
+            (e.qty as number) > 0,
+        )
+        .map((e) => ({ modelId: e.modelId as string, qty: e.qty as number }))
+    : [];
+  let breakdownMismatch = false;
+  let breakdown: { modelName: string; qty: number }[] | null = null;
+  if (allocation?.required) {
+    const sum = entries.reduce((acc, e) => acc + e.qty, 0);
+    const allowed =
+      allocation.modelIds.length > 0 ? new Set(allocation.modelIds) : null;
+    const modelsOk = entries.every((e) => {
+      const m = modelById.get(e.modelId);
+      return m && m.status === "ACTIVE" && (!allowed || allowed.has(e.modelId));
+    });
+    // The clamp must ALSO not want to change the total — a raise would desync
+    // quantity from the split, so it blocks instead of clamping here.
+    breakdownMismatch =
+      entries.length === 0 ||
+      sum !== requestedQuantity ||
+      !modelsOk ||
+      quantity !== requestedQuantity;
+    if (!breakdownMismatch) {
+      breakdown = entries.map((e) => ({
+        modelName: modelById.get(e.modelId)?.name ?? "Unknown model",
+        qty: e.qty,
+      }));
+    }
+  } else if (entries.length > 0) {
+    // Allocation switched off after the split was captured: keep the split
+    // for display/packing, but it no longer gates the order.
+    breakdown = entries.map((e) => ({
+      modelName: modelById.get(e.modelId)?.name ?? "Unknown model",
+      qty: e.qty,
+    }));
+  }
+
   const fatal: CartLineIssue[] = [];
   if (unavailable) fatal.push("unavailable");
   if (variantMissing) fatal.push("variant-removed");
   if (outOfStock) fatal.push("out-of-stock");
+  if (breakdownMismatch) fatal.push("breakdown-mismatch");
 
   const orderable = fatal.length === 0;
 
@@ -458,6 +534,7 @@ function priceLine(
     moq,
     stockStatus,
     variantLabel: vLabel,
+    breakdown,
     quantity,
     unitPricePaise,
     lineTotalPaise: orderable ? lineTotalPaise : 0,
@@ -515,7 +592,12 @@ export async function priceCartForCustomer(customerId: string): Promise<PricedCa
     where: { customerId },
     orderBy: { createdAt: "asc" },
     take: MAX_CART_LINES,
-    select: { productId: true, variantId: true, quantity: true },
+    select: {
+      productId: true,
+      variantId: true,
+      quantity: true,
+      breakdown: true,
+    },
   });
 
   // Load the GST context once (null when the kill-switch is off). Fetched even
@@ -538,15 +620,44 @@ export async function priceCartForCustomer(customerId: string): Promise<PricedCa
   ]);
 
   const productIds = [...new Set(cartItems.map((c) => c.productId))];
-  const products = await prisma.product.findMany({
-    where: { id: { in: productIds } },
-    select: CART_PRODUCT_SELECT,
-  });
+  const allModelIds = [
+    ...new Set(
+      cartItems.flatMap((c) =>
+        Array.isArray(c.breakdown)
+          ? (c.breakdown as { modelId?: unknown }[])
+              .map((e) => e?.modelId)
+              .filter((id): id is string => typeof id === "string")
+          : [],
+      ),
+    ),
+  ];
+  const [products, modelRows] = await Promise.all([
+    prisma.product.findMany({
+      where: { id: { in: productIds } },
+      select: CART_PRODUCT_SELECT,
+    }),
+    allModelIds.length
+      ? prisma.deviceModel.findMany({
+          where: { id: { in: allModelIds } },
+          select: { id: true, name: true, status: true },
+        })
+      : Promise.resolve([]),
+  ]);
   const byId = new Map(products.map((p) => [p.id, p]));
+  const modelById = new Map(
+    modelRows.map((m) => [m.id, { name: m.name, status: m.status as string }]),
+  );
 
   const lines: PricedCartLine[] = [];
   for (const item of cartItems) {
-    const line = priceLine(byId.get(item.productId), item.variantId, item.quantity, ctx);
+    const line = priceLine(
+      byId.get(item.productId),
+      item.variantId,
+      item.quantity,
+      ctx,
+      item.breakdown,
+      modelById,
+    );
     if (line) lines.push(line);
   }
 
@@ -647,6 +758,8 @@ export interface OrderItemSnapshot {
   lineTotalPaise: number;
   /** Frozen per-line GST breakup; absent when GST was off at placement. */
   tax?: OrderItemTaxSnapshot;
+  /** Frozen per-model split (names, not ids) for allocation lines. */
+  breakdown?: { modelName: string; qty: number }[];
 }
 
 function toSnapshot(line: PricedCartLine, tax?: OrderItemTaxSnapshot): OrderItemSnapshot {
@@ -663,6 +776,9 @@ function toSnapshot(line: PricedCartLine, tax?: OrderItemTaxSnapshot): OrderItem
     unitPricePaise: line.unitPricePaise,
     lineTotalPaise: line.lineTotalPaise,
     ...(tax ? { tax } : {}),
+    ...(line.breakdown && line.breakdown.length > 0
+      ? { breakdown: line.breakdown }
+      : {}),
   };
 }
 
@@ -903,7 +1019,12 @@ export interface PlaceOrderInput {
 
 export type PlaceOrderResult =
   | { ok: true; order: CustomerOrder; deduped: boolean; excluded: PricedCartLine[] }
-  | { ok: false; error: "empty" | "access" | "rate-limit" | "too-large"; message: string; excluded?: PricedCartLine[] };
+  | {
+      ok: false;
+      error: "empty" | "access" | "rate-limit" | "too-large" | "below-minimum";
+      message: string;
+      excluded?: PricedCartLine[];
+    };
 
 /** In-memory idempotency ledger (key -> orderNumber) for the fallback path. */
 const globalForOrders = globalThis as unknown as {
@@ -997,6 +1118,20 @@ async function placeOrderLocked(
       ok: false,
       error: "too-large",
       message: new OrderTooLargeError().message,
+      excluded: cart.blockedLines,
+    };
+  }
+
+  // (4b) Configurable minimum order value (StoreSettings singleton). Checked
+  // SERVER-SIDE at placement — the cart UI shows the shortfall, but the
+  // authoritative gate is here so a stale client can never place below it.
+  const minOrderValuePaise = await getMinOrderValuePaise();
+  if (minOrderValuePaise !== null && cart.subtotalPaise < minOrderValuePaise) {
+    const shortfall = minOrderValuePaise - cart.subtotalPaise;
+    return {
+      ok: false,
+      error: "below-minimum",
+      message: `Add ${formatPaise(shortfall)} more to place an order (minimum ${formatPaise(minOrderValuePaise)}).`,
       excluded: cart.blockedLines,
     };
   }

@@ -39,7 +39,13 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { formatPaise } from "@/lib/money";
 import { MAX_CART_NOTE_LENGTH, MAX_QTY_PER_LINE } from "@/lib/schemas/cart";
+import {
+  clampQuantity,
+  maxOrderableQty,
+  minOrderableQty,
+} from "@/lib/quantity";
 import { Button } from "@/components/ui/button";
+import { EditBreakdownSheet } from "@/components/storefront/allocation/EditBreakdownSheet";
 import { Tooltip } from "@/components/ui/tooltip";
 import { StatusChip } from "@/components/common/StatusChip";
 import {
@@ -95,6 +101,12 @@ export interface CartLineData {
   imageUrl: string | null;
   quantity: number;
   moq: number;
+  /** Pack multiple for the line (1 = none) — the stepper's step size. */
+  packMultiple: number;
+  /** Whether this product requires a per-model split (hides the stepper). */
+  allocationRequired: boolean;
+  /** Resolved split for display/edit, when the line carries one. */
+  breakdown: { modelId: string; name: string; qty: number }[] | null;
   stockStatus: StockStatus;
   /** Unit price in paise, or null when the viewer is gated. */
   unitPricePaise: number | null;
@@ -122,6 +134,12 @@ export interface CartViewProps {
    * re-derives the amounts live as quantities change.
    */
   initialTax: CartTaxSummary | null;
+  /**
+   * The configurable minimum order value in paise, or null when off — passed
+   * only for a PRICED viewer (an amount must never reach a gated page). The
+   * server re-checks at placement; this only drives the shortfall UI.
+   */
+  minOrderValuePaise?: number | null;
 }
 
 /** A stable per-line key (product + variant pair is unique in a cart). */
@@ -134,6 +152,11 @@ const ISSUE_COPY: Record<CartLineIssue, { label: string; tone: "warn" | "block" 
   "out-of-stock": { label: "Out of stock — will not be ordered", tone: "block" },
   "low-stock": { label: "Low stock", tone: "warn" },
   "below-moq": { label: "Below minimum — quantity will be raised at order", tone: "warn" },
+  "off-pack": { label: "Not a full pack — quantity will be rounded up at order", tone: "warn" },
+  "breakdown-mismatch": {
+    label: "Model split needs attention — edit the models before ordering",
+    tone: "block",
+  },
 };
 
 function stockVariant(status: StockStatus) {
@@ -143,6 +166,7 @@ function stockVariant(status: StockStatus) {
 export function CartView({
   initialLines,
   initialSubtotalPaise,
+  minOrderValuePaise = null,
   priced,
   canOrder,
   initialTax,
@@ -173,7 +197,15 @@ export function CartView({
     ? orderableLines.reduce((sum, l) => sum + (l.lineTotalPaise ?? 0), 0)
     : null;
   const itemCount = orderableLines.reduce((sum, l) => sum + l.quantity, 0);
-  const canPlace = canOrder && orderableLines.length > 0 && !placing;
+  // Minimum order value: the live shortfall (paise) still needed, or null when
+  // the minimum is off / already met / the viewer is gated. Server-enforced at
+  // placement — this only disables the button and explains why.
+  const movShortfallPaise =
+    minOrderValuePaise != null && subtotalPaise != null
+      ? Math.max(0, minOrderValuePaise - subtotalPaise) || null
+      : null;
+  const canPlace =
+    canOrder && orderableLines.length > 0 && !placing && movShortfallPaise === null;
 
   // Live GST preview: re-derived from the current (possibly optimistic) line
   // quantities using the same integer formula as the server, then split by the
@@ -471,14 +503,85 @@ export function CartView({
                       </div>
                     ) : null}
 
+                    {/* Per-model split (allocation lines): summary + editor.
+                        The plain stepper is hidden — quantity follows the split. */}
+                    {line.allocationRequired ? (
+                      <div className="mt-2 flex flex-col gap-1.5">
+                        {line.breakdown && line.breakdown.length > 0 ? (
+                          <p className="text-xs leading-relaxed text-muted-foreground">
+                            {line.breakdown
+                              .slice(0, 3)
+                              .map((b) => `${b.qty} × ${b.name}`)
+                              .join(" · ")}
+                            {line.breakdown.length > 3
+                              ? ` · +${line.breakdown.length - 3} more`
+                              : ""}
+                          </p>
+                        ) : null}
+                        <div>
+                          <EditBreakdownSheet
+                            productId={line.productId}
+                            variantId={line.variantId}
+                            moq={line.moq}
+                            packMultiple={line.packMultiple}
+                            initial={(line.breakdown ?? []).map((b) => ({
+                              modelId: b.modelId,
+                              name: b.name,
+                              qty: b.qty,
+                            }))}
+                            disabled={!canOrder || busy}
+                            onSaved={(quantity, rows) => {
+                              const key = lineKey(line);
+                              setLines((prev) =>
+                                prev.map((l) =>
+                                  lineKey(l) === key
+                                    ? {
+                                        ...l,
+                                        quantity,
+                                        breakdown: rows.map((r) => ({
+                                          modelId: r.modelId,
+                                          name: r.name,
+                                          qty: r.qty,
+                                        })),
+                                        issues: l.issues.filter(
+                                          (i) => i !== "breakdown-mismatch",
+                                        ),
+                                        lineTotalPaise:
+                                          l.unitPricePaise != null
+                                            ? l.unitPricePaise * quantity
+                                            : null,
+                                      }
+                                    : l,
+                                ),
+                              );
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ) : null}
+
                     {/* Qty + price row */}
                     <div className="mt-2.5 flex items-center justify-between gap-2">
-                      <div className="inline-flex items-center rounded-lg border border-border">
+                      <div className={line.allocationRequired ? "hidden" : "inline-flex items-center rounded-lg border border-border"}>
                         <Button
                           variant="ghost"
                           size="icon-sm"
-                          disabled={!canOrder || busy || line.quantity <= 1}
-                          onClick={() => changeQuantity(line, line.quantity - 1)}
+                          disabled={
+                            !canOrder ||
+                            busy ||
+                            line.quantity <=
+                              minOrderableQty(line.moq, line.packMultiple)
+                          }
+                          onClick={() =>
+                            changeQuantity(
+                              line,
+                              clampQuantity(
+                                line.quantity - Math.max(1, line.packMultiple),
+                                line.moq,
+                                line.packMultiple,
+                              ),
+                            )
+                          }
                           aria-label="Decrease quantity"
                         >
                           <Minus className="size-3.5" />
@@ -493,8 +596,21 @@ export function CartView({
                         <Button
                           variant="ghost"
                           size="icon-sm"
-                          disabled={!canOrder || busy || line.quantity >= MAX_QTY_PER_LINE}
-                          onClick={() => changeQuantity(line, line.quantity + 1)}
+                          disabled={
+                            !canOrder ||
+                            busy ||
+                            line.quantity >= maxOrderableQty(line.packMultiple)
+                          }
+                          onClick={() =>
+                            changeQuantity(
+                              line,
+                              clampQuantity(
+                                line.quantity + Math.max(1, line.packMultiple),
+                                line.moq,
+                                line.packMultiple,
+                              ),
+                            )
+                          }
                           aria-label="Increase quantity"
                         >
                           <Plus className="size-3.5" />
@@ -568,6 +684,8 @@ export function CartView({
             onPlace={placeOrder}
             canOrder={canOrder}
             tax={taxPreview}
+            movShortfallPaise={movShortfallPaise}
+            minOrderValuePaise={minOrderValuePaise}
           />
         </div>
       </aside>
@@ -585,10 +703,16 @@ export function CartView({
             ) : (
               <p className="text-xs text-muted-foreground">Price on approval</p>
             )}
-            <p className="text-[0.7rem] text-muted-foreground">
-              {itemCount} item{itemCount === 1 ? "" : "s"}
-              {taxPreview ? " · incl. GST" : ""}
-            </p>
+            {movShortfallPaise != null ? (
+              <p className="text-[0.7rem] font-medium text-amber-700 dark:text-amber-300">
+                Add {formatPaise(movShortfallPaise)} more to place
+              </p>
+            ) : (
+              <p className="text-[0.7rem] text-muted-foreground">
+                {itemCount} item{itemCount === 1 ? "" : "s"}
+                {taxPreview ? " · incl. GST" : ""}
+              </p>
+            )}
           </div>
           <Button
             onClick={placeOrder}
@@ -616,6 +740,10 @@ interface SummaryProps {
   canOrder: boolean;
   /** Live GST preview, or null when GST is off / gated. */
   tax: CartTaxSummary | null;
+  /** Paise still needed to reach the minimum order value, when short. */
+  movShortfallPaise?: number | null;
+  /** The minimum order value itself (paise), when configured + priced. */
+  minOrderValuePaise?: number | null;
   /** Hide the internal Place-order button (mobile uses the sticky bar's). */
   hidePlaceButton?: boolean;
 }
@@ -623,6 +751,8 @@ interface SummaryProps {
 function Summary({
   priced,
   subtotalPaise,
+  movShortfallPaise = null,
+  minOrderValuePaise = null,
   itemCount,
   note,
   onNote,
@@ -671,6 +801,32 @@ function Summary({
           GST is shown combined. Add your GSTIN in the note (or your profile) so
           we can split it into CGST/SGST or IGST on the proforma.
         </p>
+      ) : null}
+
+      {movShortfallPaise != null && minOrderValuePaise != null ? (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-2">
+          <p className="text-[0.75rem] font-medium leading-relaxed text-amber-700 dark:text-amber-300">
+            Add {formatPaise(movShortfallPaise)} more to place your order
+          </p>
+          <p className="text-[0.7rem] text-amber-700/80 dark:text-amber-300/80">
+            Minimum order value is {formatPaise(minOrderValuePaise)}.
+          </p>
+          <div
+            className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-amber-500/20"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={minOrderValuePaise}
+            aria-valuenow={Math.max(0, minOrderValuePaise - movShortfallPaise)}
+            aria-label="Progress toward the minimum order value"
+          >
+            <div
+              className="h-full rounded-full bg-amber-500"
+              style={{
+                width: `${Math.min(100, Math.round(((minOrderValuePaise - movShortfallPaise) / minOrderValuePaise) * 100))}%`,
+              }}
+            />
+          </div>
+        </div>
       ) : null}
 
       <p className="text-[0.7rem] leading-relaxed text-muted-foreground">

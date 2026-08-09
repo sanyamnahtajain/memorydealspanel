@@ -1,5 +1,6 @@
 import {
   CircleUserRound,
+  Smartphone,
   History,
   House,
   Inbox,
@@ -53,6 +54,7 @@ export const adminPrimaryNav: readonly NavItem[] = [
   { label: "Products", href: "/admin/products", icon: Package },
   { label: "Categories", href: "/admin/categories", icon: LayoutGrid },
   { label: "Brands", href: "/admin/brands", icon: Tag },
+  { label: "Models", href: "/admin/models", icon: Smartphone },
   { label: "Requests", href: "/admin/requests", icon: Inbox },
   { label: "Customers", href: "/admin/customers", icon: Users },
   { label: "Orders", href: "/admin/orders", icon: ShoppingCart },

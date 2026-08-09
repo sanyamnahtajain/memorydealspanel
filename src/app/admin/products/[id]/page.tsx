@@ -10,6 +10,7 @@ import { listActiveBrands } from "@/server/services/brands";
 import { toPricedProduct } from "@/server/dto/product";
 import { getSellerTaxProfile } from "@/server/services/tax-profile";
 import { resolveEffectiveTax } from "@/lib/tax-inherit";
+import { parseAllocation } from "@/lib/allocation";
 import { objectIdSchema } from "@/lib/schemas/shared";
 import { AdminShell } from "@/components/shell/AdminShell";
 import { PageHeader } from "@/components/common";
@@ -45,6 +46,8 @@ const EDIT_SELECT = {
   description: true,
   specs: true,
   moq: true,
+  packMultiple: true,
+  allocation: true,
   stockStatus: true,
   status: true,
   tags: true,
@@ -71,6 +74,7 @@ const EDIT_SELECT = {
       price: true,
       mrp: true,
       moq: true,
+      packMultiple: true,
       stockStatus: true,
       status: true,
       isDefault: true,
@@ -124,6 +128,7 @@ export default async function EditProductPage({
     price: priced.price,
     mrp: priced.mrp,
     moq: priced.moq,
+    packMultiple: priced.packMultiple,
     stockStatus: priced.stockStatus,
     status: priced.status,
     tags: priced.tags,
@@ -168,6 +173,7 @@ export default async function EditProductPage({
           backLabel="Products"
         />
         <ProductEditorForm
+        initialAllocation={parseAllocation(row.allocation)}
           product={product}
           tax={tax}
           brands={brands}

@@ -57,7 +57,16 @@ const PRODUCT_TAX_FIELDS = {
   hsnCode: true,
   gstRateBps: true,
   taxTreatment: true,
-  category: { select: { defaultHsnCode: true, defaultGstRateBps: true } },
+  // defaultAllocation rides along: non-monetary allocation config the DTO
+  // resolves into the public `allocation` flag (see lib/allocation).
+  allocation: true,
+  category: {
+    select: {
+      defaultHsnCode: true,
+      defaultGstRateBps: true,
+      defaultAllocation: true,
+    },
+  },
 } satisfies Prisma.ProductSelect;
 
 /** Prisma select fragment adding a variant's own GST override columns. */
@@ -181,6 +190,7 @@ const PUBLIC_FIELDS = {
   description: true,
   specs: true,
   moq: true,
+  packMultiple: true,
   stockStatus: true,
   status: true,
   tags: true,
@@ -224,6 +234,8 @@ const PUBLIC_VARIANT_SELECT = {
   id: true,
   sku: true,
   optionValues: true,
+  moq: true,
+  packMultiple: true,
   stockStatus: true,
   isDefault: true,
   sortOrder: true,

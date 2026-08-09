@@ -147,6 +147,7 @@ export interface VariantColumnContext {
   price?: string;
   mrp?: string;
   moq?: string;
+  packMultiple?: string;
   stock?: string;
   status?: string;
   /** GST override headers (product-level; applied to the parent product). */
@@ -185,6 +186,7 @@ export interface CoercedVariant {
   price: number; // paise
   mrp: number | null; // paise
   moq: number | null;
+  packMultiple: number | null;
   stockStatus: StockStatus;
   status: EntityStatus;
 }
@@ -516,6 +518,18 @@ function validateGroup(
       else moq = n;
     }
 
+    // --- packMultiple (optional, int >= 2) ---
+    let packMultiple: number | null = null;
+    const packRaw = ctx.packMultiple ? (r.raw[ctx.packMultiple] ?? "").trim() : "";
+    if (packRaw) {
+      const n = parseIntSafe(packRaw);
+      if (n === null || n < 2) {
+        pushErr(rn, ctx.packMultiple!, `"${packRaw}" is not a valid pack size (min 2).`);
+      } else {
+        packMultiple = n;
+      }
+    }
+
     // --- stock (optional enum, default IN_STOCK) ---
     let stockStatus: StockStatus = "IN_STOCK";
     const stockRaw = ctx.stock ? (r.raw[ctx.stock] ?? "").trim() : "";
@@ -559,6 +573,7 @@ function validateGroup(
         price,
         mrp,
         moq,
+        packMultiple,
         stockStatus,
         status,
       });

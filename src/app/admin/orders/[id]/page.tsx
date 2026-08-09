@@ -76,6 +76,7 @@ export default async function AdminOrderDetailPage({
       quantity: line.quantity,
       unitPricePaise: line.unitPricePaise,
       lineTotalPaise: line.lineTotalPaise,
+      breakdown: line.breakdown ?? null,
       tax: line.tax
         ? {
             hsnCode: line.tax.hsnCode,

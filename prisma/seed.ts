@@ -403,6 +403,61 @@ async function main(): Promise<void> {
     }
   }
 
+  // 5b. Device models (allocation master) — upsert by name so re-runs are
+  // idempotent. A starter set spanning the common brands; admins extend via
+  // /admin/models (single add or bulk paste).
+  const deviceModels: { brandName: string; name: string }[] = [
+    { brandName: "Samsung", name: "Galaxy S23 Ultra" },
+    { brandName: "Samsung", name: "Galaxy S24" },
+    { brandName: "Samsung", name: "Galaxy A55" },
+    { brandName: "Samsung", name: "Galaxy M35" },
+    { brandName: "Apple", name: "iPhone 15" },
+    { brandName: "Apple", name: "iPhone 15 Pro Max" },
+    { brandName: "Apple", name: "iPhone 14" },
+    { brandName: "Apple", name: "iPhone 13" },
+    { brandName: "Realme", name: "Realme 11" },
+    { brandName: "Realme", name: "Realme 11 Pro" },
+    { brandName: "Realme", name: "Realme Narzo 60" },
+    { brandName: "Xiaomi", name: "Redmi Note 13" },
+    { brandName: "Xiaomi", name: "Redmi Note 13 Pro" },
+    { brandName: "Xiaomi", name: "Redmi 12" },
+    { brandName: "Vivo", name: "Vivo V29" },
+    { brandName: "Vivo", name: "Vivo Y28" },
+    { brandName: "Oppo", name: "Oppo Reno 11" },
+    { brandName: "Oppo", name: "Oppo A78" },
+    { brandName: "OnePlus", name: "OnePlus 12" },
+    { brandName: "OnePlus", name: "OnePlus Nord CE 4" },
+    { brandName: "Motorola", name: "Moto G84" },
+    { brandName: "Poco", name: "Poco X6" },
+    { brandName: "iQOO", name: "iQOO Z9" },
+    { brandName: "Nothing", name: "Nothing Phone (2a)" },
+  ];
+  let modelSort = 0;
+  for (const m of deviceModels) {
+    const slug = m.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    await prisma.deviceModel.upsert({
+      where: { name: m.name },
+      create: {
+        name: m.name,
+        slug,
+        brandName: m.brandName,
+        sortOrder: modelSort++,
+        status: EntityStatus.ACTIVE,
+      },
+      update: { brandName: m.brandName },
+    });
+  }
+  console.log(`  device models: ${deviceModels.length}`);
+
+  // 5c. Store settings — the requested launch default: ₹5,000 minimum order
+  // value. `update: {}` on re-runs so an admin's later change is never
+  // clobbered by re-seeding.
+  await prisma.storeSettings.upsert({
+    where: { key: "default" },
+    create: { key: "default", minOrderValuePaise: 500_000 },
+    update: {},
+  });
+
   // 6. PageViews — replaced for seeded products each run.
   await prisma.pageView.deleteMany({ where: { productId: { in: productIds } } });
 
