@@ -7,6 +7,8 @@ import { ScaleTap } from "@/components/motion/primitives";
 import { RequestAccessSheet } from "@/components/storefront/RequestAccessSheet";
 
 export interface AccountRenewalButtonProps {
+  /** Google-only storefront: gate the request-access sheet. */
+  googleGateHref?: string | null;
   /** Button label; varies by state ("Request renewal" vs "Request access"). */
   label?: string;
 }
@@ -19,6 +21,7 @@ export interface AccountRenewalButtonProps {
  * `renewalTrigger` for expired / rejected / lapsed customers. Holds no pricing.
  */
 export function AccountRenewalButton({
+  googleGateHref = null,
   label = "Request access / renewal",
 }: AccountRenewalButtonProps) {
   const [open, setOpen] = React.useState(false);
@@ -35,7 +38,7 @@ export function AccountRenewalButton({
           {label}
         </Button>
       </ScaleTap>
-      <RequestAccessSheet open={open} onOpenChange={setOpen} />
+      <RequestAccessSheet open={open} onOpenChange={setOpen} googleGateHref={googleGateHref} />
     </>
   );
 }

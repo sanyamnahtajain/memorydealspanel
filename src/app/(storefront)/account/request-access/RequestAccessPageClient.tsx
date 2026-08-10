@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
 import { PageHeader } from "@/components/common";
 import { FadeUp } from "@/components/motion/primitives";
-import { RequestAccessForm } from "@/components/storefront/RequestAccessSheet";
+import { GoogleAccessGate, RequestAccessForm } from "@/components/storefront/RequestAccessSheet";
 
 /**
  * Standalone "request price access" page — the same F-C7 form the "See price"
@@ -14,8 +14,12 @@ import { RequestAccessForm } from "@/components/storefront/RequestAccessSheet";
  */
 export function RequestAccessPageClient({
   google = null,
+  googleGateHref = null,
 }: {
   google?: { token: string; email: string; name: string | null } | null;
+  /** Google-only storefront: when set (configured + no valid token yet), show
+   *  the Continue-with-Google gate instead of the password form. */
+  googleGateHref?: string | null;
 }) {
   const router = useRouter();
 
@@ -30,7 +34,11 @@ export function RequestAccessPageClient({
         />
         <FadeUp>
           <div className="mt-6 rounded-xl border border-border bg-card p-5 md:p-6">
-            <RequestAccessForm onClose={() => router.push("/account")} google={google} />
+            {googleGateHref ? (
+              <GoogleAccessGate href={googleGateHref} />
+            ) : (
+              <RequestAccessForm onClose={() => router.push("/account")} google={google} />
+            )}
           </div>
         </FadeUp>
       </div>

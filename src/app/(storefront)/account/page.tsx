@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { googleOAuthConfigured } from "@/server/services/google-auth";
 import { redirect } from "next/navigation";
 
 import { prisma } from "@/server/db";
@@ -122,6 +123,9 @@ export default async function AccountPage() {
               expiryLabel={grantExpiry ? formatExpiry(grantExpiry) : null}
               renewalTrigger={
                 <AccountRenewalButton
+                  googleGateHref={
+                    googleOAuthConfigured() ? "/auth/google/start?returnTo=/account" : null
+                  }
                   label={
                     status === "REJECTED"
                       ? "Request access again"

@@ -23,6 +23,7 @@ export default function CustomerLoginPage() {
             googleHref={
               googleOAuthConfigured() ? "/auth/google/start?returnTo=/account" : null
             }
+            googleOnly={googleOAuthConfigured()}
           />
         </FadeUp>
       </div>

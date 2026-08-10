@@ -29,6 +29,8 @@ import { RequestAccessSheet } from "@/components/storefront/RequestAccessSheet";
  * unless `showPrices` is true.
  */
 export interface ProductPriceAreaProps {
+  /** Google-only storefront: gate the request-access sheet. */
+  googleGateHref?: string | null;
   product: PublicProduct | PricedProduct;
   /** Result of `canSeePrices(viewer)` — the authoritative gate verdict. */
   showPrices: boolean;
@@ -144,6 +146,7 @@ function resolveGatedReason(
 }
 
 export function ProductPriceArea({
+  googleGateHref = null,
   product,
   showPrices,
   status,
@@ -259,7 +262,7 @@ export function ProductPriceArea({
         taxInclusive={tax.taxInclusive}
         view={gstView}
       />
-      <RequestAccessSheet open={open} onOpenChange={setOpen} />
+      <RequestAccessSheet open={open} onOpenChange={setOpen} googleGateHref={googleGateHref} />
     </div>
   );
 }

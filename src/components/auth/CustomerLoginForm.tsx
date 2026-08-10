@@ -42,6 +42,8 @@ export interface CustomerLoginFormProps {
   onSuccess?: () => void;
   /** "Continue with Google" target; null/absent hides the button (env-gated). */
   googleHref?: string | null;
+  /** Google-ONLY storefront (owner call): hide the phone+password form. */
+  googleOnly?: boolean;
   className?: string;
 }
 
@@ -56,6 +58,7 @@ export function CustomerLoginForm({
   onSubmit,
   onSuccess,
   googleHref = null,
+  googleOnly = false,
   className,
 }: CustomerLoginFormProps) {
   const [phone, setPhone] = React.useState("");
@@ -95,7 +98,21 @@ export function CustomerLoginForm({
   return (
     <>
     {googleHref ? (
-        <div className="mb-4 flex flex-col gap-3">
+        <div
+          className={cn(
+            "mb-4 flex flex-col gap-3",
+            googleOnly &&
+              "rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-sm ring-1 ring-foreground/5 sm:p-7",
+          )}
+        >
+          {googleOnly ? (
+            <header className="mb-1 space-y-1.5">
+              <h1 className="font-heading text-lg font-semibold tracking-tight">Sign in</h1>
+              <p className="text-sm text-muted-foreground">
+                Use your Google account to access wholesale pricing.
+              </p>
+            </header>
+          ) : null}
           <a
             href={googleHref}
             className="inline-flex h-11 w-full items-center justify-center gap-2.5 rounded-lg border border-border bg-background text-sm font-semibold text-foreground outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
@@ -108,13 +125,26 @@ export function CustomerLoginForm({
             </svg>
             Continue with Google
           </a>
-          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            <span className="h-px flex-1 bg-border" aria-hidden />
-            or sign in with phone
-            <span className="h-px flex-1 bg-border" aria-hidden />
-          </div>
+          {googleOnly ? (
+            <p className="text-center text-sm text-muted-foreground">
+              New here?{" "}
+              <Link
+                href="/account/request-access"
+                className="font-medium text-primary hover:underline"
+              >
+                Request access
+              </Link>
+            </p>
+          ) : (
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <span className="h-px flex-1 bg-border" aria-hidden />
+              or sign in with phone
+              <span className="h-px flex-1 bg-border" aria-hidden />
+            </div>
+          )}
         </div>
       ) : null}
+      {googleOnly && googleHref ? null : (
       <form
       noValidate
       onSubmit={handleSubmit}
@@ -219,6 +249,7 @@ export function CustomerLoginForm({
         </Link>
       </p>
     </form>
+    )}
     </>
   );
 }

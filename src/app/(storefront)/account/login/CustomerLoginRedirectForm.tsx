@@ -39,14 +39,17 @@ async function submit(
 
 export function CustomerLoginRedirectForm({
   googleHref = null,
+  googleOnly = false,
 }: {
   googleHref?: string | null;
+  googleOnly?: boolean;
 }) {
   const router = useRouter();
   return (
     <CustomerLoginForm
       onSubmit={submit}
       googleHref={googleHref}
+      googleOnly={googleOnly}
       onSuccess={() => {
         router.replace("/account");
         router.refresh();
