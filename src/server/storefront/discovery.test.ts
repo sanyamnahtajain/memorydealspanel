@@ -251,3 +251,55 @@ describe("computePriceBands gate", () => {
     expect(total).toBeLessThanOrEqual(Math.max(before, after) + 2);
   });
 });
+
+describe("forgiving search (variants + category route)", () => {
+  it('finds category products for "power bank(s)"/"powerbanks" even when titles lack the words', async () => {
+    // Unique fixture pinned to this test — parallel suites churn products.
+    const stamp = Date.now().toString(36);
+    const category = await prisma.category.create({
+      data: {
+        name: `Power Banks ${stamp}`,
+        slug: `power-banks-${stamp}`,
+        status: "ACTIVE",
+      },
+      select: { id: true },
+    });
+    const product = await prisma.product.create({
+      data: {
+        categoryId: category.id,
+        // No "power bank" anywhere in the title/tags — only the category knows.
+        name: `Ambrane 20000mAh Fast Charge ${stamp}`,
+        slug: `ambrane-20000-${stamp}`,
+        sku: `PB-${stamp}`.toUpperCase(),
+        price: 79900,
+        status: "ACTIVE",
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    try {
+      for (const q of [
+        `power banks ${stamp}`,
+        `power bank ${stamp}`,
+        `powerbanks ${stamp}`,
+      ]) {
+        // The stamp keeps the category match unique; the words alone would
+        // also match any real "Power Banks" category in the seed.
+        const out = await discoverProducts(ANON_VIEWER, { search: q, limit: 50 });
+        expect(
+          out.items.some((i) => i.id === product.id),
+          `query "${q}" should surface the category's product`,
+        ).toBe(true);
+      }
+      // Plural/singular variant matching on TITLES too (no category needed):
+      const byTitle = await discoverProducts(ANON_VIEWER, {
+        search: `charges ${stamp}`,
+        limit: 50,
+      });
+      expect(byTitle.items.some((i) => i.id === product.id)).toBe(true);
+    } finally {
+      await prisma.product.delete({ where: { id: product.id } });
+      await prisma.category.delete({ where: { id: category.id } });
+    }
+  });
+});

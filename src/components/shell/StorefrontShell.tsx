@@ -12,6 +12,7 @@ import { Tooltip } from "@/components/ui/tooltip"
 import { ThemeToggle } from "@/components/theme/ThemeToggle"
 import { TabBadge } from "@/components/shell/TabBadge"
 import { Logo } from "@/components/brand/Logo"
+import { IndependenceBadge } from "@/components/brand/IndependenceBadge"
 import { StorefrontFooter } from "@/components/shell/StorefrontFooter"
 import { WishlistBadge } from "@/components/storefront/wishlist/WishlistBadge"
 import { CartBadge } from "@/components/storefront/cart/CartBadge"
@@ -144,6 +145,10 @@ export function StorefrontShell({
               )}
             />
           </Link>
+
+          {/* Seasonal: compact animated tricolor beside the logo (self-gated
+              to the Independence Day window; renders nothing otherwise). */}
+          <IndependenceBadge className="ml-1.5" />
 
           {/* Desktop top nav (replaces bottom tabs). Account is intentionally
               omitted here — it's the person icon in the right-hand cluster on

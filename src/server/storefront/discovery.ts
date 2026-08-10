@@ -1,4 +1,8 @@
 import { Prisma } from "@prisma/client";
+import {
+  termVariants,
+  categoryNameMatchesQuery,
+} from "@/lib/search-normalize";
 import { prisma } from "@/server/db";
 import { PAGE_SIZES } from "@/lib/constants";
 import { canSeePrices, type ViewerContext } from "@/server/types/viewer";
@@ -127,21 +131,51 @@ export interface DiscoverResult {
 /* price-band, which is only ever added for authorised viewers.        */
 /* ------------------------------------------------------------------ */
 
-function searchClause(search: string): Prisma.ProductWhereInput[] {
+/**
+ * Free-text matcher, forgiving by design (owner request): every term matches
+ * in singular AND plural spellings, and — when the query canonically names a
+ * category ("power bank" / "power banks" / "powerbanks" ⇔ "Power Banks") —
+ * the WHOLE category matches too, surfacing products whose titles never
+ * carry the words (e.g. "Ambrane 20000mAh").
+ */
+function searchClause(
+  search: string,
+  matchedCategoryIds: readonly string[],
+): Prisma.ProductWhereInput[] {
   const q = search.trim();
   if (q.length === 0) return [];
-  return q
+  const and = q
     .split(/\s+/)
     .filter(Boolean)
     .map((term) => ({
-      OR: [
-        { name: { contains: term, mode: "insensitive" } },
-        { sku: { contains: term, mode: "insensitive" } },
-        { brand: { contains: term, mode: "insensitive" } },
-        { brandRef: { name: { contains: term, mode: "insensitive" } } },
-        { tags: { has: term } },
-      ] satisfies Prisma.ProductWhereInput[],
+      OR: termVariants(term).flatMap((v) => [
+        { name: { contains: v, mode: "insensitive" as const } },
+        { sku: { contains: v, mode: "insensitive" as const } },
+        { brand: { contains: v, mode: "insensitive" as const } },
+        { brandRef: { name: { contains: v, mode: "insensitive" as const } } },
+        { tags: { has: v } },
+      ]) satisfies Prisma.ProductWhereInput[],
     }));
+  if (matchedCategoryIds.length === 0) return and;
+  // Field-match (all terms) OR category-match, as ONE composed clause so it
+  // ANDs cleanly with the other filters (brand, stock, an explicit category…).
+  return [{ OR: [{ AND: and }, { categoryId: { in: [...matchedCategoryIds] } }] }];
+}
+
+/**
+ * The ACTIVE categories the query canonically names. One small indexed read
+ * (the collection holds dozens of rows); empty for empty/short queries.
+ */
+async function searchCategoryIds(search: string | undefined): Promise<string[]> {
+  const q = search?.trim() ?? "";
+  if (q.length === 0) return [];
+  const categories = await prisma.category.findMany({
+    where: { status: "ACTIVE" },
+    select: { id: true, name: true },
+  });
+  return categories
+    .filter((c) => categoryNameMatchesQuery(c.name, q))
+    .map((c) => c.id);
 }
 
 /**
@@ -152,6 +186,7 @@ function searchClause(search: string): Prisma.ProductWhereInput[] {
 function buildWhere(
   params: DiscoverParams,
   allowPrice: boolean,
+  matchedCategoryIds: readonly string[] = [],
 ): Prisma.ProductWhereInput {
   const and: Prisma.ProductWhereInput[] = [];
 
@@ -183,7 +218,7 @@ function buildWhere(
     }
   }
   if (params.search) {
-    and.push(...searchClause(params.search));
+    and.push(...searchClause(params.search, matchedCategoryIds));
   }
 
   // THE GATE: only apply the price band when the viewer may see prices.
@@ -253,7 +288,7 @@ export async function discoverProducts(
 ): Promise<DiscoverResult> {
   const allowPrice = canSeePrices(viewer);
   const take = resolveLimit(params.limit);
-  const where = buildWhere(params, allowPrice);
+  const where = buildWhere(params, allowPrice, await searchCategoryIds(params.search));
   const orderBy = buildOrderBy(params.sort, allowPrice);
 
   // Fetch one extra row to determine whether a further page exists, using a

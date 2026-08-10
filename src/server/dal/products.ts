@@ -1,4 +1,8 @@
 import { Prisma } from "@prisma/client";
+import {
+  termVariants,
+  categoryNameMatchesQuery,
+} from "@/lib/search-normalize";
 import { prisma } from "@/server/db";
 import { PAGE_SIZES } from "@/lib/constants";
 import {
@@ -425,25 +429,50 @@ export async function listByCategoryForViewer(
 // ---------------------------------------------------------------------------
 
 /**
- * Build the case-insensitive OR filter for a search over PUBLIC fields only
- * (name / sku / brand / tags). Never touches money, so it is safe for every
- * viewer. Empty / whitespace queries yield an empty filter (no OR).
+ * Build the case-insensitive filter for a search over PUBLIC fields only
+ * (name / sku / brand / tags / CATEGORY). Never touches money, so it is safe
+ * for every viewer. Empty / whitespace queries yield an empty filter.
+ *
+ * Forgiving by design (owner request):
+ *  - every term matches in singular AND plural ("power banks" ⇔ "Powerbank");
+ *  - the query ALSO matches whole categories by canonical name — spacing and
+ *    pluralization ignored, so "power bank" / "power banks" / "powerbanks"
+ *    all reach the "Power Banks" category, surfacing products whose titles
+ *    never contain the words (e.g. "Ambrane 20000mAh"). Categories are one
+ *    small indexed read (the collection holds dozens of rows, not millions).
  */
-function searchWhere(query: string): Prisma.ProductWhereInput {
+async function searchWhere(query: string): Promise<Prisma.ProductWhereInput> {
   const q = query.trim();
   if (q.length === 0) return VISIBLE_WHERE;
+
   const terms = q.split(/\s+/).filter(Boolean);
-  // AND across terms, each term matching any public field (OR across fields).
+  // AND across terms; each term matches any public field in ANY of its
+  // spelling variants (OR across fields × variants).
   const and: Prisma.ProductWhereInput[] = terms.map((term) => ({
-    OR: [
-      { name: { contains: term, mode: "insensitive" } },
-      { sku: { contains: term, mode: "insensitive" } },
-      { brand: { contains: term, mode: "insensitive" } },
-      { brandRef: { name: { contains: term, mode: "insensitive" } } },
-      { tags: { has: term } },
-    ],
+    OR: termVariants(term).flatMap((v) => [
+      { name: { contains: v, mode: "insensitive" as const } },
+      { sku: { contains: v, mode: "insensitive" as const } },
+      { brand: { contains: v, mode: "insensitive" as const } },
+      { brandRef: { name: { contains: v, mode: "insensitive" as const } } },
+      { tags: { has: v } },
+    ]),
   }));
-  return { ...VISIBLE_WHERE, AND: and };
+
+  // Category route: canonical-match the WHOLE query against category names.
+  const categories = await prisma.category.findMany({
+    where: { status: "ACTIVE" },
+    select: { id: true, name: true },
+  });
+  const categoryIds = categories
+    .filter((c) => categoryNameMatchesQuery(c.name, q))
+    .map((c) => c.id);
+
+  // Field-match (all terms) OR category-match — inside the visibility wall.
+  const matcher: Prisma.ProductWhereInput =
+    categoryIds.length > 0
+      ? { OR: [{ AND: and }, { categoryId: { in: categoryIds } }] }
+      : { AND: and };
+  return { ...VISIBLE_WHERE, ...matcher };
 }
 
 export function searchForViewer(
@@ -467,8 +496,7 @@ export async function searchForViewer(
   options?: ListForViewerOptions,
 ): Promise<(PublicProduct | PricedProduct)[]> {
   const { skip, take } = resolvePaging(options);
-  const where = searchWhere(query);
-  const ctx = await loadTaxContext();
+  const [where, ctx] = await Promise.all([searchWhere(query), loadTaxContext()]);
   if (canSeePrices(viewer)) {
     const rows = await prisma.product.findMany({
       where,
@@ -491,7 +519,7 @@ export async function searchForViewer(
 
 /** Count products matching a search query (for pagination / result counts). */
 export async function countSearchForViewer(query: string): Promise<number> {
-  return prisma.product.count({ where: searchWhere(query) });
+  return prisma.product.count({ where: await searchWhere(query) });
 }
 
 // ---------------------------------------------------------------------------
