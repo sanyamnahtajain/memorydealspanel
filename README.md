@@ -1,4 +1,4 @@
-# the- Memory Deals — Panel
+# the- Memory Deals — Panel.
 
 Gated B2B price catalog for mobile-accessories wholesale. Anyone can browse the catalog; **prices are visible only to admin-approved customers** with time-bound access. Includes an app-like admin panel (PWA) with spreadsheet-style bulk editing and phone-camera product photography.
 
