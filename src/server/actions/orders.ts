@@ -30,6 +30,7 @@ import {
 const placeOrderSchema = z.object({
   note: z.string().max(MAX_CART_NOTE_LENGTH).optional(),
   idempotencyKey: z.string().min(1).max(100).optional(),
+  couponCode: z.string().trim().min(1).max(24).optional(),
 });
 
 /** The typed failure reasons a placement can return. */
@@ -38,7 +39,8 @@ export type PlaceOrderErrorCode =
   | "access"
   | "rate-limit"
   | "too-large"
-  | "below-minimum";
+  | "below-minimum"
+  | "coupon";
 
 /** Client-facing result: the order number on success, or a typed failure. */
 export type PlaceOrderActionResult =
@@ -58,7 +60,7 @@ export type PlaceOrderActionResult =
  * or customers who have lost price access, are refused.
  */
 export async function placeOrderAction(
-  input: { note?: string; idempotencyKey?: string } = {},
+  input: { note?: string; idempotencyKey?: string; couponCode?: string } = {},
 ): Promise<PlaceOrderActionResult> {
   const viewer = await resolveViewer();
   if (!isCustomer(viewer)) {

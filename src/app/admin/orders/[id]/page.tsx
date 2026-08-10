@@ -54,6 +54,8 @@ export default async function AdminOrderDetailPage({
     status: detail.status,
     itemCount: detail.itemCount,
     subtotalPaise: detail.subtotalPaise,
+    couponCode: detail.couponCode,
+    discountPaise: detail.discountPaise,
     placedAt: detail.placedAt.toISOString(),
     updatedAt: detail.updatedAt.toISOString(),
     customer: detail.customer

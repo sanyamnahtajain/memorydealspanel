@@ -105,6 +105,9 @@ export interface OrderPdfData {
   grandTotalPaise: number;
   /** Frozen order-level GST total (paise), when tax was applied. */
   totalTaxPaise: number | null;
+  /** Coupon frozen at placement (code + discount off the goods subtotal). */
+  couponCode?: string | null;
+  discountPaise?: number;
   /** Customer requirements (notes + photos) — rendered after the bill. */
   requirements?: OrderPdfRequirement[];
 }
@@ -261,6 +264,19 @@ export async function renderOrderPdf(data: OrderPdfData): Promise<Uint8Array> {
   y -= 4;
   hline(y);
   y -= 16;
+  if ((data.discountPaise ?? 0) > 0) {
+    text(
+      `Discount${data.couponCode ? ` (${data.couponCode})` : ""}`,
+      M + W * 0.35,
+      9.5,
+      helv,
+      INK,
+      "right",
+      W * 0.2,
+    );
+    text(`- ${money(data.discountPaise ?? 0)}`, M, 9.5, helv, INK, "right", W);
+    y -= 14;
+  }
   text("Grand Total", M + W * 0.35, 10, bold, INK, "right", W * 0.2);
   text(`${data.totalQty.toFixed(2)} pcs`, M + W * 0.56, 10, bold, INK, "left", 0);
   text(money(data.grandTotalPaise), M, 10.5, bold, INK, "right", W);
@@ -441,6 +457,8 @@ export async function buildOrderPdf(orderId: string): Promise<{ bytes: Uint8Arra
     totalQty: items.reduce((s, it) => s + it.quantity, 0),
     grandTotalPaise: order.grandTotalPaise ?? order.subtotalPaise,
     totalTaxPaise: order.taxApplied ? order.totalTaxPaise : null,
+    couponCode: order.couponCode ?? null,
+    discountPaise: order.discountPaise ?? 0,
     requirements,
   });
   return { bytes, orderNumber: order.orderNumber };

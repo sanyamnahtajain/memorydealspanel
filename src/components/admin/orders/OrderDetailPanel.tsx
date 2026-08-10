@@ -74,13 +74,33 @@ export function OrderDetailPanel({ order }: { order: OrderDetailDTO }) {
             ))}
           </ul>
 
-          <div className="flex items-center justify-between rounded-2xl border border-border bg-card p-4">
-            <span className="text-sm font-medium text-muted-foreground">
-              {order.tax ? "Taxable subtotal" : "Subtotal"}
-            </span>
-            <span className="text-base font-semibold tabular-nums text-foreground">
-              {formatPaise(order.subtotalPaise)}
-            </span>
+          <div className="flex flex-col gap-1.5 rounded-2xl border border-border bg-card p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-muted-foreground">
+                {order.tax ? "Taxable subtotal" : "Subtotal"}
+              </span>
+              <span className="text-base font-semibold tabular-nums text-foreground">
+                {formatPaise(order.subtotalPaise)}
+              </span>
+            </div>
+            {order.discountPaise > 0 ? (
+              <div className="flex items-center justify-between text-emerald-700 dark:text-emerald-300">
+                <span className="text-sm font-medium">
+                  Coupon{order.couponCode ? ` ${order.couponCode}` : ""}
+                </span>
+                <span className="text-sm font-semibold tabular-nums">
+                  −{formatPaise(order.discountPaise)}
+                </span>
+              </div>
+            ) : null}
+            {order.discountPaise > 0 && !order.tax ? (
+              <div className="flex items-center justify-between border-t border-border pt-1.5">
+                <span className="text-sm font-medium text-muted-foreground">Total</span>
+                <span className="text-base font-semibold tabular-nums text-foreground">
+                  {formatPaise(order.subtotalPaise - order.discountPaise)}
+                </span>
+              </div>
+            ) : null}
           </div>
 
           {/* Frozen GST breakup (admins always see amounts). */}

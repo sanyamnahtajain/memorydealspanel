@@ -17,6 +17,12 @@ import {
 import { publicBaseOrEmpty } from "@/server/storage/r2";
 import { getMinOrderValuePaise } from "@/server/services/store-settings";
 import {
+  previewCoupon,
+  redeemCoupon,
+  COUPON_FAIL_COPY,
+} from "@/server/services/coupons";
+import { allocateDiscount } from "@/lib/discount";
+import {
   resolveEffectiveAllocation,
 } from "@/lib/allocation";
 import { limit } from "@/server/security/ratelimit";
@@ -1012,6 +1018,10 @@ export interface CustomerOrder {
   subtotalPaise: number;
   itemCount: number;
   note: string | null;
+  /** Coupon frozen at placement, when one applied. */
+  couponCode: string | null;
+  /** Order-level discount off the goods subtotal (integer paise). */
+  discountPaise: number;
   placedAt: Date;
   /**
    * The frozen order-level GST snapshot, or `null` when GST was off at
@@ -1045,13 +1055,15 @@ export interface PlaceOrderInput {
    * the same key returns the FIRST order instead of creating a duplicate.
    */
   idempotencyKey?: string;
+  /** Optional coupon code — validated + atomically redeemed server-side. */
+  couponCode?: string;
 }
 
 export type PlaceOrderResult =
   | { ok: true; order: CustomerOrder; deduped: boolean; excluded: PricedCartLine[] }
   | {
       ok: false;
-      error: "empty" | "access" | "rate-limit" | "too-large" | "below-minimum";
+      error: "empty" | "access" | "rate-limit" | "too-large" | "below-minimum" | "coupon";
       message: string;
       excluded?: PricedCartLine[];
     };
@@ -1152,12 +1164,38 @@ async function placeOrderLocked(
     };
   }
 
+  // (4a2) Coupon PREVIEW (no claim yet) — resolves the prospective discount so
+  // the minimum-order gate below runs on the DISCOUNTED goods subtotal. The
+  // atomic redemption claim happens after the cheap gates, just before the
+  // order is created.
+  let couponCode: string | null = null;
+  let prospectiveDiscountPaise = 0;
+  const couponLines = cart.orderableLines.map((l) => ({
+    productId: l.productId,
+    lineTotalPaise: l.lineTotalPaise,
+  }));
+  if (input.couponCode) {
+    const quote = await previewCoupon(input.couponCode, couponLines);
+    if (!quote.ok) {
+      return {
+        ok: false,
+        error: "coupon",
+        message: COUPON_FAIL_COPY[quote.reason],
+        excluded: cart.blockedLines,
+      };
+    }
+    couponCode = quote.code;
+    prospectiveDiscountPaise = quote.discountPaise;
+  }
+
   // (4b) Configurable minimum order value (StoreSettings singleton). Checked
   // SERVER-SIDE at placement — the cart UI shows the shortfall, but the
   // authoritative gate is here so a stale client can never place below it.
+  // Runs on the DISCOUNTED goods subtotal (a coupon can't cheat the floor).
   const minOrderValuePaise = await getMinOrderValuePaise();
-  if (minOrderValuePaise !== null && cart.subtotalPaise < minOrderValuePaise) {
-    const shortfall = minOrderValuePaise - cart.subtotalPaise;
+  const gatedSubtotalPaise = cart.subtotalPaise - prospectiveDiscountPaise;
+  if (minOrderValuePaise !== null && gatedSubtotalPaise < minOrderValuePaise) {
+    const shortfall = minOrderValuePaise - gatedSubtotalPaise;
     return {
       ok: false,
       error: "below-minimum",
@@ -1190,11 +1228,52 @@ async function placeOrderLocked(
   // functions as the live preview, so the placed order matches to the paisa.
   // `computed` is null when the kill-switch is off ⇒ every tax field stays null
   // and the order behaves exactly as pre-GST.
+  // Coupon REDEMPTION — the atomic exhaustion claim (fail-closed: claimed
+  // before the order exists; never rolled back, so a crash can only retire a
+  // code early, never hand out an unclaimed discount).
+  let discountPaise = 0;
+  let couponScope: string[] = [];
+  if (couponCode) {
+    const claim = await redeemCoupon(couponCode, couponLines, customerId);
+    if (!claim.ok) {
+      return {
+        ok: false,
+        error: "coupon",
+        message: COUPON_FAIL_COPY[claim.reason],
+        excluded: cart.blockedLines,
+      };
+    }
+    discountPaise = claim.discountPaise;
+    couponScope = claim.scopeProductIds;
+  }
+
   const [ctx, placeOfSupply] = await Promise.all([
     loadTaxContext(),
     resolvePlaceOfSupply(customerId),
   ]);
-  const computed = computeOrderTax(cart.orderableLines, ctx, placeOfSupply);
+  // GST runs on the DISCOUNTED line values: the order-level discount is split
+  // across lines proportionally (integer-exact, largest remainder) and each
+  // line's taxable amount is its total minus its share.
+  // A scoped coupon (e.g. six specific products in a 20-line cart) spreads
+  // its discount across the ELIGIBLE lines only — ineligible lines keep their
+  // full taxable value.
+  const scopeSet = couponScope.length > 0 ? new Set(couponScope) : null;
+  const discountAlloc =
+    discountPaise > 0
+      ? allocateDiscount(
+          cart.orderableLines.map((l) =>
+            scopeSet === null || scopeSet.has(l.productId) ? l.lineTotalPaise : 0,
+          ),
+          discountPaise,
+        )
+      : null;
+  const taxLines = discountAlloc
+    ? cart.orderableLines.map((l, i) => ({
+        ...l,
+        lineTotalPaise: l.lineTotalPaise - discountAlloc[i],
+      }))
+    : cart.orderableLines;
+  const computed = computeOrderTax(taxLines, ctx, placeOfSupply);
 
   const items = cart.orderableLines.map((line, i) =>
     toSnapshot(line, computed?.perLine[i]),
@@ -1220,6 +1299,8 @@ async function placeOrderLocked(
       cart,
       note,
       computed?.order ?? null,
+      couponCode,
+      discountPaise,
     );
   } catch (error) {
     if (isWriteConflict(error)) {
@@ -1272,6 +1353,8 @@ function placeOrderTransaction(
   cart: PricedCart,
   note: string | null,
   tax: OrderTaxSnapshot | null,
+  couponCode: string | null = null,
+  discountPaise = 0,
 ): Promise<OrderRow> {
   // The order-level GST columns. When `tax` is null (kill-switch off) they are
   // ALL left at their schema defaults/null and `taxApplied` is false — the order
@@ -1304,6 +1387,14 @@ function placeOrderTransaction(
         subtotalPaise: cart.subtotalPaise,
         itemCount: cart.itemCount,
         note,
+        // Coupon frozen at placement (explicit null — absent ≠ null on Mongo).
+        couponCode,
+        discountPaise: discountPaise > 0 ? discountPaise : null,
+        // Pre-GST orders have no tax grand total; with a discount the
+        // effective total is no longer the subtotal, so freeze it here.
+        ...(tax === null && discountPaise > 0
+          ? { grandTotalPaise: cart.subtotalPaise - discountPaise }
+          : {}),
         ...taxFields,
       },
     });
@@ -1424,6 +1515,8 @@ function toCustomerOrder(order: OrderRow): CustomerOrder {
     subtotalPaise: order.subtotalPaise,
     itemCount: order.itemCount,
     note: order.note,
+    couponCode: order.couponCode ?? null,
+    discountPaise: order.discountPaise ?? 0,
     placedAt: order.placedAt,
     tax: toOrderTaxSnapshot(order),
   };

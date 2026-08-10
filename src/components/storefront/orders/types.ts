@@ -91,6 +91,10 @@ export interface OrderHistoryDetail {
   status: OrderStatus;
   itemCount: number;
   subtotalPaise: number | null;
+  /** Coupon frozen at placement, when one applied. */
+  couponCode: string | null;
+  /** Order-level discount off the goods subtotal (paise); 0 when none. */
+  discountPaise: number;
   placedAt: string;
   updatedAt: string;
   note: string | null;

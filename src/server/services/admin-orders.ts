@@ -227,6 +227,10 @@ export interface OrderDetail extends OrderListItem {
   items: OrderItemSnapshot[];
   note: string | null;
   adminNote: string | null;
+  /** Coupon frozen at placement, when one applied. */
+  couponCode: string | null;
+  /** Order-level discount off the goods subtotal (paise); 0 when none. */
+  discountPaise: number;
   /** Frozen order-level GST snapshot, or null for a pre-GST order. */
   tax: OrderTaxSnapshot | null;
 }
@@ -399,6 +403,8 @@ export async function getOrder(id: string): Promise<OrderDetail | null> {
       items: true,
       note: true,
       adminNote: true,
+      couponCode: true,
+      discountPaise: true,
     },
   });
   if (!row) return null;
@@ -407,6 +413,8 @@ export async function getOrder(id: string): Promise<OrderDetail | null> {
     items: parseOrderItems(row.items),
     note: row.note ?? null,
     adminNote: row.adminNote ?? null,
+    couponCode: row.couponCode ?? null,
+    discountPaise: row.discountPaise ?? 0,
     tax: toOrderTaxSnapshot(row),
   };
 }
@@ -591,6 +599,8 @@ export async function getCustomerOrderByNumber(
       ...ORDER_TAX_SELECT,
       items: true,
       note: true,
+      couponCode: true,
+      discountPaise: true,
     },
   });
   if (!row) return null;
@@ -604,6 +614,8 @@ export async function getCustomerOrderByNumber(
     updatedAt: row.updatedAt,
     items: parseOrderItems(row.items),
     note: row.note ?? null,
+    couponCode: row.couponCode ?? null,
+    discountPaise: row.discountPaise ?? 0,
     tax: toOrderTaxSnapshot(row),
   };
 }

@@ -91,6 +91,8 @@ export default async function OrderDetailPage({
     status: order.status,
     itemCount: order.itemCount,
     subtotalPaise: priced ? order.subtotalPaise : null,
+    couponCode: order.couponCode,
+    discountPaise: priced ? order.discountPaise : 0,
     placedAt: order.placedAt.toISOString(),
     updatedAt: order.updatedAt.toISOString(),
     note: order.note,

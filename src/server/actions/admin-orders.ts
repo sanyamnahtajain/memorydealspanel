@@ -128,6 +128,10 @@ export interface OrderTaxDTO {
 }
 
 export interface OrderDetailDTO extends OrderRowDTO {
+  /** Coupon frozen at placement, when one applied. */
+  couponCode: string | null;
+  /** Order-level discount (paise); 0 when none. */
+  discountPaise: number;
   items: OrderLineDTO[];
   note: string | null;
   adminNote: string | null;
@@ -159,6 +163,8 @@ function toRowDTO(item: OrderListItem): OrderRowDTO {
 function toDetailDTO(detail: OrderDetail): OrderDetailDTO {
   return {
     ...toRowDTO(detail),
+    couponCode: detail.couponCode,
+    discountPaise: detail.discountPaise,
     items: detail.items.map((line) => ({
       productId: line.productId,
       variantId: line.variantId,

@@ -457,6 +457,10 @@ model Order {
   itemCount     Int
   note          String?
   adminNote     String?
+  // Coupon (Phase: coupons port) — frozen at placement. discountPaise is the
+  // order-level discount taken off the goods subtotal (never negative totals).
+  couponCode    String?
+  discountPaise Int?
   // GST (Phase 13): tax snapshot frozen at placement (rates change; a placed
   // order must not). Per-line tax lives inside `items`; these are the
   // order-level totals + supply context. All *Paise are integer paise.
@@ -535,4 +539,42 @@ model DeviceModel {
 
   @@index([status, sortOrder])
   @@index([brandName])
+}
+
+// ── Coupons (ported from the tradeOS design) ─────────────────────────────
+// Codes are stored UPPERCASE and globally unique. PERCENT takes basis points
+// (500 = 5%), FIXED takes integer paise; exactly one of the two is set.
+// Redemption is claimed ATOMICALLY at placement (conditional increment), so a
+// nearly-exhausted code can never over-redeem under concurrency.
+
+enum CouponKind {
+  PERCENT
+  FIXED
+}
+
+model Coupon {
+  id               String     @id @default(auto()) @map("_id") @db.ObjectId
+  code             String     @unique
+  kind             CouponKind
+  // PERCENT: basis points off the subtotal (500 = 5%). Null for FIXED.
+  valueBps         Int?
+  // FIXED: integer paise off the subtotal. Null for PERCENT.
+  amountPaise      Int?
+  minOrderPaise    Int        @default(0)
+  startsAt         DateTime?
+  expiresAt        DateTime?
+  // Global redemption cap; null = unlimited.
+  maxRedemptions   Int?
+  redemptionCount  Int        @default(0)
+  // Per-customer redemption cap (counted from prior orders); null = unlimited.
+  perCustomerLimit Int?
+  // Product scoping: when non-empty the coupon applies ONLY to these products
+  // — the discount computes on (and allocates across) the eligible lines.
+  productIds       String[]   @default([])
+  active           Boolean    @default(true)
+  deletedAt        DateTime?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  @@index([active, deletedAt])
 }

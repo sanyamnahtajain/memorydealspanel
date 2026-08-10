@@ -167,13 +167,33 @@ export function OrderDetailView({ detail }: { detail: OrderHistoryDetail }) {
           {/* Totals */}
           <div className="rounded-2xl border border-border bg-card p-4">
             {detail.priced && detail.subtotalPaise !== null ? (
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-muted-foreground">
-                  Subtotal
-                </span>
-                <span className="text-base font-semibold tabular-nums text-foreground">
-                  {formatPaise(detail.subtotalPaise)}
-                </span>
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-muted-foreground">
+                    Subtotal
+                  </span>
+                  <span className="text-base font-semibold tabular-nums text-foreground">
+                    {formatPaise(detail.subtotalPaise)}
+                  </span>
+                </div>
+                {detail.discountPaise > 0 ? (
+                  <div className="flex items-center justify-between text-emerald-700 dark:text-emerald-300">
+                    <span className="text-sm font-medium">
+                      Coupon{detail.couponCode ? ` ${detail.couponCode}` : ""}
+                    </span>
+                    <span className="text-sm font-semibold tabular-nums">
+                      −{formatPaise(detail.discountPaise)}
+                    </span>
+                  </div>
+                ) : null}
+                {detail.discountPaise > 0 && !detail.tax ? (
+                  <div className="flex items-center justify-between border-t border-border pt-1.5">
+                    <span className="text-sm font-medium text-muted-foreground">Total</span>
+                    <span className="text-base font-semibold tabular-nums text-foreground">
+                      {formatPaise(detail.subtotalPaise - detail.discountPaise)}
+                    </span>
+                  </div>
+                ) : null}
               </div>
             ) : (
               <p className="flex items-center gap-2 text-sm text-muted-foreground">

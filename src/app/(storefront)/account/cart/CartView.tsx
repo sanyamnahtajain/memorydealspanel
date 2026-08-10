@@ -32,6 +32,7 @@ import {
   Loader2,
   ShoppingBag,
   Lock,
+  X,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { toast } from "sonner";
@@ -54,6 +55,11 @@ import {
   removeCartItemAction,
 } from "@/server/actions/cart";
 import { placeOrderAction } from "@/server/actions/orders";
+import {
+  previewCouponAction,
+  suggestCouponsAction,
+  type CouponSuggestionDTO,
+} from "@/server/actions/coupons";
 import type { CartLineIssue, CartTaxSummary } from "@/server/services/cart";
 import type { StockStatus } from "@/lib/schemas/shared";
 
@@ -187,6 +193,10 @@ export function CartView({
   const [pending, setPending] = React.useState<ReadonlySet<string>>(new Set());
   const [note, setNote] = React.useState("");
   const [placing, setPlacing] = React.useState(false);
+  // Applied coupon (server-previewed). Re-validated + atomically redeemed at
+  // placement — this only drives the summary display.
+  const [coupon, setCoupon] = React.useState<{ code: string; discountPaise: number } | null>(null);
+  const [couponBusy, setCouponBusy] = React.useState(false);
   // Stable idempotency key for THIS cart session — a double-click reuses it, so
   // the server dedups instead of creating a second order. Generated in an effect
   // (impure APIs must not run during render); guaranteed present before any user
@@ -209,9 +219,10 @@ export function CartView({
   // Minimum order value: the live shortfall (paise) still needed, or null when
   // the minimum is off / already met / the viewer is gated. Server-enforced at
   // placement — this only disables the button and explains why.
+  const discountPaise = priced ? (coupon?.discountPaise ?? 0) : 0;
   const movShortfallPaise =
     minOrderValuePaise != null && subtotalPaise != null
-      ? Math.max(0, minOrderValuePaise - subtotalPaise) || null
+      ? Math.max(0, minOrderValuePaise - (subtotalPaise - discountPaise)) || null
       : null;
   const canPlace =
     canOrder && orderableLines.length > 0 && !placing && movShortfallPaise === null;
@@ -260,7 +271,59 @@ export function CartView({
 
   // The customer-facing total that "Place order" commits to: the GST grand
   // total when GST applies, else the plain subtotal.
-  const payablePaise = taxPreview ? taxPreview.grandTotalPaise : subtotalPaise;
+  const payablePaise =
+    (taxPreview ? taxPreview.grandTotalPaise : (subtotalPaise ?? 0)) - discountPaise;
+
+  // Keep an applied coupon honest as quantities change: re-preview on any
+  // subtotal move; a code that stops applying is dropped with a note.
+  const appliedCode = coupon?.code ?? null;
+  React.useEffect(() => {
+    if (!appliedCode || subtotalPaise == null) return;
+    let cancelled = false;
+    void previewCouponAction(appliedCode).then((res) => {
+      if (cancelled) return;
+      if (res.ok) {
+        setCoupon({ code: res.code, discountPaise: res.discountPaise });
+      } else {
+        setCoupon(null);
+        toast.info(`Coupon ${appliedCode} removed — ${res.message}`);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [appliedCode, subtotalPaise]);
+
+  // Coupon suggestions, quoted server-side against the live cart. Re-fetched
+  // when the subtotal moves so the applicable/blocked split stays honest.
+  const [suggestions, setSuggestions] = React.useState<CouponSuggestionDTO[]>([]);
+  React.useEffect(() => {
+    if (!priced || !canOrder) return;
+    let cancelled = false;
+    void suggestCouponsAction().then((res) => {
+      if (!cancelled && res.ok) setSuggestions(res.suggestions);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [priced, canOrder, subtotalPaise]);
+
+  const applyCoupon = React.useCallback(async (raw: string) => {
+    const code = raw.trim().toUpperCase();
+    if (!code) return;
+    setCouponBusy(true);
+    try {
+      const res = await previewCouponAction(code);
+      if (res.ok) {
+        setCoupon({ code: res.code, discountPaise: res.discountPaise });
+        toast.success(`Coupon ${res.code} applied — ${formatPaise(res.discountPaise)} off.`);
+      } else {
+        toast.error(res.message);
+      }
+    } finally {
+      setCouponBusy(false);
+    }
+  }, []);
 
   const markPending = (key: string, on: boolean) =>
     setPending((prev) => {
@@ -359,6 +422,7 @@ export function CartView({
     const result = await placeOrderAction({
       note: note.trim() || undefined,
       idempotencyKey: idempotencyKeyRef.current ?? undefined,
+      couponCode: coupon?.code,
     });
     if (result.ok) {
       if (result.excludedCount > 0) {
@@ -378,11 +442,14 @@ export function CartView({
       return;
     }
     toast.error(result.message);
+    if (result.error === "coupon") {
+      setCoupon(null); // the code stopped applying — order again without it
+    }
     // A stale cart (something changed server-side) → refresh to re-validate.
     if (result.error === "empty" || result.error === "access") {
       router.refresh();
     }
-  }, [canPlace, note, router]);
+  }, [canPlace, note, coupon, router]);
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
@@ -700,6 +767,11 @@ export function CartView({
             onPlace={placeOrder}
             canOrder={canOrder}
             tax={taxPreview}
+            coupon={coupon}
+            couponBusy={couponBusy}
+            suggestions={suggestions}
+            onApplyCoupon={applyCoupon}
+            onRemoveCoupon={() => setCoupon(null)}
             hidePlaceButton
           />
         </div>
@@ -719,6 +791,11 @@ export function CartView({
             onPlace={placeOrder}
             canOrder={canOrder}
             tax={taxPreview}
+            coupon={coupon}
+            couponBusy={couponBusy}
+            suggestions={suggestions}
+            onApplyCoupon={applyCoupon}
+            onRemoveCoupon={() => setCoupon(null)}
             movShortfallPaise={movShortfallPaise}
             minOrderValuePaise={minOrderValuePaise}
           />
@@ -775,6 +852,13 @@ interface SummaryProps {
   canOrder: boolean;
   /** Live GST preview, or null when GST is off / gated. */
   tax: CartTaxSummary | null;
+  /** Applied coupon, when one previews successfully. */
+  coupon: { code: string; discountPaise: number } | null;
+  couponBusy: boolean;
+  /** Store coupons quoted against this cart (applicable first). */
+  suggestions: CouponSuggestionDTO[];
+  onApplyCoupon: (code: string) => void;
+  onRemoveCoupon: () => void;
   /** Paise still needed to reach the minimum order value, when short. */
   movShortfallPaise?: number | null;
   /** The minimum order value itself (paise), when configured + priced. */
@@ -796,13 +880,21 @@ function Summary({
   onPlace,
   canOrder,
   tax,
+  coupon,
+  couponBusy,
+  suggestions,
+  onApplyCoupon,
+  onRemoveCoupon,
   hidePlaceButton = false,
 }: SummaryProps) {
+  const [codeInput, setCodeInput] = React.useState("");
   // With GST on, the taxable base is what we call "subtotal" for an exclusive
   // catalog; for an inclusive one the tax is carved out of the line totals. We
   // display the taxable subtotal + the GST lines + the grand total.
   const showTax = priced && tax !== null;
-  const grandTotalPaise = showTax ? tax.grandTotalPaise : subtotalPaise ?? 0;
+  const discount = priced ? (coupon?.discountPaise ?? 0) : 0;
+  const grandTotalPaise =
+    (showTax ? tax.grandTotalPaise : (subtotalPaise ?? 0)) - discount;
   return (
     <div className="flex flex-col gap-4">
       <h2 className="text-sm font-semibold text-foreground">Order summary</h2>
@@ -816,6 +908,25 @@ function Summary({
             {priced ? formatPaise(subtotalPaise ?? 0) : "—"}
           </dd>
         </div>
+
+        {coupon && priced ? (
+          <div className="flex items-center justify-between text-emerald-700 dark:text-emerald-300">
+            <dt className="flex items-center gap-1.5">
+              Coupon {coupon.code}
+              <button
+                type="button"
+                onClick={onRemoveCoupon}
+                aria-label={`Remove coupon ${coupon.code}`}
+                className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <X className="size-3.5" />
+              </button>
+            </dt>
+            <dd className="font-medium tabular-nums">
+              −{formatPaise(coupon.discountPaise)}
+            </dd>
+          </div>
+        ) : null}
 
         {showTax ? (
           <TaxLines tax={tax} />
@@ -862,6 +973,102 @@ function Summary({
             />
           </div>
         </div>
+      ) : null}
+
+      {priced && canOrder && suggestions.length > 0 ? (
+        <div className="flex flex-col gap-1.5">
+          <p className="text-xs font-medium text-foreground">Coupons for you</p>
+          {suggestions.slice(0, 5).map((sug) => {
+            const offer =
+              sug.kind === "PERCENT"
+                ? `${(sug.valueBps ?? 0) / 100}% off`
+                : `${formatPaise(sug.amountPaise ?? 0)} off`;
+            const applied = coupon?.code === sug.code;
+            return (
+              <div
+                key={sug.code}
+                className={cn(
+                  "flex items-center justify-between gap-2 rounded-lg border px-2.5 py-2",
+                  sug.applicable
+                    ? "border-emerald-500/40 bg-emerald-500/5"
+                    : "border-border bg-muted/30 opacity-80",
+                )}
+              >
+                <div className="min-w-0">
+                  <p className="flex flex-wrap items-center gap-1.5 text-xs">
+                    <span className="rounded border border-dashed border-foreground/30 px-1.5 py-0.5 font-mono font-semibold tracking-wide">
+                      {sug.code}
+                    </span>
+                    <span className="text-muted-foreground">
+                      {offer}
+                      {sug.scoped ? " · select products" : ""}
+                    </span>
+                  </p>
+                  <p
+                    className={cn(
+                      "mt-0.5 text-[0.7rem]",
+                      sug.applicable
+                        ? "font-medium text-emerald-700 dark:text-emerald-300"
+                        : "text-muted-foreground",
+                    )}
+                  >
+                    {sug.applicable
+                      ? `Saves ${formatPaise(sug.discountPaise)} on this cart`
+                      : sug.reasonMessage}
+                  </p>
+                </div>
+                {sug.applicable ? (
+                  <Button
+                    type="button"
+                    variant={applied ? "secondary" : "outline"}
+                    size="sm"
+                    className="h-7 shrink-0 px-2.5 text-xs"
+                    disabled={couponBusy || applied}
+                    onClick={() => onApplyCoupon(sug.code)}
+                  >
+                    {applied ? "Applied" : "Apply"}
+                  </Button>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {priced && canOrder && !coupon ? (
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={codeInput}
+            onChange={(e) => setCodeInput(e.target.value.toUpperCase())}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                onApplyCoupon(codeInput);
+              }
+            }}
+            placeholder="Coupon code"
+            aria-label="Coupon code"
+            autoCapitalize="characters"
+            autoCorrect="off"
+            spellCheck={false}
+            className="h-9 min-w-0 flex-1 rounded-lg border border-border bg-background px-3 text-sm uppercase outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            className="h-9"
+            disabled={couponBusy || codeInput.trim() === ""}
+            onClick={() => onApplyCoupon(codeInput)}
+          >
+            {couponBusy ? "Checking…" : "Apply"}
+          </Button>
+        </div>
+      ) : null}
+      {coupon && showTax ? (
+        <p className="text-[0.65rem] leading-relaxed text-muted-foreground">
+          GST is finalised on the discounted amount when you place the order.
+        </p>
       ) : null}
 
       <p className="text-[0.7rem] leading-relaxed text-muted-foreground">

@@ -17,6 +17,7 @@ import {
   Trash2,
   Upload,
   Users,
+  TicketPercent,
   type LucideIcon,
 } from "lucide-react"
 
@@ -66,6 +67,7 @@ export const adminPrimaryNav: readonly NavItem[] = [
  */
 export const adminSecondaryNav: readonly NavItem[] = [
   { label: "Import", href: "/admin/import", icon: Upload },
+  { label: "Coupons", href: "/admin/coupons", icon: TicketPercent },
   { label: "Audit log", href: "/admin/audit", icon: History },
   { label: "Sessions", href: "/admin/sessions", icon: MonitorSmartphone },
   { label: "Trash", href: "/admin/trash", icon: Trash2 },
