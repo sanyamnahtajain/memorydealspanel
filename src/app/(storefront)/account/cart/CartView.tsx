@@ -438,7 +438,7 @@ export function CartView({
                       "relative size-20 shrink-0 overflow-hidden rounded-lg bg-muted";
                     return line.slug ? (
                       <Link
-                        href={`/products/${line.slug}`}
+                        href={`/p/${line.slug}`}
                         className={cls}
                         aria-label={`View ${line.name}`}
                       >
@@ -459,7 +459,7 @@ export function CartView({
                         ) : null}
                         {line.slug ? (
                           <Link
-                            href={`/products/${line.slug}`}
+                            href={`/p/${line.slug}`}
                             className="line-clamp-2 text-sm font-medium text-foreground hover:underline"
                           >
                             {line.name}
