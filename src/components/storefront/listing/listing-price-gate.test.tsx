@@ -75,6 +75,7 @@ const publicProduct: PublicProduct = {
   specs: { capacity: "16GB", type: "DDR4" },
   moq: 10,
   packMultiple: null,
+  maxQty: null,
   allocation: null,
   stockStatus: "IN_STOCK",
   status: "ACTIVE",

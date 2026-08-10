@@ -103,6 +103,8 @@ export interface CartLineData {
   moq: number;
   /** Pack multiple for the line (1 = none) — the stepper's step size. */
   packMultiple: number;
+  /** Per-line ceiling (admin-set, default 200). */
+  maxQty: number;
   /** Whether this product requires a per-model split (hides the stepper). */
   allocationRequired: boolean;
   /** Resolved split for display/edit, when the line carries one. */
@@ -579,6 +581,7 @@ export function CartView({
                                 line.quantity - Math.max(1, line.packMultiple),
                                 line.moq,
                                 line.packMultiple,
+                                line.maxQty,
                               ),
                             )
                           }
@@ -586,20 +589,24 @@ export function CartView({
                         >
                           <Minus className="size-3.5" />
                         </Button>
-                        <span className="min-w-9 text-center text-sm font-medium tabular-nums">
-                          {busy ? (
-                            <Loader2 className="mx-auto size-3.5 animate-spin text-muted-foreground" />
-                          ) : (
-                            line.quantity
-                          )}
-                        </span>
+                        <QtyInput
+                          value={line.quantity}
+                          busy={busy}
+                          disabled={!canOrder}
+                          commit={(raw) =>
+                            changeQuantity(
+                              line,
+                              clampQuantity(raw, line.moq, line.packMultiple, line.maxQty),
+                            )
+                          }
+                        />
                         <Button
                           variant="ghost"
                           size="icon-sm"
                           disabled={
                             !canOrder ||
                             busy ||
-                            line.quantity >= maxOrderableQty(line.packMultiple)
+                            line.quantity >= maxOrderableQty(line.packMultiple, line.maxQty)
                           }
                           onClick={() =>
                             changeQuantity(
@@ -608,6 +615,7 @@ export function CartView({
                                 line.quantity + Math.max(1, line.packMultiple),
                                 line.moq,
                                 line.packMultiple,
+                                line.maxQty,
                               ),
                             )
                           }
@@ -917,5 +925,64 @@ function TaxLines({ tax }: { tax: CartTaxSummary }) {
         </div>
       ) : null}
     </>
+  );
+}
+
+/**
+ * Editable quantity (the "hard to click + one by one" fix): type any number,
+ * committed on blur / Enter through the SAME clamp as the server (MOQ floor,
+ * pack rounding, admin max). Escape restores the current value. The draft is
+ * local so typing never fires network calls per keystroke.
+ */
+function QtyInput({
+  value,
+  busy,
+  disabled,
+  commit,
+}: {
+  value: number;
+  busy: boolean;
+  disabled: boolean;
+  commit: (raw: number) => void;
+}) {
+  const [draft, setDraft] = React.useState<string | null>(null);
+
+  function submit() {
+    if (draft == null) return;
+    const parsed = Number.parseInt(draft, 10);
+    setDraft(null);
+    if (!Number.isFinite(parsed) || parsed === value) return;
+    commit(parsed);
+  }
+
+  if (busy) {
+    return (
+      <span className="inline-flex w-14 items-center justify-center">
+        <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
+      </span>
+    );
+  }
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      pattern="[0-9]*"
+      aria-label="Quantity"
+      value={draft ?? String(value)}
+      disabled={disabled}
+      onFocus={(e) => e.currentTarget.select()}
+      onChange={(e) => setDraft(e.target.value.replace(/[^0-9]/g, ""))}
+      onBlur={submit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          e.currentTarget.blur();
+        } else if (e.key === "Escape") {
+          setDraft(null);
+          e.currentTarget.blur();
+        }
+      }}
+      className="w-14 border-0 bg-transparent text-center text-sm font-medium tabular-nums outline-none focus-visible:bg-muted/50 disabled:opacity-50"
+    />
   );
 }

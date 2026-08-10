@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { MAX_QTY_PER_LINE } from "@/lib/schemas/cart";
+import { DEFAULT_MAX_QTY } from "./quantity";
 import {
   clampQuantity,
   maxOrderableQty,
@@ -40,12 +41,12 @@ describe("minOrderableQty", () => {
 
 describe("maxOrderableQty", () => {
   it("is the raw cap without a pack", () => {
-    expect(maxOrderableQty(null)).toBe(MAX_QTY_PER_LINE);
+    expect(maxOrderableQty(null)).toBe(DEFAULT_MAX_QTY);
   });
 
   it("aligns the cap down onto the pack", () => {
-    expect(maxOrderableQty(10)).toBe(MAX_QTY_PER_LINE); // 100_000 is on-pack
-    expect(maxOrderableQty(7)).toBe(Math.floor(MAX_QTY_PER_LINE / 7) * 7);
+    expect(maxOrderableQty(10)).toBe(DEFAULT_MAX_QTY); // 200 is on-pack
+    expect(maxOrderableQty(7)).toBe(Math.floor(DEFAULT_MAX_QTY / 7) * 7);
     expect(maxOrderableQty(7) % 7).toBe(0);
   });
 });
@@ -56,7 +57,7 @@ describe("clampQuantity", () => {
     expect(clampQuantity(11, 10)).toBe(11); // MOQ without pack: 11 is fine
     expect(clampQuantity(0, null)).toBe(1);
     expect(clampQuantity(Number.NaN, 10)).toBe(10);
-    expect(clampQuantity(MAX_QTY_PER_LINE + 5, 10)).toBe(MAX_QTY_PER_LINE);
+    expect(clampQuantity(MAX_QTY_PER_LINE + 5, 10)).toBe(DEFAULT_MAX_QTY);
   });
 
   it("rounds up to the next pack", () => {
@@ -73,7 +74,7 @@ describe("clampQuantity", () => {
   });
 
   it("keeps the cap on-pack", () => {
-    const cap7 = Math.floor(MAX_QTY_PER_LINE / 7) * 7;
+    const cap7 = Math.floor(DEFAULT_MAX_QTY / 7) * 7;
     expect(clampQuantity(MAX_QTY_PER_LINE, 1, 7)).toBe(cap7);
     expect(clampQuantity(cap7 + 1, 1, 7)).toBe(cap7);
   });
@@ -81,5 +82,36 @@ describe("clampQuantity", () => {
   it("survives a degenerate pack larger than the cap", () => {
     const huge = MAX_QTY_PER_LINE * 2;
     expect(clampQuantity(1, 1, huge)).toBe(huge); // one pack is the only option
+  });
+});
+
+describe("admin maxQty cap (default 200)", () => {
+  it("defaults to 200 when the admin sets nothing", () => {
+    expect(maxOrderableQty(null, null)).toBe(DEFAULT_MAX_QTY);
+    expect(clampQuantity(9999, 1, null, null)).toBe(DEFAULT_MAX_QTY);
+  });
+
+  it("the admin value always wins, in either direction", () => {
+    expect(maxOrderableQty(null, 50)).toBe(50);
+    expect(maxOrderableQty(null, 5000)).toBe(5000);
+    expect(clampQuantity(9999, 1, null, 50)).toBe(50);
+    expect(clampQuantity(9999, 1, null, 5000)).toBe(5000);
+  });
+
+  it("cap aligns down onto the pack but never below one pack", () => {
+    expect(maxOrderableQty(10, 95)).toBe(90);
+    expect(maxOrderableQty(10, 5)).toBe(10); // one pack minimum
+  });
+
+  it("degenerate MOQ above the cap resolves to the cap", () => {
+    expect(minOrderableQty(500, null, 200)).toBe(200);
+    expect(clampQuantity(1, 500, null, 200)).toBe(200);
+  });
+
+  it("junk maxQty falls back to the default", () => {
+    for (const junk of [0, -5, NaN, Infinity]) {
+      expect(maxOrderableQty(null, junk)).toBe(DEFAULT_MAX_QTY);
+    }
+    expect(maxOrderableQty(null, MAX_QTY_PER_LINE * 5)).toBe(MAX_QTY_PER_LINE);
   });
 });

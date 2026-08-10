@@ -156,6 +156,7 @@ export function VariantMatrix({
               <TableHead className="w-28">MRP</TableHead>
               <TableHead className="w-20">MOQ</TableHead>
               <TableHead className="w-20">Pack</TableHead>
+              <TableHead className="w-20">Max</TableHead>
               <TableHead className="w-32">Stock</TableHead>
               <TableHead className="w-28">Status</TableHead>
               <TableHead className="w-16 text-center">Photos</TableHead>
@@ -240,6 +241,23 @@ export function VariantMatrix({
                       const digits = e.target.value.replace(/[^\d]/g, "");
                       updateRow(row.key, {
                         packMultiple: digits === "" ? null : Number(digits),
+                      });
+                    }}
+                    placeholder="—"
+                    className="h-8 w-16 font-tabular"
+                  />
+                </TableCell>
+
+                <TableCell>
+                  <Input
+                    aria-label={`Max order qty for ${variantLabel(row.optionValues)}`}
+                    inputMode="numeric"
+                    value={row.maxQty == null ? "" : String(row.maxQty)}
+                    disabled={disabled}
+                    onChange={(e) => {
+                      const digits = e.target.value.replace(/[^\d]/g, "");
+                      updateRow(row.key, {
+                        maxQty: digits === "" ? null : Number(digits),
                       });
                     }}
                     placeholder="—"

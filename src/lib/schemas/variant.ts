@@ -113,6 +113,7 @@ const variantCoreSchema = z.object({
   mrp: paiseSchema.optional(),
   moq: z.number().int().positive().optional(),
   packMultiple: z.number().int().min(2).max(10_000).optional(),
+  maxQty: z.number().int().min(1).max(100_000).optional(),
   stockStatus: stockStatusSchema,
   status: entityStatusSchema,
   images: variantImagesSchema,

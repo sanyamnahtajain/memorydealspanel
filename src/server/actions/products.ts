@@ -331,6 +331,7 @@ const LIST_SELECT = {
   specs: true,
   moq: true,
   packMultiple: true,
+  maxQty: true,
   stockStatus: true,
   status: true,
   tags: true,

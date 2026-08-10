@@ -51,6 +51,7 @@ export interface EditorVariant {
   mrp: number | null;
   moq: number | null;
   packMultiple: number | null;
+  maxQty: number | null;
   stockStatus: StockStatus;
   status: EntityStatus;
   /** Exactly one variant is the default (the pre-selected combination). */
@@ -72,6 +73,7 @@ export interface VariantDraft {
   mrp: number | null;
   moq: number | null;
   packMultiple: number | null;
+  maxQty: number | null;
   stockStatus: StockStatus;
   status: EntityStatus;
   isDefault: boolean;

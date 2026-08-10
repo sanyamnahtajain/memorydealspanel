@@ -2,7 +2,7 @@ import { MAX_QTY_PER_LINE, MIN_QTY_PER_LINE } from "@/lib/schemas/cart";
 
 /**
  * Quantity clamping — THE single source of truth for how a requested quantity
- * meets a product's MOQ and pack multiple. Used by:
+ * meets a product's MOQ, pack multiple, and max-qty cap. Used by:
  *
  *   - src/server/services/cart.ts     (add / update mutations)
  *   - src/server/services/orders.ts   (re-validation at placement)
@@ -16,14 +16,22 @@ import { MAX_QTY_PER_LINE, MIN_QTY_PER_LINE } from "@/lib/schemas/cart";
  *     rounded UP (25 → 30) — the wholesale expectation is "next full box".
  *   - The two compose: floor = the smallest pack multiple ≥ MOQ
  *     (MOQ 15 + pack 10 ⇒ 20).
- *   - The per-line ceiling still applies, and with a pack it is the LARGEST
- *     multiple ≤ MAX_QTY_PER_LINE, so the cap itself stays orderable.
+ *   - `maxQty` is the ADMIN-defined per-line ceiling; absent/invalid means
+ *     the platform default of DEFAULT_MAX_QTY (200). The admin value always
+ *     wins, in either direction, bounded by the absolute MAX_QTY_PER_LINE.
+ *     With a pack the cap is the LARGEST multiple ≤ the ceiling, so the cap
+ *     itself stays orderable (never below one pack).
  *   - null / 0 / 1 / invalid pack ⇒ no pack constraint (plain MOQ floor).
+ *   - A degenerate config (MOQ above the cap) resolves to the cap: the
+ *     ceiling is authoritative.
  *
  * Pure + isomorphic — no imports beyond the cart constants, so client
  * components can use it for instant stepper feedback and the server remains
  * authoritative with identical results.
  */
+
+/** The per-line ceiling when the admin hasn't set one. */
+export const DEFAULT_MAX_QTY = 200;
 
 /** A pack multiple is meaningful only as an integer ≥ 2. */
 export function normalisePack(pack: number | null | undefined): number {
@@ -44,26 +52,38 @@ export function normaliseMoq(moq: number | null | undefined): number {
   return Math.min(Math.trunc(moq), MAX_QTY_PER_LINE);
 }
 
-/** The smallest orderable quantity for a unit: pack-aligned MOQ. */
-export function minOrderableQty(
-  moq: number | null | undefined,
-  pack: number | null | undefined,
-): number {
-  const p = normalisePack(pack);
-  const floor = normaliseMoq(moq);
-  if (p === 1) return floor;
-  const aligned = Math.ceil(floor / p) * p;
-  // A degenerate config (pack > cap) still yields a sane value.
-  return Math.min(aligned, maxOrderableQty(pack));
+/** The admin cap, defaulted (200) and bounded by the absolute maximum. */
+export function normaliseMaxQty(maxQty: number | null | undefined): number {
+  if (typeof maxQty !== "number" || !Number.isFinite(maxQty) || maxQty < 1) {
+    return DEFAULT_MAX_QTY;
+  }
+  return Math.min(Math.trunc(maxQty), MAX_QTY_PER_LINE);
 }
 
 /** The largest orderable quantity: the cap, aligned DOWN onto the pack. */
-export function maxOrderableQty(pack: number | null | undefined): number {
+export function maxOrderableQty(
+  pack: number | null | undefined,
+  maxQty: number | null | undefined = null,
+): number {
   const p = normalisePack(pack);
-  if (p === 1) return MAX_QTY_PER_LINE;
-  const aligned = Math.floor(MAX_QTY_PER_LINE / p) * p;
-  // pack > MAX would align to 0; a single pack is then the only sane answer.
+  const cap = normaliseMaxQty(maxQty);
+  if (p === 1) return cap;
+  const aligned = Math.floor(cap / p) * p;
+  // Cap below one pack would align to 0; a single pack is the sane answer.
   return aligned >= p ? aligned : p;
+}
+
+/** The smallest orderable quantity for a unit: pack-aligned MOQ (≤ the cap). */
+export function minOrderableQty(
+  moq: number | null | undefined,
+  pack: number | null | undefined,
+  maxQty: number | null | undefined = null,
+): number {
+  const p = normalisePack(pack);
+  const floor = normaliseMoq(moq);
+  const aligned = p === 1 ? floor : Math.ceil(floor / p) * p;
+  // A degenerate config (MOQ above the admin cap) resolves to the cap.
+  return Math.min(aligned, maxOrderableQty(pack, maxQty));
 }
 
 /**
@@ -75,10 +95,11 @@ export function clampQuantity(
   requested: number,
   moq: number | null | undefined,
   pack: number | null | undefined = null,
+  maxQty: number | null | undefined = null,
 ): number {
   const p = normalisePack(pack);
-  const floorQty = minOrderableQty(moq, pack);
-  const capQty = maxOrderableQty(pack);
+  const floorQty = minOrderableQty(moq, pack, maxQty);
+  const capQty = maxOrderableQty(pack, maxQty);
   if (!Number.isFinite(requested)) return floorQty;
 
   let q = Math.max(Math.trunc(requested), floorQty);

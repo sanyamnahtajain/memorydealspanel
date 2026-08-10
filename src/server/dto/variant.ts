@@ -50,6 +50,8 @@ export interface PublicVariant {
   moq: number | null;
   /** Variant-level pack multiple override, when set. NON-MONETARY. */
   packMultiple: number | null;
+  /** Max-qty override; null ⇒ inherit the product's. NON-MONETARY. */
+  maxQty: number | null;
   stockStatus: StockStatus;
   /** Whether this is the product's default (pre-selected) variant. */
   isDefault: boolean;
@@ -96,6 +98,7 @@ export interface PublicVariantSource {
   optionValues: Prisma.JsonValue;
   moq?: number | null;
   packMultiple?: number | null;
+  maxQty?: number | null;
   stockStatus: StockStatus;
   isDefault: boolean;
   sortOrder: number;
@@ -144,6 +147,7 @@ export function toPublicVariant(
     optionValues: toOptionValues(row.optionValues),
     moq: row.moq ?? null,
     packMultiple: row.packMultiple ?? null,
+    maxQty: row.maxQty ?? null,
     stockStatus: row.stockStatus,
     isDefault: row.isDefault,
     sortOrder: row.sortOrder,

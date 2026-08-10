@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { googleOAuthConfigured } from "@/server/services/google-auth";
 import { notFound } from "next/navigation";
 
 import { getViewer } from "@/server/auth/viewer";
@@ -332,6 +333,9 @@ export default async function ProductDetailPage({ params }: PageParams) {
                 {heroHeader}
 
                 <ProductPriceArea
+                  googleGateHref={
+                    googleOAuthConfigured() ? "/auth/google/start?returnTo=/account" : null
+                  }
                   product={product as PublicProduct | PricedProduct}
                   showPrices={showPrices}
                   status={customerStatus}
@@ -427,6 +431,7 @@ function toPublicShape(p: PublicProduct | PricedProduct): PublicProduct {
     specs: p.specs,
     moq: p.moq,
     packMultiple: p.packMultiple,
+    maxQty: p.maxQty,
     allocation: p.allocation,
     stockStatus: p.stockStatus,
     status: p.status,

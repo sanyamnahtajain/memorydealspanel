@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { DEFAULT_MAX_QTY } from "@/lib/quantity";
 
 import { prisma } from "@/server/db";
 import { hashPassword } from "@/server/auth/password";
@@ -206,7 +207,9 @@ describe("addToCart — clamps & caps", () => {
       productId,
       quantity: 5_000_000,
     });
-    expect(result.quantity).toBe(MAX_QTY_PER_LINE);
+    // The ceiling is now the ADMIN default (200) unless the product sets its
+    // own maxQty — see src/lib/quantity.ts DEFAULT_MAX_QTY.
+    expect(result.quantity).toBe(DEFAULT_MAX_QTY);
     expect(result.clamped).toBe(true);
   });
 

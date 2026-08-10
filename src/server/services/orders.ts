@@ -241,6 +241,7 @@ const CART_PRODUCT_SELECT = {
   price: true,
   moq: true,
   packMultiple: true,
+  maxQty: true,
   stockStatus: true,
   status: true,
   deletedAt: true,
@@ -265,6 +266,7 @@ const CART_PRODUCT_SELECT = {
       price: true,
       moq: true,
       packMultiple: true,
+  maxQty: true,
       stockStatus: true,
       status: true,
       hsnCode: true,
@@ -295,9 +297,10 @@ function clampQuantity(
   requested: number,
   moq: number,
   packMultiple: number | null,
+  maxQty: number | null,
 ): { quantity: number; issues: CartLineIssue[] } {
   const issues: CartLineIssue[] = [];
-  const quantity = clampQty(requested, moq, packMultiple);
+  const quantity = clampQty(requested, moq, packMultiple, maxQty);
   if (quantity !== requested) {
     const floor = Math.max(moq, MIN_QTY_PER_LINE);
     if (requested < floor) issues.push("below-moq");
@@ -433,6 +436,7 @@ function priceLine(
   let stockStatus = product.stockStatus as StockStatus;
   let moq = product.moq ?? MIN_QTY_PER_LINE;
   let packMultiple = product.packMultiple ?? null;
+  let maxQty = product.maxQty ?? null;
   let sku = product.sku;
   let vLabel: string | null = null;
   let variantMissing = false;
@@ -447,6 +451,7 @@ function priceLine(
       stockStatus = variant.stockStatus as StockStatus;
       moq = variant.moq ?? product.moq ?? MIN_QTY_PER_LINE;
       packMultiple = variant.packMultiple ?? product.packMultiple ?? null;
+      maxQty = variant.maxQty ?? product.maxQty ?? null;
       sku = variant.sku;
       vLabel = variantLabel(variant.optionValues);
       resolvedVariant = variant;
@@ -456,7 +461,7 @@ function priceLine(
     variantMissing = true;
   }
 
-  const { quantity, issues } = clampQuantity(requestedQuantity, moq, packMultiple);
+  const { quantity, issues } = clampQuantity(requestedQuantity, moq, packMultiple, maxQty);
 
   // Effective GST for THIS unit (null when the kill-switch is off). The paise
   // breakup is derived later from this + the SERVER unit price — never trusted.

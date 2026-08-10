@@ -12,6 +12,7 @@ import {
 import {
   clampQuantity as clampQty,
   minOrderableQty,
+  normaliseMaxQty,
   normaliseMoq,
   normalisePack,
 } from "@/lib/quantity";
@@ -128,6 +129,8 @@ export interface CartLine {
   moq: number;
   /** The live pack multiple for this line (1 = no pack constraint). */
   packMultiple: number;
+  /** The live per-line ceiling (admin-set, default 200). */
+  maxQty: number;
   /** Whether this product requires a per-model quantity breakdown. */
   allocationRequired: boolean;
   /** Resolved per-model split with display names, when the line carries one. */
@@ -274,6 +277,8 @@ interface ResolvedUnit {
   moq: number;
   /** Normalised pack multiple (1 = no pack constraint). */
   packMultiple: number;
+  /** Normalised per-line ceiling (admin-set, default 200). */
+  maxQty: number;
   /** Effective per-model allocation config (product over category), or null. */
   allocation: Allocation | null;
   stockStatus: StockStatus;
@@ -297,6 +302,7 @@ const PRODUCT_SELECT = {
   price: true,
   moq: true,
   packMultiple: true,
+  maxQty: true,
   stockStatus: true,
   status: true,
   deletedAt: true,
@@ -324,6 +330,7 @@ const VARIANT_SELECT = {
   price: true,
   moq: true,
   packMultiple: true,
+  maxQty: true,
   stockStatus: true,
   status: true,
   hsnCode: true,
@@ -468,6 +475,7 @@ async function resolveUnit(
         variantLabel: null,
         moq: normaliseMoq(product.moq),
         packMultiple: normalisePack(product.packMultiple),
+        maxQty: normaliseMaxQty(product.maxQty),
         allocation: resolveEffectiveAllocation(
           product.allocation,
           product.category?.defaultAllocation,
@@ -492,6 +500,7 @@ async function resolveUnit(
     variantLabel: null,
     moq: normaliseMoq(product.moq),
     packMultiple: normalisePack(product.packMultiple),
+    maxQty: normaliseMaxQty(product.maxQty),
     allocation: resolveEffectiveAllocation(
       product.allocation,
       product.category?.defaultAllocation,
@@ -520,6 +529,7 @@ function resolveVariantUnit(
     variantLabel: variantLabel(variant.optionValues),
     moq: normaliseMoq(variant.moq ?? product.moq),
     packMultiple: normalisePack(variant.packMultiple ?? product.packMultiple),
+    maxQty: normaliseMaxQty(variant.maxQty ?? product.maxQty),
     allocation: resolveEffectiveAllocation(
       product.allocation,
       product.category?.defaultAllocation,
@@ -609,6 +619,7 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
     let variantLbl: string | null;
     let moq: number;
     let packMultiple: number;
+    let maxQty: number;
     let stockStatus: StockStatus;
     let pricePaise: number | null;
 
@@ -622,6 +633,7 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
       variantLbl = null;
       moq = MIN_QTY_PER_LINE;
       packMultiple = 1;
+      maxQty = normaliseMaxQty(null);
       stockStatus = "OUT_OF_STOCK";
       pricePaise = null;
     } else {
@@ -632,6 +644,7 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
       variantLbl = unit.variantLabel;
       moq = unit.moq;
       packMultiple = unit.packMultiple;
+      maxQty = unit.maxQty;
       stockStatus = unit.stockStatus;
       pricePaise = priced ? unit.pricePaise : null;
 
@@ -704,6 +717,7 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
       quantity: row.quantity,
       moq,
       packMultiple,
+      maxQty,
       allocationRequired: unit?.allocation?.required ?? false,
       breakdown: (() => {
         const entries = parseStoredBreakdown(row.breakdown);
@@ -902,7 +916,7 @@ function settleBreakdownTotal(
   entries: BreakdownEntry[],
 ): { quantity: number; breakdown: BreakdownEntry[] } {
   const total = entries.reduce((acc, e) => acc + e.qty, 0);
-  const clamped = clampQty(total, unit.moq, unit.packMultiple);
+  const clamped = clampQty(total, unit.moq, unit.packMultiple, unit.maxQty);
   if (clamped !== total) {
     throw new CartError(
       "BREAKDOWN_SUM_MISMATCH",
@@ -1016,7 +1030,7 @@ export async function addToCart(
 
   // ---- Normal products (stray breakdowns are simply ignored). -------------
   const desired = (existing?.quantity ?? 0) + input.quantity;
-  const quantity = clampQty(desired, unit.moq, unit.packMultiple);
+  const quantity = clampQty(desired, unit.moq, unit.packMultiple, unit.maxQty);
   const clamped = quantity !== desired;
 
   if (existing) {
@@ -1147,7 +1161,7 @@ export async function updateQuantity(
     return summarise(customerId, settled.quantity, false);
   }
 
-  const quantity = clampQty(input.quantity, unit.moq, unit.packMultiple);
+  const quantity = clampQty(input.quantity, unit.moq, unit.packMultiple, unit.maxQty);
   const clamped = quantity !== input.quantity;
 
   const existing = await prisma.cartItem.findFirst({

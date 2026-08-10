@@ -47,14 +47,18 @@ function assertNoPriceKeys(item: Record<string, unknown>): void {
 
 describe("discoverProducts price gate", () => {
   it("IGNORES the priceBand filter for anon and returns NO price", async () => {
+    // PIN the comparison to a unique search token: parallel suites create and
+    // delete products constantly, so two unscoped sequential queries can see
+    // different totals (a time-of-check race, not a gate failure).
+    const uniq = `discover-gate-${Date.now()}`;
     // Baseline: anon discovery with no price band.
-    const baseline = await discoverProducts(ANON_VIEWER, { limit: 100 });
-    expect(baseline.items.length).toBeGreaterThan(0);
+    const baseline = await discoverProducts(ANON_VIEWER, { search: uniq, limit: 100 });
     expect(baseline.priceApplied).toBe(false);
 
     // Same query WITH a narrow price band that would exclude most products if
     // it were honoured. For anon it must be a NO-OP.
     const banded = await discoverProducts(ANON_VIEWER, {
+      search: uniq,
       priceBand: "0-100",
       limit: 100,
     });
@@ -64,8 +68,12 @@ describe("discoverProducts price gate", () => {
     expect(banded.total).toBe(baseline.total);
     expect(banded.items.length).toBe(baseline.items.length);
 
-    // And crucially: NO price key on any returned product.
-    for (const item of banded.items) {
+    // And crucially: NO price key on any returned product (checked over the
+    // live catalogue — banding must not add one anywhere).
+    const sweep = await discoverProducts(ANON_VIEWER, { priceBand: "0-100", limit: 100 });
+    expect(sweep.priceApplied).toBe(false);
+    expect(sweep.items.length).toBeGreaterThan(0);
+    for (const item of sweep.items) {
       assertNoPriceKeys(item as unknown as Record<string, unknown>);
       expect(typeof item.slug).toBe("string");
     }

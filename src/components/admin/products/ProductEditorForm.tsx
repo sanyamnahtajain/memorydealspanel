@@ -75,6 +75,7 @@ export type EditorProduct = Pick<
   | "mrp"
   | "moq"
   | "packMultiple"
+  | "maxQty"
   | "stockStatus"
   | "status"
   | "tags"
@@ -154,6 +155,7 @@ interface FormState {
   mrpInput: string;
   moq: string;
   packMultiple: string;
+  maxQty: string;
   stockStatus: StockStatus;
   status: EntityStatus;
   tags: string[];
@@ -204,6 +206,7 @@ function buildInitialState(product?: EditorProduct): FormState {
     moq: product?.moq != null ? String(product.moq) : "",
     packMultiple:
       product?.packMultiple != null ? String(product.packMultiple) : "",
+    maxQty: product?.maxQty != null ? String(product.maxQty) : "",
     stockStatus: product?.stockStatus ?? "IN_STOCK",
     status: product?.status ?? "ACTIVE",
     tags: product?.tags ?? [],
@@ -357,6 +360,8 @@ export function ProductEditorForm({
     const moqValue = state.moq.trim() === "" ? undefined : Number(state.moq);
     const packValue =
       state.packMultiple.trim() === "" ? undefined : Number(state.packMultiple);
+    const maxQtyValue =
+      state.maxQty.trim() === "" ? undefined : Number(state.maxQty);
 
     const raw: CreateProductInput = {
       categoryId: state.categoryId,
@@ -372,6 +377,7 @@ export function ProductEditorForm({
       mrp: mrpPaise ?? undefined,
       moq: moqValue,
       packMultiple: packValue,
+      maxQty: maxQtyValue,
       allocation: allocationOn
         ? {
             kind: "DEVICE_MODEL" as const,
@@ -581,6 +587,22 @@ export function ProductEditorForm({
                   set("packMultiple", e.target.value.replace(/[^\d]/g, ""))
                 }
                 placeholder="—"
+                className="font-tabular"
+              />
+            </Field>
+            <Field
+              label="Max order qty"
+              htmlFor="maxQty"
+              hint="The most a customer can order per line. Leave empty for the store default (200)."
+            >
+              <Input
+                id="maxQty"
+                inputMode="numeric"
+                value={state.maxQty}
+                onChange={(e) =>
+                  set("maxQty", e.target.value.replace(/[^\d]/g, ""))
+                }
+                placeholder="200"
                 className="font-tabular"
               />
             </Field>

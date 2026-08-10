@@ -389,6 +389,7 @@ export async function saveProductVariantsAction(
       mrp: v.mrp,
       moq: v.moq,
       packMultiple: v.packMultiple,
+      maxQty: v.maxQty,
       stockStatus: v.stockStatus,
       status: v.status,
       isDefault: v.isDefault,

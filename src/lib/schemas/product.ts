@@ -87,6 +87,7 @@ const productCoreSchema = z.object({
   moq: z.number().int().positive().optional(),
   // Order in multiples of this (boxes). 1 is meaningless — omit instead.
   packMultiple: z.number().int().min(2).max(10_000).optional(),
+  maxQty: z.number().int().min(1).max(100_000).optional(),
   // Per-model allocation config. null clears back to the category default.
   allocation: allocationSchema.nullable().optional(),
   stockStatus: stockStatusSchema,

@@ -82,6 +82,8 @@ export interface PublicProduct {
   moq: number | null;
   /** Pack multiple (order in multiples of this), when set. NON-MONETARY. */
   packMultiple: number | null;
+  /** Admin per-line ceiling (default 200 when null). NON-MONETARY. */
+  maxQty: number | null;
   /**
    * Per-model allocation requirement for the buy flow, or null. Deliberately
    * WITHOUT the raw id allow-list (can be hundreds of ids) — the picker
@@ -162,6 +164,7 @@ export interface PublicSource {
   moq: number | null;
   /** Optional on sources so narrower legacy selects still map (⇒ null). */
   packMultiple?: number | null;
+  maxQty?: number | null;
   allocation?: unknown;
   /** Loose on purpose: sources may carry a wider category select. */
   category?: ({ defaultAllocation?: unknown } & Record<string, unknown>) | null;
@@ -354,6 +357,7 @@ export function toPublicProduct(
     specs: row.specs ?? null,
     moq: row.moq ?? null,
     packMultiple: row.packMultiple ?? null,
+    maxQty: row.maxQty ?? null,
     allocation: toPublicAllocation(
       resolveEffectiveAllocation(row.allocation, row.category?.defaultAllocation),
     ),

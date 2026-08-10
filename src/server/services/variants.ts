@@ -82,6 +82,7 @@ const VARIANT_SELECT = {
   mrp: true,
   moq: true,
   packMultiple: true,
+  maxQty: true,
   stockStatus: true,
   status: true,
   images: true,
@@ -106,6 +107,7 @@ export interface AdminVariant {
   mrp: number | null;
   moq: number | null;
   packMultiple: number | null;
+  maxQty: number | null;
   stockStatus: StockStatus;
   status: EntityStatus;
   images: {
@@ -134,6 +136,7 @@ function toAdminVariant(row: VariantRow): AdminVariant {
     mrp: row.mrp ?? null,
     moq: row.moq ?? null,
     packMultiple: row.packMultiple ?? null,
+    maxQty: row.maxQty ?? null,
     stockStatus: row.stockStatus,
     status: row.status,
     images: (row.images ?? []).map((image: ProductImage) => ({
@@ -811,6 +814,7 @@ export interface SaveProductVariantsInput {
     mrp: number | null;
     moq: number | null;
     packMultiple: number | null;
+  maxQty?: number | null;
     stockStatus: StockStatus;
     status: EntityStatus;
     isDefault: boolean;
@@ -865,6 +869,7 @@ export async function saveProductVariants(
       mrp: d.mrp ?? undefined,
       moq: d.moq ?? undefined,
       packMultiple: d.packMultiple ?? undefined,
+      maxQty: d.maxQty ?? undefined,
       stockStatus: d.stockStatus,
       status: d.status,
       isDefault: d.isDefault,
@@ -941,6 +946,7 @@ export async function saveProductVariants(
         mrp: r.mrp ?? null,
         moq: r.moq ?? null,
         packMultiple: r.packMultiple ?? null,
+        maxQty: r.maxQty ?? null,
         stockStatus: r.stockStatus,
         status: r.status,
         isDefault: r.isDefault,

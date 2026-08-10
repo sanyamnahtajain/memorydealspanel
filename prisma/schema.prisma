@@ -125,6 +125,9 @@ model Product {
   // Order in multiples of this (boxes/packs): MOQ 10 + packMultiple 10 ⇒
   // 10, 20, 30… while MOQ 10 + null ⇒ any qty ≥ 10. null/1 = no constraint.
   packMultiple Int?
+  // Per-line quantity ceiling the admin sets; null ⇒ the platform default
+  // (200). Admin-defined always wins, in either direction.
+  maxQty      Int?
   // GST (Phase 13): optional per-product override; null ⇒ inherit the
   // category default, then the SellerTaxProfile default. gstRateBps is basis
   // points (1800 = 18.00%). taxTreatment null ⇒ inherit the profile mode.
@@ -392,6 +395,8 @@ model ProductVariant {
   moq          Int?
   // Pack multiple override; null ⇒ inherit the parent product's.
   packMultiple Int?
+  // Max-qty override; null ⇒ inherit the parent product's.
+  maxQty       Int?
   // GST (Phase 13): per-variant override; null ⇒ inherit the parent product.
   hsnCode      String?
   gstRateBps   Int?
