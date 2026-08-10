@@ -18,6 +18,7 @@ import {
 } from "@/lib/quantity";
 import { addToCartAction } from "@/server/actions/cart";
 import { broadcastCartCount } from "./CartBadge";
+import { broadcastLineAdded } from "./cart-events";
 
 /**
  * AddToCartButton — the storefront add-to-cart control: a quantity stepper
@@ -156,6 +157,7 @@ export function AddToCartButton({
 
       if (result.ok) {
         broadcastCartCount(result.itemCount);
+        broadcastLineAdded(productId, variantId);
         toast.success(
           result.clamped
             ? pack > 1

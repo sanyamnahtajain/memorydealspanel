@@ -46,6 +46,7 @@ import {
 } from "@/lib/quantity";
 import { Button } from "@/components/ui/button";
 import { EditBreakdownSheet } from "@/components/storefront/allocation/EditBreakdownSheet";
+import { CartLineRequirement } from "@/components/storefront/requirements/CartLineRequirement";
 import { Tooltip } from "@/components/ui/tooltip";
 import { StatusChip } from "@/components/common/StatusChip";
 import {
@@ -109,6 +110,12 @@ export interface CartLineData {
   allocationRequired: boolean;
   /** Resolved split for display/edit, when the line carries one. */
   breakdown: { modelId: string; name: string; qty: number }[] | null;
+  /** Whether this product accepts a requirement note + photos. */
+  allowRequirementNotes: boolean;
+  /** Stored requirement note, when set. */
+  note: string | null;
+  /** Stored requirement photos ([{url}], our storage only). */
+  attachments: { url: string }[];
   stockStatus: StockStatus;
   /** Unit price in paise, or null when the viewer is gated. */
   unitPricePaise: number | null;
@@ -560,6 +567,26 @@ export function CartView({
                           />
                         </div>
                       </div>
+                    ) : null}
+
+                    {/* Requirement note & photos (admin-flagged products) */}
+                    {line.allowRequirementNotes ? (
+                      <CartLineRequirement
+                        productId={line.productId}
+                        variantId={line.variantId}
+                        productName={line.name}
+                        note={line.note}
+                        attachments={line.attachments}
+                        disabled={!canOrder || busy}
+                        onSaved={(note, attachments) => {
+                          const key = lineKey(line);
+                          setLines((prev) =>
+                            prev.map((l) =>
+                              lineKey(l) === key ? { ...l, note, attachments } : l,
+                            ),
+                          );
+                        }}
+                      />
                     ) : null}
 
                     {/* Qty + price row */}

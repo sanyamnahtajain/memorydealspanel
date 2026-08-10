@@ -22,6 +22,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -76,6 +77,7 @@ export type EditorProduct = Pick<
   | "moq"
   | "packMultiple"
   | "maxQty"
+  | "allowRequirementNotes"
   | "stockStatus"
   | "status"
   | "tags"
@@ -156,6 +158,8 @@ interface FormState {
   moq: string;
   packMultiple: string;
   maxQty: string;
+  /** Buyers may attach a requirement note + photos on this product. */
+  allowRequirementNotes: boolean;
   stockStatus: StockStatus;
   status: EntityStatus;
   tags: string[];
@@ -207,6 +211,7 @@ function buildInitialState(product?: EditorProduct): FormState {
     packMultiple:
       product?.packMultiple != null ? String(product.packMultiple) : "",
     maxQty: product?.maxQty != null ? String(product.maxQty) : "",
+    allowRequirementNotes: product?.allowRequirementNotes ?? false,
     stockStatus: product?.stockStatus ?? "IN_STOCK",
     status: product?.status ?? "ACTIVE",
     tags: product?.tags ?? [],
@@ -360,8 +365,9 @@ export function ProductEditorForm({
     const moqValue = state.moq.trim() === "" ? undefined : Number(state.moq);
     const packValue =
       state.packMultiple.trim() === "" ? undefined : Number(state.packMultiple);
+    // null (not undefined) so clearing the field clears the stored cap.
     const maxQtyValue =
-      state.maxQty.trim() === "" ? undefined : Number(state.maxQty);
+      state.maxQty.trim() === "" ? null : Number(state.maxQty);
 
     const raw: CreateProductInput = {
       categoryId: state.categoryId,
@@ -378,6 +384,7 @@ export function ProductEditorForm({
       moq: moqValue,
       packMultiple: packValue,
       maxQty: maxQtyValue,
+      allowRequirementNotes: state.allowRequirementNotes,
       allocation: allocationOn
         ? {
             kind: "DEVICE_MODEL" as const,
@@ -792,6 +799,25 @@ export function ProductEditorForm({
             onModelsChange={setAllocationModels}
             disabled={pending}
           />
+        </Section>
+      </FadeUp>
+
+      <FadeUp delay={0.1}>
+        <Section
+          title="Requirement notes & photos"
+          description="Let buyers describe their requirement while adding this product — a note plus photos (e.g. a written model list for tempered glass). Shown on the order and embedded in the order PDF."
+        >
+          <label className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-input px-3 py-2.5 dark:bg-input/30">
+            <span className="text-sm font-medium">
+              Allow notes &amp; photos on this product
+            </span>
+            <Switch
+              checked={state.allowRequirementNotes}
+              onCheckedChange={(v) => set("allowRequirementNotes", v)}
+              disabled={pending}
+              aria-label="Allow requirement notes and photos"
+            />
+          </label>
         </Section>
       </FadeUp>
 

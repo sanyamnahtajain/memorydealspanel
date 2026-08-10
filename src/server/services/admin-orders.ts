@@ -62,6 +62,42 @@ export interface OrderItemSnapshot {
   tax?: OrderItemTaxSnapshot;
   /** Frozen per-model split for allocation lines, when present. */
   breakdown?: { modelName: string; qty: number }[];
+  /** Frozen customer requirement note, when present. */
+  note?: string;
+  /** Frozen customer requirement photos, when present. */
+  attachments?: { url: string }[];
+}
+
+/** Coerce a persisted breakdown array into typed rows, or undefined. */
+function parseBreakdown(
+  raw: unknown,
+): { modelName: string; qty: number }[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const rows: { modelName: string; qty: number }[] = [];
+  for (const entry of raw) {
+    if (entry === null || typeof entry !== "object") continue;
+    const e = entry as Record<string, unknown>;
+    if (
+      typeof e.modelName === "string" &&
+      typeof e.qty === "number" &&
+      Number.isSafeInteger(e.qty)
+    ) {
+      rows.push({ modelName: e.modelName, qty: e.qty });
+    }
+  }
+  return rows.length > 0 ? rows : undefined;
+}
+
+/** Coerce persisted requirement attachments into typed rows, or undefined. */
+function parseAttachments(raw: unknown): { url: string }[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const rows: { url: string }[] = [];
+  for (const entry of raw) {
+    if (entry === null || typeof entry !== "object") continue;
+    const e = entry as Record<string, unknown>;
+    if (typeof e.url === "string") rows.push({ url: e.url });
+  }
+  return rows.length > 0 ? rows : undefined;
 }
 
 /** Coerce a persisted per-line GST blob into a typed snapshot, or undefined. */
@@ -148,6 +184,13 @@ export function parseOrderItems(raw: Prisma.JsonValue): OrderItemSnapshot[] {
       unitPricePaise,
       lineTotalPaise,
       ...(parseLineTax(o.tax) ? { tax: parseLineTax(o.tax) } : {}),
+      ...(parseBreakdown(o.breakdown) ? { breakdown: parseBreakdown(o.breakdown) } : {}),
+      ...(typeof o.note === "string" && o.note.trim() !== ""
+        ? { note: o.note }
+        : {}),
+      ...(parseAttachments(o.attachments)
+        ? { attachments: parseAttachments(o.attachments) }
+        : {}),
     });
   }
   return out;

@@ -42,6 +42,10 @@ export interface OrderHistoryLine {
   variantLabel: string | null;
   /** Frozen per-model split for allocation lines, when present. */
   breakdown?: { modelName: string; qty: number }[] | null;
+  /** Frozen customer requirement note, when present. */
+  note?: string | null;
+  /** Frozen customer requirement photos, when present. */
+  attachments?: { url: string }[] | null;
   imageUrl: string | null;
   quantity: number;
   /** null when the viewer is price-gated. */

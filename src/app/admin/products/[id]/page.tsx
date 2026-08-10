@@ -145,6 +145,7 @@ export default async function EditProductPage({
     moq: priced.moq,
     packMultiple: priced.packMultiple,
     maxQty: priced.maxQty,
+    allowRequirementNotes: priced.allowRequirementNotes,
     stockStatus: priced.stockStatus,
     status: priced.status,
     tags: priced.tags,

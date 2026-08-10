@@ -249,8 +249,9 @@ export function StorefrontShell({
         {children}
       </main>
 
-      {/* ——— Footer (clears the fixed mobile tab bar) ——— */}
-      <div className="pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0">
+      {/* ——— Footer — desktop only; the app-like mobile view ends at the
+          bottom tab bar (owner request: no footer on mobile). ——— */}
+      <div className="hidden md:block">
         <StorefrontFooter />
       </div>
 

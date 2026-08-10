@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { clampQuantity } from "@/lib/quantity";
 import { addToCartAction } from "@/server/actions/cart";
 import { broadcastCartCount } from "@/components/storefront/cart/CartBadge";
+import { broadcastLineAdded } from "@/components/storefront/cart/cart-events";
 import {
   ModelAllocationBuilder,
   type AllocationRow,
@@ -91,6 +92,7 @@ export function AllocationAddToCart({
       });
       if (result.ok) {
         broadcastCartCount(result.itemCount);
+        broadcastLineAdded(productId);
         setRows([]);
         toast.success(`Added — ${result.quantity} units across your models.`, {
           action: {

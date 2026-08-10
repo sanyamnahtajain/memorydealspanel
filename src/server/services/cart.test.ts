@@ -11,8 +11,10 @@ import {
   removeItem,
   clearCart,
   cartItemCount,
+  setCartRequirement,
   CartError,
 } from "./cart";
+import { publicBaseOrEmpty } from "@/server/storage/r2";
 
 /**
  * Integration tests against the SEEDED local MongoDB. They prove the cart's
@@ -86,6 +88,7 @@ async function makeProduct(
     moq?: number | null;
     packMultiple?: number | null;
     price?: number;
+    allowRequirementNotes?: boolean;
   } = {},
 ): Promise<string> {
   const categoryId = await seedCategoryId();
@@ -101,6 +104,7 @@ async function makeProduct(
       moq: overrides.moq ?? null,
       packMultiple: overrides.packMultiple ?? null,
       stockStatus: overrides.stockStatus ?? "IN_STOCK",
+      allowRequirementNotes: overrides.allowRequirementNotes ?? false,
       status: overrides.status ?? "ACTIVE",
       deletedAt: overrides.deletedAt ?? null,
     },
@@ -621,5 +625,76 @@ describe("addToCart — allocation breakdowns", () => {
     cart = await getCart(approvedViewer(customerId));
     line = cart.lines.find((l) => l.productId === productId);
     expect(line?.issues).toContain("breakdown-mismatch");
+  });
+});
+
+describe("setCartRequirement — notes & photos", () => {
+  it("saves a sanitized note + allow-listed photos on a flagged line", async () => {
+    const customerId = await makeCustomer("req-happy");
+    const productId = await makeProduct({ allowRequirementNotes: true });
+    const viewer = approvedViewer(customerId);
+    await addToCart(viewer, { productId, quantity: 5 });
+
+    const base = publicBaseOrEmpty();
+    const mine = `${base}/order-notes/${customerId}/a.jpg`;
+    const result = await setCartRequirement(viewer, {
+      productId,
+      note: "  20 × Realme 11\n20 × S23 Ultra  ",
+      attachments: [
+        { url: mine },
+        { url: "https://evil.example.com/x.jpg" }, // dropped: foreign host
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.note).toBe("20 × Realme 11\n20 × S23 Ultra");
+    expect(result.attachments).toEqual([{ url: mine }]);
+
+    // The stored values round-trip through getCart's sanitizers too.
+    const cart = await getCart(viewer);
+    const line = cart.lines.find((l) => l.productId === productId);
+    expect(line?.allowRequirementNotes).toBe(true);
+    expect(line?.note).toBe("20 × Realme 11\n20 × S23 Ultra");
+    expect(line?.attachments).toEqual([{ url: mine }]);
+  });
+
+  it("refuses when the line is not in the cart / the product is not flagged", async () => {
+    const customerId = await makeCustomer("req-refuse");
+    const viewer = approvedViewer(customerId);
+
+    const flagged = await makeProduct({ allowRequirementNotes: true });
+    const notInCart = await setCartRequirement(viewer, {
+      productId: flagged,
+      note: "hello",
+    });
+    expect(notInCart).toEqual({ ok: false, reason: "not-in-cart" });
+
+    const plain = await makeProduct(); // flag off
+    await addToCart(viewer, { productId: plain, quantity: 2 });
+    const notAllowed = await setCartRequirement(viewer, {
+      productId: plain,
+      note: "hello",
+    });
+    expect(notAllowed).toEqual({ ok: false, reason: "not-allowed" });
+    const cart = await getCart(viewer);
+    expect(cart.lines.find((l) => l.productId === plain)?.note).toBeNull();
+  });
+
+  it("clearing works: empty note + empty attachments wipe the stored values", async () => {
+    const customerId = await makeCustomer("req-clear");
+    const productId = await makeProduct({ allowRequirementNotes: true });
+    const viewer = approvedViewer(customerId);
+    await addToCart(viewer, { productId, quantity: 1 });
+
+    await setCartRequirement(viewer, { productId, note: "temp note" });
+    const cleared = await setCartRequirement(viewer, {
+      productId,
+      note: "   ",
+      attachments: [],
+    });
+    expect(cleared.ok).toBe(true);
+    if (!cleared.ok) return;
+    expect(cleared.note).toBeNull();
+    expect(cleared.attachments).toEqual([]);
   });
 });

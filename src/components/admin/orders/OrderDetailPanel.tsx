@@ -187,6 +187,33 @@ function OrderLineRow({ line }: { line: OrderLineDTO }) {
             {line.breakdown.map((b) => `${b.qty} × ${b.modelName}`).join(" · ")}
           </p>
         ) : null}
+        {line.note ? (
+          <p className="mt-1 rounded-md bg-muted/50 px-2 py-1 text-xs whitespace-pre-line text-muted-foreground">
+            {line.note}
+          </p>
+        ) : null}
+        {line.attachments && line.attachments.length > 0 ? (
+          <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            {line.attachments.map((a) => (
+              <a
+                key={a.url}
+                href={a.url}
+                target="_blank"
+                rel="noreferrer"
+                className="block overflow-hidden rounded-md border border-border"
+                title="Open requirement photo"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={a.url}
+                  alt="Requirement photo"
+                  loading="lazy"
+                  className="size-14 object-cover"
+                />
+              </a>
+            ))}
+          </span>
+        ) : null}
         {line.tax ? (
           <p className="mt-0.5 text-[0.65rem] text-muted-foreground">
             {line.tax.taxInclusive ? "incl." : "+"} {line.tax.gstRateBps / 100}% GST

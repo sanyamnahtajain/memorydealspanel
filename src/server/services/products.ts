@@ -45,6 +45,8 @@ const PRICED_SELECT = {
   specs: true,
   moq: true,
   packMultiple: true,
+  maxQty: true,
+  allowRequirementNotes: true,
   stockStatus: true,
   status: true,
   tags: true,
@@ -266,6 +268,8 @@ export async function createProduct(
         mrp: data.mrp,
         moq: data.moq,
         packMultiple: data.packMultiple,
+        maxQty: data.maxQty,
+        allowRequirementNotes: data.allowRequirementNotes ?? false,
         // Plain null clears to "inherit the category default". NOTE: the
         // Prisma.DbNull/JsonNull sentinels are Postgres-only — the MongoDB
         // connector REJECTS them ("Expected Json or Null, provided Enum");
@@ -368,6 +372,10 @@ export async function updateProduct(
   if (data.mrp !== undefined) update.mrp = data.mrp;
   if (data.moq !== undefined) update.moq = data.moq;
   if (data.packMultiple !== undefined) update.packMultiple = data.packMultiple;
+  if (data.maxQty !== undefined) update.maxQty = data.maxQty;
+  if (data.allowRequirementNotes !== undefined) {
+    update.allowRequirementNotes = data.allowRequirementNotes;
+  }
   if (data.allocation !== undefined) {
     // Present key writes the config; explicit null clears back to "inherit
     // the category default". Plain null — Prisma.DbNull is Postgres-only and

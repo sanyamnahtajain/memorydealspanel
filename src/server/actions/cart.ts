@@ -11,6 +11,7 @@ import {
   removeItem,
   clearCart,
   CartError,
+  setCartRequirement,
 } from "@/server/services/cart";
 import {
   addToCartSchema,
@@ -271,4 +272,32 @@ function handleMutationError(error: unknown, op: string): CartActionResult {
     reason: "error",
     message: "Could not update your cart. Please try again.",
   };
+}
+
+/**
+ * Save a line's requirement note + photos (customer). Thin wrapper over
+ * `setCartRequirement`; the service enforces the product flag + URL prefix.
+ */
+export async function setCartRequirementAction(input: {
+  productId: string;
+  variantId?: string | null;
+  note?: string;
+  attachments?: { url: string }[];
+}): Promise<
+  | { ok: true; note: string | null; attachments: { url: string }[] }
+  | { ok: false; message: string }
+> {
+  const gate = await requireApprovedCustomer();
+  if (!gate.ok) return { ok: false, message: gate.result.ok === false ? gate.result.message : "Not allowed." };
+  const result = await setCartRequirement(gate.viewer, input);
+  if (!result.ok) {
+    return {
+      ok: false,
+      message:
+        result.reason === "not-in-cart"
+          ? "Add the product to your cart first."
+          : "This product doesn't accept requirement notes.",
+    };
+  }
+  return result;
 }

@@ -39,6 +39,13 @@ import {
   VariantProductView,
 } from "@/components/storefront/product";
 import { ProductPriceArea } from "./ProductPriceArea";
+import { RequirementPrompt } from "@/components/storefront/requirements/RequirementPrompt";
+import { prisma } from "@/server/db";
+import { publicBaseOrEmpty } from "@/server/storage/r2";
+import {
+  sanitizeNote as sanitizeRequirementNote,
+  sanitizeAttachments,
+} from "@/lib/requirement-notes";
 
 /**
  * Product detail page.
@@ -292,6 +299,25 @@ export default async function ProductDetailPage({ params }: PageParams) {
   // needs the selected variant + its MOQ), so the non-variant hero owns it here.
   const canAdd = showPrices && !showVariantHero;
 
+  // Requirement notes & photos: when this product allows them and the viewer
+  // already carries a cart line, seed the PDP sheet with the stored values so
+  // reopening never silently overwrites what was written earlier.
+  let requirementInitial: {
+    note: string | null;
+    attachments: { url: string }[];
+  } | null = null;
+  if (product.allowRequirementNotes && canAdd && isCustomer(viewer)) {
+    const row = await prisma.cartItem.findFirst({
+      where: { customerId: viewer.customerId, productId: product.id },
+      select: { note: true, attachments: true },
+    });
+    const base = publicBaseOrEmpty();
+    requirementInitial = {
+      note: sanitizeRequirementNote(row?.note ?? null),
+      attachments: sanitizeAttachments(row?.attachments ?? null, base),
+    };
+  }
+
   return (
     <StorefrontShell cartCount={cartCount}>
       <script
@@ -366,6 +392,18 @@ export default async function ProductDetailPage({ params }: PageParams) {
                   />
                 )}
 
+                {/* Requirement notes & photos — admin-flagged products only.
+                    Auto-opens right after an add via the cart-events bus. */}
+                {product.allowRequirementNotes ? (
+                  <RequirementPrompt
+                    productId={product.id}
+                    productName={product.name}
+                    canAdd={canAdd}
+                    initialNote={requirementInitial?.note ?? null}
+                    initialAttachments={requirementInitial?.attachments ?? []}
+                  />
+                ) : null}
+
                 {/* Inline Enquire — hidden on mobile where the sticky bar owns it. */}
                 <div className="hidden md:block">
                   <WhatsAppEnquire
@@ -432,6 +470,7 @@ function toPublicShape(p: PublicProduct | PricedProduct): PublicProduct {
     moq: p.moq,
     packMultiple: p.packMultiple,
     maxQty: p.maxQty,
+    allowRequirementNotes: p.allowRequirementNotes,
     allocation: p.allocation,
     stockStatus: p.stockStatus,
     status: p.status,

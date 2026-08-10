@@ -2,17 +2,14 @@ import { NextResponse } from "next/server";
 
 import { resolveViewer } from "@/server/auth/viewer";
 import { isAdmin } from "@/server/types/viewer";
-import { canSeePrices } from "@/server/types/viewer";
 import { buildCatalogPdf } from "@/server/services/catalog-pdf";
 
 /**
  * GET /api/catalog-pdf — download the product catalogue as a PDF.
  *
- * THE PRICE GATE IS RESOLVED HERE, SERVER-SIDE, from the session — never from
- * a query param: an admin or an APPROVED buyer with a live grant gets the
- * priced PRICE LIST; everyone else gets the public catalogue whose query never
- * even selects a money column. Anonymous access is allowed (the public PDF is
- * exactly what the public storefront already shows).
+ * ADMIN-ONLY (owner request): storefront users no longer get a catalogue
+ * download; non-admin requests 404. Admins always receive the priced
+ * PRICE LIST (the gate is resolved server-side from the session).
  */
 
 export const dynamic = "force-dynamic";
@@ -24,7 +21,12 @@ function todayStamp(): string {
 
 export async function GET(): Promise<NextResponse> {
   const viewer = await resolveViewer();
-  const priced = isAdmin(viewer) || canSeePrices(viewer);
+  // Owner request: the catalogue download is an ADMIN tool only — storefront
+  // users (even approved buyers) no longer get a download endpoint.
+  if (!isAdmin(viewer)) {
+    return NextResponse.json({ ok: false, error: "Not found." }, { status: 404 });
+  }
+  const priced = true;
 
   try {
     const bytes = await buildCatalogPdf(priced);

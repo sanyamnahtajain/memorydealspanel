@@ -94,6 +94,10 @@ export interface OrderLineDTO {
   tax: OrderLineTaxDTO | null;
   /** Frozen per-model split for allocation lines, when present. */
   breakdown: { modelName: string; qty: number }[] | null;
+  /** Frozen customer requirement note, when present. */
+  note: string | null;
+  /** Frozen customer requirement photos, when present. */
+  attachments: { url: string }[] | null;
 }
 
 /** One HSN summary row for the invoice-style tax table. */
@@ -167,6 +171,8 @@ function toDetailDTO(detail: OrderDetail): OrderDetailDTO {
       unitPricePaise: line.unitPricePaise,
       lineTotalPaise: line.lineTotalPaise,
       breakdown: line.breakdown ?? null,
+      note: line.note ?? null,
+      attachments: line.attachments ?? null,
       tax: line.tax
         ? {
             hsnCode: line.tax.hsnCode,

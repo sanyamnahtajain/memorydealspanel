@@ -10,6 +10,11 @@ import {
   MIN_QTY_PER_LINE,
 } from "@/lib/schemas/cart";
 import { clampQuantity as clampQty } from "@/lib/quantity";
+import {
+  sanitizeNote as sanitizeRequirementNote,
+  sanitizeAttachments,
+} from "@/lib/requirement-notes";
+import { publicBaseOrEmpty } from "@/server/storage/r2";
 import { getMinOrderValuePaise } from "@/server/services/store-settings";
 import {
   resolveEffectiveAllocation,
@@ -171,6 +176,10 @@ export interface PricedCartLine {
   issues: CartLineIssue[];
   /** Per-model split with FROZEN names, for allocation lines. */
   breakdown: { modelName: string; qty: number }[] | null;
+  /** Customer requirement note (bounded), when the product allows it. */
+  note: string | null;
+  /** Customer requirement photos ([{url}], our storage only). */
+  attachments: { url: string }[];
   /**
    * The resolved effective tax (variant→product→category→profile) for THIS
    * line, or `null` when the GST kill-switch is off. Used to freeze the per-line
@@ -405,6 +414,8 @@ function priceLine(
   ctx: TaxContext | null,
   storedBreakdown: unknown = null,
   modelById: Map<string, { name: string; status: string }> = new Map(),
+  storedNote: unknown = null,
+  storedAttachments: unknown = null,
 ): PricedCartLine | null {
   // Product vanished entirely (hard-deleted) — drop the line silently; it can
   // no longer be represented. (Soft-delete is handled below as "unavailable".)
@@ -427,6 +438,10 @@ function priceLine(
     moq: product.moq ?? MIN_QTY_PER_LINE,
     requestedQuantity,
     quantity: requestedQuantity,
+    note: sanitizeRequirementNote(
+      typeof storedNote === "string" ? storedNote : undefined,
+    ),
+    attachments: sanitizeAttachments(storedAttachments, publicBaseOrEmpty()),
   };
 
   const unavailable = product.status !== "ACTIVE" || product.deletedAt !== null;
@@ -602,6 +617,8 @@ export async function priceCartForCustomer(customerId: string): Promise<PricedCa
       variantId: true,
       quantity: true,
       breakdown: true,
+      note: true,
+      attachments: true,
     },
   });
 
@@ -662,6 +679,8 @@ export async function priceCartForCustomer(customerId: string): Promise<PricedCa
       ctx,
       item.breakdown,
       modelById,
+      item.note,
+      item.attachments,
     );
     if (line) lines.push(line);
   }
@@ -765,6 +784,10 @@ export interface OrderItemSnapshot {
   tax?: OrderItemTaxSnapshot;
   /** Frozen per-model split (names, not ids) for allocation lines. */
   breakdown?: { modelName: string; qty: number }[];
+  /** Customer requirement note, frozen at placement. */
+  note?: string;
+  /** Customer requirement photos, frozen at placement. */
+  attachments?: { url: string }[];
 }
 
 function toSnapshot(line: PricedCartLine, tax?: OrderItemTaxSnapshot): OrderItemSnapshot {
@@ -784,6 +807,8 @@ function toSnapshot(line: PricedCartLine, tax?: OrderItemTaxSnapshot): OrderItem
     ...(line.breakdown && line.breakdown.length > 0
       ? { breakdown: line.breakdown }
       : {}),
+    ...(line.note ? { note: line.note } : {}),
+    ...(line.attachments.length > 0 ? { attachments: line.attachments } : {}),
   };
 }
 

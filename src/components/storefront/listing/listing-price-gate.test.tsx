@@ -76,6 +76,7 @@ const publicProduct: PublicProduct = {
   moq: 10,
   packMultiple: null,
   maxQty: null,
+  allowRequirementNotes: false,
   allocation: null,
   stockStatus: "IN_STOCK",
   status: "ACTIVE",

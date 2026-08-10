@@ -99,6 +99,15 @@ export function sanitizeKey(key: string): string {
 }
 
 /** Public URL for an object key (R2 mode). */
+/**
+ * The public base URL, or "" when unconfigured. For callers that treat a
+ * missing base as "no public storage" (e.g. requirement-photo allow-lists)
+ * instead of an error — never build a URL from an empty base.
+ */
+export function publicBaseOrEmpty(): string {
+  return (process.env.R2_PUBLIC_URL ?? "").replace(/\/+$/, "");
+}
+
 export function publicUrl(key: string): string {
   const base = (process.env.R2_PUBLIC_URL ?? "").replace(/\/+$/, "");
   if (!base) {

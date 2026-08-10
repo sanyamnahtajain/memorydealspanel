@@ -16,6 +16,14 @@ import {
   normaliseMoq,
   normalisePack,
 } from "@/lib/quantity";
+import { sanitizeAttachments, sanitizeNote } from "@/lib/requirement-notes";
+import { publicBaseOrEmpty } from "@/server/storage/r2";
+
+/** Base public URL our attachment allow-list checks against. */
+function r2PublicBase(): string {
+  // "" when unconfigured — sanitizeAttachments then accepts nothing.
+  return publicBaseOrEmpty();
+}
 import {
   resolveEffectiveAllocation,
   type Allocation,
@@ -131,6 +139,12 @@ export interface CartLine {
   packMultiple: number;
   /** The live per-line ceiling (admin-set, default 200). */
   maxQty: number;
+  /** Product allows a requirement note + photos on this line. */
+  allowRequirementNotes: boolean;
+  /** Customer's requirement note (≤ 1000 chars), when provided. */
+  note: string | null;
+  /** Customer's requirement photos ([{url}], ≤ 6, our storage only). */
+  attachments: { url: string }[];
   /** Whether this product requires a per-model quantity breakdown. */
   allocationRequired: boolean;
   /** Resolved per-model split with display names, when the line carries one. */
@@ -279,6 +293,8 @@ interface ResolvedUnit {
   packMultiple: number;
   /** Normalised per-line ceiling (admin-set, default 200). */
   maxQty: number;
+  /** Product allows a requirement note + photos. */
+  allowRequirementNotes: boolean;
   /** Effective per-model allocation config (product over category), or null. */
   allocation: Allocation | null;
   stockStatus: StockStatus;
@@ -303,6 +319,7 @@ const PRODUCT_SELECT = {
   moq: true,
   packMultiple: true,
   maxQty: true,
+  allowRequirementNotes: true,
   stockStatus: true,
   status: true,
   deletedAt: true,
@@ -476,6 +493,7 @@ async function resolveUnit(
         moq: normaliseMoq(product.moq),
         packMultiple: normalisePack(product.packMultiple),
         maxQty: normaliseMaxQty(product.maxQty),
+        allowRequirementNotes: product.allowRequirementNotes === true,
         allocation: resolveEffectiveAllocation(
           product.allocation,
           product.category?.defaultAllocation,
@@ -501,6 +519,7 @@ async function resolveUnit(
     moq: normaliseMoq(product.moq),
     packMultiple: normalisePack(product.packMultiple),
     maxQty: normaliseMaxQty(product.maxQty),
+    allowRequirementNotes: product.allowRequirementNotes === true,
     allocation: resolveEffectiveAllocation(
       product.allocation,
       product.category?.defaultAllocation,
@@ -530,6 +549,7 @@ function resolveVariantUnit(
     moq: normaliseMoq(variant.moq ?? product.moq),
     packMultiple: normalisePack(variant.packMultiple ?? product.packMultiple),
     maxQty: normaliseMaxQty(variant.maxQty ?? product.maxQty),
+    allowRequirementNotes: product.allowRequirementNotes === true,
     allocation: resolveEffectiveAllocation(
       product.allocation,
       product.category?.defaultAllocation,
@@ -570,6 +590,8 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
       variantId: true,
       quantity: true,
       breakdown: true,
+      note: true,
+      attachments: true,
     },
   });
 
@@ -620,6 +642,7 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
     let moq: number;
     let packMultiple: number;
     let maxQty: number;
+    let unitFlagAllowNotes: boolean;
     let stockStatus: StockStatus;
     let pricePaise: number | null;
 
@@ -634,6 +657,7 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
       moq = MIN_QTY_PER_LINE;
       packMultiple = 1;
       maxQty = normaliseMaxQty(null);
+      unitFlagAllowNotes = false;
       stockStatus = "OUT_OF_STOCK";
       pricePaise = null;
     } else {
@@ -645,6 +669,7 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
       moq = unit.moq;
       packMultiple = unit.packMultiple;
       maxQty = unit.maxQty;
+      unitFlagAllowNotes = unit.allowRequirementNotes;
       stockStatus = unit.stockStatus;
       pricePaise = priced ? unit.pricePaise : null;
 
@@ -718,6 +743,9 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
       moq,
       packMultiple,
       maxQty,
+      allowRequirementNotes: unitFlagAllowNotes,
+      note: sanitizeNote(row.note),
+      attachments: sanitizeAttachments(row.attachments, r2PublicBase()),
       allocationRequired: unit?.allocation?.required ?? false,
       breakdown: (() => {
         const entries = parseStoredBreakdown(row.breakdown);
@@ -1234,4 +1262,51 @@ async function summarise(
   });
   const itemCount = rows.reduce((sum, r) => sum + r.quantity, 0);
   return { quantity, itemCount, lineCount: rows.length, clamped };
+}
+
+/**
+ * Set / clear a line's requirement note + photo attachments. Allowed ONLY on
+ * products the admin flagged (`allowRequirementNotes`); the note is bounded,
+ * and attachment URLs are accepted only under OUR `order-notes/` storage
+ * prefix (see src/lib/requirement-notes.ts) — never arbitrary URLs.
+ */
+export async function setCartRequirement(
+  viewer: CustomerViewer,
+  input: {
+    productId: string;
+    variantId?: string | null;
+    note?: unknown;
+    attachments?: unknown;
+  },
+): Promise<
+  | { ok: true; note: string | null; attachments: { url: string }[] }
+  | { ok: false; reason: "not-in-cart" | "not-allowed" }
+> {
+  await assertApproved(viewer);
+  const variantId = input.variantId ?? null;
+
+  const row = await prisma.cartItem.findFirst({
+    where: { customerId: viewer.customerId, productId: input.productId, variantId },
+    select: { id: true },
+  });
+  if (!row) return { ok: false, reason: "not-in-cart" };
+
+  const product = await prisma.product.findFirst({
+    where: { id: input.productId, deletedAt: null },
+    select: { allowRequirementNotes: true },
+  });
+  if (product?.allowRequirementNotes !== true) {
+    return { ok: false, reason: "not-allowed" };
+  }
+
+  const note = sanitizeNote(input.note);
+  const attachments = sanitizeAttachments(input.attachments, r2PublicBase());
+  await prisma.cartItem.update({
+    where: { id: row.id },
+    data: {
+      note,
+      attachments: attachments as unknown as Prisma.InputJsonValue,
+    },
+  });
+  return { ok: true, note, attachments };
 }

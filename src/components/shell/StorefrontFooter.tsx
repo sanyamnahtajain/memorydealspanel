@@ -11,9 +11,6 @@ const COLUMNS: { title: string; links: { label: string; href: string }[] }[] = [
       { label: "All products", href: "/search" },
       { label: "Categories", href: "/categories" },
       { label: "My account", href: "/account" },
-      // Server-gated (/api/catalog-pdf): approved buyers get the PRICE LIST,
-      // everyone else the price-free catalogue.
-      { label: "Download catalogue (PDF)", href: "/api/catalog-pdf" },
     ],
   },
   {

@@ -3,6 +3,8 @@ import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf
 import { prisma } from "@/server/db";
 import { APP_NAME, CONTACT } from "@/lib/constants";
 import type { OrderItemSnapshot } from "@/server/services/orders";
+import { attachmentUrlPrefix } from "@/lib/requirement-notes";
+import { publicBaseOrEmpty } from "@/server/storage/r2";
 
 /**
  * Order PDF (owner request) — a received order rendered in the shop's
@@ -78,6 +80,17 @@ export interface OrderPdfLine {
   ratePaise: number;
   /** Integer paise for the line. */
   amountPaise: number;
+  /** Frozen per-model split, rendered as muted sub-rows for preparation. */
+  breakdown?: { modelName: string; qty: number }[];
+}
+
+/** One customer requirement (note + photo bytes) appended after the bill. */
+export interface OrderPdfRequirement {
+  /** The product line the requirement belongs to. */
+  name: string;
+  note: string | null;
+  /** Pre-fetched image bytes (JPEG/PNG — sniffed by magic bytes). */
+  images: Uint8Array[];
 }
 
 export interface OrderPdfData {
@@ -92,6 +105,8 @@ export interface OrderPdfData {
   grandTotalPaise: number;
   /** Frozen order-level GST total (paise), when tax was applied. */
   totalTaxPaise: number | null;
+  /** Customer requirements (notes + photos) — rendered after the bill. */
+  requirements?: OrderPdfRequirement[];
 }
 
 const A4 = { w: 595.28, h: 841.89 } as const;
@@ -222,6 +237,19 @@ export async function renderOrderPdf(data: OrderPdfData): Promise<Uint8Array> {
       x += c.w;
     });
     y -= 14;
+    // Model-split sub-rows (allocation lines) — staff pick per model.
+    if (line.breakdown && line.breakdown.length > 0) {
+      for (const b of line.breakdown) {
+        if (y < M + 96) {
+          page = doc.addPage([A4.w, A4.h]);
+          pages.push(page);
+          masthead(false);
+        }
+        text(`- ${b.qty} x ${b.modelName}`, M + cols[0].w + 10, 8, helv, MUTED);
+        y -= 11;
+      }
+      y -= 3;
+    }
   });
 
   // Totals block (kept on one page).
@@ -245,6 +273,91 @@ export async function renderOrderPdf(data: OrderPdfData): Promise<Uint8Array> {
   if (data.totalTaxPaise != null) {
     y -= 14;
     text(`Includes GST: Rs. ${money(data.totalTaxPaise)}`, M + 2, 8.5, helv, MUTED);
+  }
+
+  // ---- Customer requirements (notes + photos), after the bill ----------
+  const requirements = (data.requirements ?? []).filter(
+    (r) => r.note || r.images.length > 0,
+  );
+  if (requirements.length > 0) {
+    // Word-wrap a note into lines that fit the printable width.
+    const wrap = (raw: string, size: number, width: number): string[] => {
+      const out: string[] = [];
+      for (const para of winAnsiSafe(raw).split(/\r?\n/)) {
+        let current = "";
+        for (const word of para.split(/\s+/)) {
+          const candidate = current ? `${current} ${word}` : word;
+          if (helv.widthOfTextAtSize(candidate, size) <= width) {
+            current = candidate;
+          } else {
+            if (current) out.push(current);
+            current = word;
+          }
+        }
+        out.push(current);
+      }
+      return out;
+    };
+
+    page = doc.addPage([A4.w, A4.h]);
+    pages.push(page);
+    y = A4.h - M;
+    text("CUSTOMER REQUIREMENTS", M, 12, bold, INK, "center", W);
+    y -= 10;
+    hline(y);
+    y -= 18;
+
+    for (const req of requirements) {
+      if (y < M + 60) {
+        page = doc.addPage([A4.w, A4.h]);
+        pages.push(page);
+        y = A4.h - M;
+      }
+      text(req.name, M, 10.5, bold);
+      y -= 15;
+      if (req.note) {
+        for (const lineText of wrap(req.note, 9.5, W - 8)) {
+          if (y < M + 30) {
+            page = doc.addPage([A4.w, A4.h]);
+            pages.push(page);
+            y = A4.h - M;
+          }
+          text(lineText, M + 4, 9.5, helv);
+          y -= 12;
+        }
+        y -= 4;
+      }
+      for (const bytes of req.images) {
+        // Sniff the format — client uploads are forced to JPEG, but old or
+        // hand-uploaded PNGs still embed; anything else is skipped.
+        const isPng =
+          bytes.length > 8 && bytes[0] === 0x89 && bytes[1] === 0x50;
+        const isJpg =
+          bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8;
+        if (!isPng && !isJpg) continue;
+        let image;
+        try {
+          image = isPng ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
+        } catch {
+          continue; // corrupt image — never sink the whole PDF
+        }
+        // Fit within the printable width and a generous height so a
+        // photographed list stays readable.
+        const maxW = W;
+        const maxH = 460;
+        const scale = Math.min(maxW / image.width, maxH / image.height, 1);
+        const drawW = image.width * scale;
+        const drawH = image.height * scale;
+        if (y - drawH < M + 20) {
+          page = doc.addPage([A4.w, A4.h]);
+          pages.push(page);
+          y = A4.h - M;
+        }
+        page.drawImage(image, { x: M, y: y - drawH, width: drawW, height: drawH });
+        y -= drawH + 14;
+      }
+      y -= 8;
+    }
   }
 
   // Page numbers (only when multi-page — the single-page bill stays clean).
@@ -279,7 +392,45 @@ export async function buildOrderPdf(orderId: string): Promise<{ bytes: Uint8Arra
     qty: it.quantity,
     ratePaise: it.unitPricePaise,
     amountPaise: it.lineTotalPaise,
+    ...(it.breakdown && it.breakdown.length > 0
+      ? { breakdown: it.breakdown }
+      : {}),
   }));
+
+  // Fetch requirement photos server-side so the PDF is self-contained for the
+  // staff. SSRF hygiene: only URLs under OUR storage prefix are fetched (the
+  // snapshot was sanitized at placement; this re-checks anyway), bounded in
+  // count, size and time — a dead image never sinks the whole PDF.
+  const base = publicBaseOrEmpty();
+  const prefix = base ? attachmentUrlPrefix(base) : null;
+  const requirements: OrderPdfRequirement[] = [];
+  for (const it of items) {
+    const note = typeof it.note === "string" && it.note.trim() !== "" ? it.note : null;
+    const urls = (it.attachments ?? [])
+      .map((a) => a?.url)
+      .filter(
+        (u): u is string =>
+          prefix !== null && typeof u === "string" && u.startsWith(prefix),
+      )
+      .slice(0, 6);
+    if (!note && urls.length === 0) continue;
+    const images: Uint8Array[] = [];
+    for (const url of urls) {
+      try {
+        const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+        if (!res.ok) continue;
+        const buf = new Uint8Array(await res.arrayBuffer());
+        if (buf.length > 0 && buf.length <= 8 * 1024 * 1024) images.push(buf);
+      } catch {
+        // Unreachable image — the note and the other photos still render.
+      }
+    }
+    requirements.push({
+      name: it.variantLabel ? `${it.name} — ${it.variantLabel}` : it.name,
+      note,
+      images,
+    });
+  }
 
   const bytes = await renderOrderPdf({
     orderNumber: order.orderNumber,
@@ -290,6 +441,7 @@ export async function buildOrderPdf(orderId: string): Promise<{ bytes: Uint8Arra
     totalQty: items.reduce((s, it) => s + it.quantity, 0),
     grandTotalPaise: order.grandTotalPaise ?? order.subtotalPaise,
     totalTaxPaise: order.taxApplied ? order.totalTaxPaise : null,
+    requirements,
   });
   return { bytes, orderNumber: order.orderNumber };
 }

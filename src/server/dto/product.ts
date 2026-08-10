@@ -84,6 +84,8 @@ export interface PublicProduct {
   packMultiple: number | null;
   /** Admin per-line ceiling (default 200 when null). NON-MONETARY. */
   maxQty: number | null;
+  /** Buyers may attach a requirement note + photos on this product. */
+  allowRequirementNotes: boolean;
   /**
    * Per-model allocation requirement for the buy flow, or null. Deliberately
    * WITHOUT the raw id allow-list (can be hundreds of ids) — the picker
@@ -165,6 +167,7 @@ export interface PublicSource {
   /** Optional on sources so narrower legacy selects still map (⇒ null). */
   packMultiple?: number | null;
   maxQty?: number | null;
+  allowRequirementNotes?: boolean | null;
   allocation?: unknown;
   /** Loose on purpose: sources may carry a wider category select. */
   category?: ({ defaultAllocation?: unknown } & Record<string, unknown>) | null;
@@ -358,6 +361,7 @@ export function toPublicProduct(
     moq: row.moq ?? null,
     packMultiple: row.packMultiple ?? null,
     maxQty: row.maxQty ?? null,
+    allowRequirementNotes: row.allowRequirementNotes === true,
     allocation: toPublicAllocation(
       resolveEffectiveAllocation(row.allocation, row.category?.defaultAllocation),
     ),

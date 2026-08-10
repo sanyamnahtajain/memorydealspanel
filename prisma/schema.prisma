@@ -128,6 +128,9 @@ model Product {
   // Per-line quantity ceiling the admin sets; null ⇒ the platform default
   // (200). Admin-defined always wins, in either direction.
   maxQty      Int?
+  // Customers may attach a requirement note + photos to this product's cart
+  // line (long model lists for tempered glass etc.). Admin-controlled.
+  allowRequirementNotes Boolean?
   // GST (Phase 13): optional per-product override; null ⇒ inherit the
   // category default, then the SellerTaxProfile default. gstRateBps is basis
   // points (1800 = 18.00%). taxTreatment null ⇒ inherit the profile mode.
@@ -427,6 +430,11 @@ model CartItem {
   // Per-model quantity split for allocation products: [{ modelId, qty }],
   // validated server-side to sum EXACTLY to `quantity`. null for normal lines.
   breakdown  Json?
+  // Requirement note + photo attachments (customer-supplied, only on products
+  // with allowRequirementNotes): note ≤ 1000 chars; attachments =
+  // [{ url }] (≤ 6, minted through OUR presign — never arbitrary URLs).
+  note        String?
+  attachments Json?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 

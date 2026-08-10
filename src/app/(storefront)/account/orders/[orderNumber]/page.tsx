@@ -63,6 +63,8 @@ export default async function OrderDetailPage({
     brand: line.brand,
     variantLabel: line.variantLabel,
     breakdown: line.breakdown ?? null,
+    note: line.note ?? null,
+    attachments: line.attachments ?? null,
     imageUrl: line.imageUrl,
     quantity: line.quantity,
     unitPricePaise: priced ? line.unitPricePaise : null,

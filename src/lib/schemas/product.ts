@@ -87,7 +87,10 @@ const productCoreSchema = z.object({
   moq: z.number().int().positive().optional(),
   // Order in multiples of this (boxes). 1 is meaningless — omit instead.
   packMultiple: z.number().int().min(2).max(10_000).optional(),
-  maxQty: z.number().int().min(1).max(100_000).optional(),
+  // null clears back to the platform default (200).
+  maxQty: z.number().int().min(1).max(100_000).nullable().optional(),
+  // Whether buyers may attach a requirement note + photos to this product.
+  allowRequirementNotes: z.boolean().optional(),
   // Per-model allocation config. null clears back to the category default.
   allocation: allocationSchema.nullable().optional(),
   stockStatus: stockStatusSchema,
