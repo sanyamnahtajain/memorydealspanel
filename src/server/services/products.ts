@@ -1,4 +1,3 @@
-import { Prisma as PrismaRuntime } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { makeUniqueSlug } from "@/lib/slug";
@@ -267,10 +266,14 @@ export async function createProduct(
         mrp: data.mrp,
         moq: data.moq,
         packMultiple: data.packMultiple,
+        // Plain null clears to "inherit the category default". NOTE: the
+        // Prisma.DbNull/JsonNull sentinels are Postgres-only — the MongoDB
+        // connector REJECTS them ("Expected Json or Null, provided Enum");
+        // a nullable Json takes a literal null on Mongo.
         allocation:
           data.allocation === undefined
             ? undefined
-            : ((data.allocation ?? PrismaRuntime.DbNull) as Prisma.InputJsonValue),
+            : ((data.allocation ?? null) as Prisma.InputJsonValue),
         stockStatus: data.stockStatus,
         status: data.status,
         tags: data.tags,
@@ -367,9 +370,9 @@ export async function updateProduct(
   if (data.packMultiple !== undefined) update.packMultiple = data.packMultiple;
   if (data.allocation !== undefined) {
     // Present key writes the config; explicit null clears back to "inherit
-    // the category default" (Mongo Json: DbNull, not JS null).
-    update.allocation = (data.allocation ??
-      PrismaRuntime.DbNull) as Prisma.InputJsonValue;
+    // the category default". Plain null — Prisma.DbNull is Postgres-only and
+    // the MongoDB connector rejects it.
+    update.allocation = (data.allocation ?? null) as Prisma.InputJsonValue;
   }
   if (data.stockStatus !== undefined) update.stockStatus = data.stockStatus;
   if (data.status !== undefined) update.status = data.status;

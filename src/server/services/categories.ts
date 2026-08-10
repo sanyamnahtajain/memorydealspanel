@@ -2,7 +2,6 @@ import { Prisma } from "@prisma/client";
 import type { EntityStatus } from "@/lib/schemas/shared";
 import { makeUniqueSlug } from "@/lib/slug";
 import { prisma } from "@/server/db";
-import { Prisma as PrismaRuntime } from "@prisma/client";
 import { parseAllocation, type Allocation } from "@/lib/allocation";
 
 /**
@@ -219,9 +218,9 @@ export async function updateCategory(
     patch.defaultGstRateBps = data.defaultGstRateBps ?? null;
   }
   if (data.defaultAllocation !== undefined) {
-    // Present key writes the config; null clears it (Mongo Json: DbNull).
-    patch.defaultAllocation = (data.defaultAllocation ??
-      PrismaRuntime.DbNull) as Prisma.InputJsonValue;
+    // Present key writes the config; plain null clears it. Prisma.DbNull is
+    // Postgres-only — the MongoDB connector rejects the sentinel.
+    patch.defaultAllocation = (data.defaultAllocation ?? null) as Prisma.InputJsonValue;
   }
 
   const row = await prisma.category.update({
