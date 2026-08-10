@@ -341,29 +341,3 @@
 .md-marquee {
   animation: md-marquee-scroll 28s linear infinite;
 }
-
-/* ── Independence Day accent (IndependenceBadge.tsx) ────────────────────── */
-
-/* Minimal vertical strips: a gentle staggered sway, nothing more. */
-@keyframes md-tricolor-sway {
-  0%,
-  100% {
-    transform: scaleY(1);
-    opacity: 0.85;
-  }
-  50% {
-    transform: scaleY(0.78);
-    opacity: 1;
-  }
-}
-
-.md-tricolor-bar {
-  transform-origin: bottom;
-  animation: md-tricolor-sway 2.8s ease-in-out infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .md-tricolor-bar {
-    animation: none;
-  }
-}
