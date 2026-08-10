@@ -57,7 +57,7 @@ export default async function HomePage() {
   const suggestions = categories.slice(0, 5).map((c) => c.name);
 
   return (
-    <StorefrontShell>
+    <StorefrontShell topNotice="Prices are subject to change without prior notice — please confirm current rates before placing your order.">
       <HomeSections>
         {/* Stats strip — immediate sense of catalogue scale. */}
         <StatsBar

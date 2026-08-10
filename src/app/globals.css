@@ -330,3 +330,14 @@
 [data-grid-scroll]::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/* Top notice ticker (NoticeMarquee): seamless loop — the content is rendered
+   twice and shifted by exactly one copy's width. Paused for reduced motion
+   via the component's motion-reduce utilities. */
+@keyframes md-marquee-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.md-marquee {
+  animation: md-marquee-scroll 28s linear infinite;
+}

@@ -44,3 +44,6 @@ next-env.d.ts
 
 # Scraper progress logs
 scripts/*.progress.log
+
+# Customer/product spreadsheets dropped at repo root during imports
+*.xlsx

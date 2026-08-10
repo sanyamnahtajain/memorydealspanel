@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { NoticeMarquee } from "@/components/storefront/NoticeMarquee";
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { CircleUserRound, Search } from "lucide-react"
@@ -31,6 +32,8 @@ const SNAPPY_SPRING: Transition = {
 }
 
 export interface StorefrontShellProps {
+  /** Optional scrolling notice rendered ABOVE the header (NoticeMarquee). */
+  topNotice?: string;
   children: React.ReactNode
   /** Badge counts keyed by nav href, e.g. `{ "/account": 1 }`. */
   badges?: NavBadges
@@ -71,6 +74,7 @@ export function StorefrontShell({
   wishlistCount,
   showWishlist = true,
   cartCount,
+  topNotice,
 }: StorefrontShellProps) {
   const pathname = usePathname()
   const reducedMotion = useReducedMotion()
@@ -112,6 +116,7 @@ export function StorefrontShell({
 
   return (
     <div className="flex min-h-dvh flex-col bg-background text-foreground">
+      {topNotice ? <NoticeMarquee text={topNotice} /> : null}
       {/* ——— Sticky condensing header ——— */}
       <header
         className={cn(
