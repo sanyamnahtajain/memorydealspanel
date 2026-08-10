@@ -24,6 +24,13 @@ import {
   type BulkResult,
 } from "@/server/services/customers";
 import { accessRequestSchema } from "@/lib/schemas/customer";
+import { randomBytes } from "node:crypto";
+import {
+  consumeSignupHandoff,
+  linkGoogleAccount,
+  refundSignupHandoff,
+} from "@/server/services/google-auth";
+import { createSession } from "@/server/auth/session";
 import { objectIdSchema } from "@/lib/schemas/shared";
 import {
   ACCESS_EXPIRY_PRESETS_DAYS,
@@ -429,4 +436,71 @@ export async function bulkRevokeAccessAction(
     revalidate();
     return bulkResult(result);
   });
+}
+
+
+/**
+ * Request-access completion for a GOOGLE-authenticated visitor (no password,
+ * no captcha — the Google login already proves a human + a verified email).
+ * The `g` handoff token is single-use and 15-minute; the EMAIL comes from the
+ * token (never the form), the password is an unusable random value, and on
+ * success the Google identity is linked and the visitor is signed in
+ * immediately (price-gated until approved, same as password login). A failure
+ * AFTER the consume refunds the token so fixing a field never forces a fresh
+ * Google round-trip.
+ */
+export async function requestAccessViaGoogle(input: {
+  form: {
+    businessName: string;
+    contactName: string;
+    phone: string;
+    gstNumber?: string;
+    city: string;
+  };
+  g: string;
+}): Promise<RequestAccessResult> {
+  const g = typeof input.g === "string" ? input.g : "";
+  const handoff = g ? await consumeSignupHandoff(g) : null;
+  if (!handoff) {
+    return {
+      ok: false,
+      error: "Your Google sign-in expired — please tap Continue with Google again.",
+    };
+  }
+
+  const parsed = accessRequestSchema.safeParse({
+    ...input.form,
+    email: handoff.email, // ALWAYS the verified Google email
+    password: randomBytes(24).toString("base64url"), // unusable; Google is the login
+  });
+  if (!parsed.success) {
+    await refundSignupHandoff(g);
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Invalid input.",
+    };
+  }
+
+  try {
+    const ip = await clientIp();
+    const result = await requestAccessService(parsed.data, "", ip, "google");
+    if (!result.ok) {
+      await refundSignupHandoff(g);
+      return result;
+    }
+    await linkGoogleAccount(handoff.sub, result.customerId, handoff.email);
+    // Sign the requester in right away (PENDING = price-gated, like password
+    // login) so they land in their account and can watch the approval status.
+    await createSession({ kind: "customer", customerId: result.customerId });
+    revalidatePath("/admin/requests");
+    revalidatePath("/admin/customers");
+    return result;
+  } catch (error) {
+    await refundSignupHandoff(g);
+    console.error("[actions/access] requestAccessViaGoogle failed:", error);
+    return {
+      ok: false,
+      error: "Could not submit your request. Please try again.",
+    };
+  }
 }

@@ -39,7 +39,7 @@ import { StatusChip } from "@/components/common/StatusChip";
 import { CityField } from "@/components/storefront/CityField";
 import { useIsMobile } from "@/components/common/use-is-mobile";
 import { accessRequestSchema } from "@/lib/schemas/customer";
-import { requestAccess } from "@/server/actions/access";
+import { requestAccess, requestAccessViaGoogle } from "@/server/actions/access";
 import { cn } from "@/lib/utils";
 
 /* ------------------------------------------------------------------ */
@@ -234,10 +234,19 @@ type SubmitState =
 
 interface RequestAccessFormProps {
   onClose: () => void;
+  /** Google-authenticated signup (T-google): the peeked handoff. When set,
+   *  password + email fields are replaced by a verified badge; the submit
+   *  action consumes the token and uses ITS email — never the form's. */
+  google?: { token: string; email: string; name: string | null } | null;
 }
 
-export function RequestAccessForm({ onClose }: RequestAccessFormProps) {
-  const [values, setValues] = React.useState<FormValues>(EMPTY_FORM);
+export function RequestAccessForm({ onClose, google = null }: RequestAccessFormProps) {
+  const viaGoogle = Boolean(google);
+  const [values, setValues] = React.useState<FormValues>(() => ({
+    ...EMPTY_FORM,
+    contactName: google?.name ?? "",
+    email: google?.email ?? "",
+  }));
   const [errors, setErrors] = React.useState<FieldErrors>({});
   const [token, setToken] = React.useState("");
   const [state, setState] = React.useState<SubmitState>({ phase: "form" });
@@ -258,7 +267,11 @@ export function RequestAccessForm({ onClose }: RequestAccessFormProps) {
   const handleSubmit = React.useCallback(
     async (event: React.FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      const parsed = accessRequestSchema.safeParse(values);
+      const parsed = accessRequestSchema.safeParse(
+        google
+          ? { ...values, password: "google-oauth-login", email: google.email }
+          : values,
+      );
       if (!parsed.success) {
         const nextErrors: FieldErrors = {};
         for (const issue of parsed.error.issues) {
@@ -273,10 +286,21 @@ export function RequestAccessForm({ onClose }: RequestAccessFormProps) {
 
       setState({ phase: "submitting" });
       try {
-        const result = await requestAccess({
-          form: parsed.data,
-          turnstileToken: token,
-        });
+        const result = google
+          ? await requestAccessViaGoogle({
+              form: {
+                businessName: parsed.data.businessName,
+                contactName: parsed.data.contactName,
+                phone: parsed.data.phone,
+                gstNumber: parsed.data.gstNumber,
+                city: parsed.data.city,
+              },
+              g: google.token,
+            })
+          : await requestAccess({
+              form: parsed.data,
+              turnstileToken: token,
+            });
         if (result.ok) {
           setState({ phase: "success", duplicate: result.duplicate });
         } else {
@@ -289,7 +313,7 @@ export function RequestAccessForm({ onClose }: RequestAccessFormProps) {
         });
       }
     },
-    [values, token],
+    [values, token, google],
   );
 
   if (state.phase === "success") {
@@ -302,8 +326,18 @@ export function RequestAccessForm({ onClose }: RequestAccessFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-3" noValidate>
+      {viaGoogle ? (
+        <div className="flex items-center justify-between gap-2 rounded-lg border border-success/35 bg-success/10 px-3 py-2.5">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium text-foreground">{google?.email}</p>
+            <p className="text-xs text-success">Verified with Google — no password needed</p>
+          </div>
+        </div>
+      ) : null}
       <div className="grid gap-3 sm:grid-cols-2">
-        {FIELDS.map((field) => {
+        {FIELDS.filter(
+          (f) => !viaGoogle || (f.name !== "password" && f.name !== "email"),
+        ).map((field) => {
           const error = errors[field.name];
           const spanFull =
             field.name === "businessName" || field.name === "password";
@@ -361,7 +395,7 @@ export function RequestAccessForm({ onClose }: RequestAccessFormProps) {
         })}
       </div>
 
-      <TurnstileWidget onToken={setToken} />
+      {viaGoogle ? null : <TurnstileWidget onToken={setToken} />}
 
       {state.phase === "error" ? (
         <p

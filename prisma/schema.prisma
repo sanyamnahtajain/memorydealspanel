@@ -193,6 +193,37 @@ model Customer {
   @@index([status])
 }
 
+// ── Google sign-in (storefront) ────────────────────────────────────────────
+
+// A customer's Google identity link. Separate table (not columns on Customer)
+// so Customer's index landscape is untouched; `sub` is Google's stable id.
+model GoogleAccount {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  sub        String   @unique
+  customerId String   @db.ObjectId
+  email      String
+  createdAt  DateTime @default(now())
+
+  @@index([customerId])
+}
+
+// Single-use server-side rows carrying the OAuth flow (PKCE verifier + nonce)
+// and the post-auth signup handoff (verified email → request-access form).
+// Never cookies: single-use + TTL enforced at read, atomic claim on use.
+model OAuthFlowState {
+  id           String    @id @default(auto()) @map("_id") @db.ObjectId
+  token        String    @unique
+  kind         String // "state" | "signup"
+  pkceVerifier String?
+  nonce        String?
+  email        String?
+  name         String?
+  sub          String?
+  returnTo     String?
+  usedAt       DateTime?
+  createdAt    DateTime  @default(now())
+}
+
 model AccessGrant {
   id         String    @id @default(auto()) @map("_id") @db.ObjectId
   customerId String    @db.ObjectId

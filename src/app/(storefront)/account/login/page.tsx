@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
 import { FadeUp } from "@/components/motion/primitives";
 import { CustomerLoginRedirectForm } from "./CustomerLoginRedirectForm";
+import { googleOAuthConfigured } from "@/server/services/google-auth";
 
 export const metadata: Metadata = {
   title: "Sign in — MemoryDeals",
@@ -18,7 +19,11 @@ export default function CustomerLoginPage() {
     <StorefrontShell>
       <div className="mx-auto flex w-full max-w-sm flex-col justify-center py-10 sm:py-16">
         <FadeUp>
-          <CustomerLoginRedirectForm />
+          <CustomerLoginRedirectForm
+            googleHref={
+              googleOAuthConfigured() ? "/auth/google/start?returnTo=/account" : null
+            }
+          />
         </FadeUp>
       </div>
     </StorefrontShell>

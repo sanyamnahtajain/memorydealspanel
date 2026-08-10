@@ -60,10 +60,15 @@ export async function requestAccess(
   input: AccessRequestInput,
   turnstileToken: string,
   ip: string,
+  /** "google" skips the captcha — the visitor already proved a Google login
+   *  (bot-resistant on its own); the IP rate limiter still applies. */
+  via: "password" | "google" = "password",
 ): Promise<RequestAccessResult> {
-  const captcha = await verifyTurnstile(turnstileToken, ip);
-  if (!captcha.ok) {
-    return { ok: false, error: "Captcha verification failed. Please retry." };
+  if (via !== "google") {
+    const captcha = await verifyTurnstile(turnstileToken, ip);
+    if (!captcha.ok) {
+      return { ok: false, error: "Captcha verification failed. Please retry." };
+    }
   }
 
   const limited = await requestAccessLimiter.limit(ip || "unknown");
