@@ -342,66 +342,28 @@
   animation: md-marquee-scroll 28s linear infinite;
 }
 
-/* ── Independence Day badge (IndependenceBadge.tsx) ─────────────────────── */
+/* ── Independence Day accent (IndependenceBadge.tsx) ────────────────────── */
 
-/* Gentle flutter: a soft skew/rotate breathing, anchored at the pole. */
-@keyframes md-flag-wave {
+/* Minimal vertical strips: a gentle staggered sway, nothing more. */
+@keyframes md-tricolor-sway {
   0%,
   100% {
-    transform: rotate(0deg) skewY(0deg);
-  }
-  25% {
-    transform: rotate(-2.5deg) skewY(-3deg);
-  }
-  75% {
-    transform: rotate(1.5deg) skewY(2deg);
-  }
-}
-
-.md-flag {
-  animation: md-flag-wave 2.6s ease-in-out infinite;
-}
-
-@keyframes md-chakra-spin {
-  to {
-    transform: translate(-50%, -50%) rotate(360deg);
-  }
-}
-
-.md-chakra {
-  animation: md-chakra-spin 14s linear infinite;
-}
-
-/* Tricolor shimmer on the "Jai Hind" whisper. */
-@keyframes md-jai-hind-shimmer {
-  0%,
-  100% {
-    background-position: 0% 50%;
+    transform: scaleY(1);
+    opacity: 0.85;
   }
   50% {
-    background-position: 100% 50%;
+    transform: scaleY(0.78);
+    opacity: 1;
   }
 }
 
-.md-jai-hind {
-  background: linear-gradient(
-    90deg,
-    #ff9933 0%,
-    #b45309 35%,
-    #138808 70%,
-    #ff9933 100%
-  );
-  background-size: 220% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: md-jai-hind-shimmer 5s ease-in-out infinite;
+.md-tricolor-bar {
+  transform-origin: bottom;
+  animation: md-tricolor-sway 2.8s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .md-flag,
-  .md-chakra,
-  .md-jai-hind {
+  .md-tricolor-bar {
     animation: none;
   }
 }
