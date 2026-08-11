@@ -16,6 +16,7 @@ import {
   ReceiptIcon,
   UserIcon,
   XIcon,
+  Clock as ClockIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -40,6 +41,7 @@ import { DEFAULT_ACCESS_EXPIRY_DAYS } from "@/lib/constants";
 import {
   approveAccessAction,
   rejectAccessAction,
+  snoozeAccessAction,
 } from "@/server/actions/access";
 
 /* ------------------------------------------------------------------ */
@@ -64,7 +66,7 @@ export interface ApprovalSwipeDeckProps {
   requests: PendingRequest[];
 }
 
-type Decision = "approve" | "reject";
+type Decision = "approve" | "reject" | "later";
 
 const SWIPE_THRESHOLD = 96;
 const dateFormatter = new Intl.DateTimeFormat("en-IN", {
@@ -176,6 +178,19 @@ export function ApprovalSwipeDeck({ requests }: ApprovalSwipeDeckProps) {
     [restoreToQueue],
   );
 
+  const commitSnooze = React.useCallback(
+    async (request: PendingRequest) => {
+      const result = await snoozeAccessAction({ requestId: request.id });
+      if (!result.ok) {
+        toast.error(`Couldn't move ${request.businessName} to Later`, {
+          description: result.error,
+        });
+        restoreToQueue(request);
+      }
+    },
+    [restoreToQueue],
+  );
+
   /** Schedule the actual mutation and show the Undo toast. */
   const scheduleDecision = React.useCallback(
     (request: PendingRequest, decision: Decision, commit: () => Promise<void>) => {
@@ -191,11 +206,15 @@ export function ApprovalSwipeDeck({ requests }: ApprovalSwipeDeckProps) {
       toast(
         decision === "approve"
           ? `Approved ${request.businessName}`
-          : `Rejected ${request.businessName}`,
+          : decision === "later"
+            ? `${request.businessName} moved to Later`
+            : `Rejected ${request.businessName}`,
         {
           icon:
             decision === "approve" ? (
               <CheckIcon className="size-4 text-success" aria-hidden />
+            ) : decision === "later" ? (
+              <ClockIcon className="size-4 text-muted-foreground" aria-hidden />
             ) : (
               <XIcon className="size-4 text-destructive" aria-hidden />
             ),
@@ -228,6 +247,14 @@ export function ApprovalSwipeDeck({ requests }: ApprovalSwipeDeckProps) {
     [commitReject, scheduleDecision],
   );
 
+  /** Skip for now (T: review later) — parks the request in the Later tab. */
+  const handleSnooze = React.useCallback(
+    (request: PendingRequest) => {
+      scheduleDecision(request, "later", () => commitSnooze(request));
+    },
+    [commitSnooze, scheduleDecision],
+  );
+
   if (queue.length === 0) {
     return (
       <EmptyState
@@ -245,12 +272,14 @@ export function ApprovalSwipeDeck({ requests }: ApprovalSwipeDeckProps) {
           requests={queue}
           onApprove={(request) => setApproving(request)}
           onReject={handleReject}
+          onSnooze={handleSnooze}
         />
       ) : (
         <RequestList
           requests={queue}
           onApprove={(request) => setApproving(request)}
           onReject={handleReject}
+          onSnooze={handleSnooze}
         />
       )}
 
@@ -273,10 +302,12 @@ function SwipeDeck({
   requests,
   onApprove,
   onReject,
+  onSnooze,
 }: {
   requests: PendingRequest[];
   onApprove: (request: PendingRequest) => void;
   onReject: (request: PendingRequest, reason?: string) => void;
+  onSnooze: (request: PendingRequest) => void;
 }) {
   // Top card is the last element so later cards stack visually beneath it.
   const visible = requests.slice(0, 3);
@@ -297,6 +328,7 @@ function SwipeDeck({
                 interactive={index === 0}
                 onApprove={() => onApprove(request)}
                 onReject={() => setRejecting(request)}
+                onSnooze={() => onSnooze(request)}
               />
             ))}
         </AnimatePresence>
@@ -331,12 +363,14 @@ function SwipeCard({
   interactive,
   onApprove,
   onReject,
+  onSnooze,
 }: {
   request: PendingRequest;
   depth: number;
   interactive: boolean;
   onApprove: () => void;
   onReject: () => void;
+  onSnooze: () => void;
 }) {
   const reduced = useReducedMotion();
   const [expanded, setExpanded] = React.useState(false);
@@ -444,6 +478,14 @@ function SwipeCard({
             >
               <XIcon aria-hidden /> Reject
             </Button>
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={onSnooze}
+              aria-label="Skip for now — review later"
+            >
+              <ClockIcon aria-hidden /> Later
+            </Button>
             <Button className="flex-1" onClick={onApprove}>
               <CheckIcon aria-hidden /> Approve
             </Button>
@@ -462,10 +504,12 @@ function RequestList({
   requests,
   onApprove,
   onReject,
+  onSnooze,
 }: {
   requests: PendingRequest[];
   onApprove: (request: PendingRequest) => void;
   onReject: (request: PendingRequest, reason?: string) => void;
+  onSnooze: (request: PendingRequest) => void;
 }) {
   const [rejecting, setRejecting] = React.useState<PendingRequest | null>(null);
 
@@ -520,6 +564,14 @@ function RequestList({
                   onClick={() => setRejecting(request)}
                 >
                   <XIcon aria-hidden /> Reject
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onSnooze(request)}
+                  aria-label={`Skip ${request.businessName} for now`}
+                >
+                  <ClockIcon aria-hidden /> Later
                 </Button>
                 <Button size="sm" onClick={() => onApprove(request)}>
                   <CheckIcon aria-hidden /> Approve

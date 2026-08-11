@@ -11,6 +11,8 @@ import {
   rejectRequest,
   requestAccess,
   revokeGrant,
+  snoozeRequest,
+  unsnoozeRequest,
   unblockCustomer,
 } from "./access";
 
@@ -326,5 +328,65 @@ describe("requestAccess (public entry point)", () => {
       "203.0.113.12",
     );
     expect(result.ok).toBe(false);
+  });
+});
+
+describe("snoozeRequest / unsnoozeRequest (skip & review later)", () => {
+  it("parks a PENDING request, keeps it an OPEN request, and round-trips back", async () => {
+    const id = await makeCustomer("snooze");
+    const request = await prisma.accessRequest.findFirst({
+      where: { customerId: id, status: "PENDING" },
+      select: { id: true },
+    });
+    expect(request).not.toBeNull();
+
+    expect(await snoozeRequest(request!.id)).toEqual({ ok: true });
+    // Snoozing twice is a no-op (only PENDING can snooze).
+    expect(await snoozeRequest(request!.id)).toEqual({ ok: false, error: "NOT_FOUND" });
+    // The customer's own status is untouched (still pending review for them).
+    const customer = await prisma.customer.findUnique({ where: { id }, select: { status: true } });
+    expect(customer?.status).toBe("PENDING");
+
+    // A repeat sign-up while snoozed does NOT open a duplicate request.
+    const dupe = await requestAccess(
+      {
+        businessName: "Snooze Traders",
+        contactName: "S Test",
+        phone: (await prisma.customer.findUnique({ where: { id }, select: { phone: true } }))!.phone,
+        password: "password1234",
+        city: "Jaipur",
+      },
+      "t",
+      "203.0.113.44",
+    );
+    expect(dupe.ok).toBe(true);
+    if (dupe.ok) expect(dupe.duplicate).toBe(true);
+    expect(
+      await prisma.accessRequest.count({ where: { customerId: id } }),
+    ).toBe(1);
+
+    // Back to the queue.
+    expect(await unsnoozeRequest(request!.id)).toEqual({ ok: true });
+    const row = await prisma.accessRequest.findUnique({
+      where: { id: request!.id },
+      select: { status: true },
+    });
+    expect(row?.status).toBe("PENDING");
+  });
+
+  it("approve resolves a SNOOZED request too (no orphaned open rows)", async () => {
+    const id = await makeCustomer("snooze-approve");
+    const request = await prisma.accessRequest.findFirst({
+      where: { customerId: id, status: "PENDING" },
+      select: { id: true },
+    });
+    await snoozeRequest(request!.id);
+
+    await approveRequest(id, { expiresInDays: 30, grantedBy: ADMIN });
+    const row = await prisma.accessRequest.findUnique({
+      where: { id: request!.id },
+      select: { status: true },
+    });
+    expect(row?.status).toBe("APPROVED");
   });
 });

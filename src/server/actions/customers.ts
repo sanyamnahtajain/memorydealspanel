@@ -81,7 +81,7 @@ export interface GrantHistoryItem {
 
 export interface RequestHistoryItem {
   id: string;
-  status: "PENDING" | "APPROVED" | "REJECTED";
+  status: "PENDING" | "SNOOZED" | "APPROVED" | "REJECTED";
   reason: string | null;
   createdAt: string;
   decidedAt: string | null;

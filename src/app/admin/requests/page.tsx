@@ -68,7 +68,25 @@ export default async function AdminRequestsPage({
     status: { in: ["APPROVED", "REJECTED"] },
   };
 
-  const [pendingRows, decidedRows, decidedTotal] = await Promise.all([
+  const [pendingRows, snoozedRows, decidedRows, decidedTotal] = await Promise.all([
+    prisma.accessRequest.findMany({
+      where: { status: "SNOOZED" },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        customerId: true,
+        createdAt: true,
+        customer: {
+          select: {
+            businessName: true,
+            contactName: true,
+            phone: true,
+            gstNumber: true,
+            city: true,
+          },
+        },
+      },
+    }),
     prisma.accessRequest.findMany({
       where: { status: "PENDING" },
       orderBy: { createdAt: "asc" },
@@ -125,6 +143,17 @@ export default async function AdminRequestsPage({
     createdAt: row.createdAt.toISOString(),
   }));
 
+  const snoozed: PendingRequest[] = snoozedRows.map((row) => ({
+    id: row.id,
+    customerId: row.customerId,
+    businessName: row.customer.businessName,
+    contactName: row.customer.contactName,
+    phone: row.customer.phone,
+    gstNumber: row.customer.gstNumber ?? null,
+    city: row.customer.city ?? null,
+    createdAt: row.createdAt.toISOString(),
+  }));
+
   const decided: DecidedRequest[] = decidedRows.map((row) => ({
     id: row.id,
     businessName: row.customer.businessName,
@@ -157,6 +186,7 @@ export default async function AdminRequestsPage({
         />
         <RequestsTabs
           pending={pending}
+          snoozed={snoozed}
           decided={decided}
           decidedPage={decidedPage}
           decidedPageCount={decidedPageCount}

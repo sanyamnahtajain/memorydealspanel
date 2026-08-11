@@ -16,6 +16,8 @@ import {
   requestAccess as requestAccessService,
   revokeGrant,
   type RequestAccessResult,
+  snoozeRequest,
+  unsnoozeRequest,
 } from "@/server/services/access";
 import {
   bulkApprove,
@@ -503,4 +505,55 @@ export async function requestAccessViaGoogle(input: {
       error: "Could not submit your request. Please try again.",
     };
   }
+}
+
+const snoozeSchema = z.object({ requestId: objectIdSchema });
+
+/**
+ * Skip a request for now (T: review later): parks it in the "Later" tab.
+ * Same permission rung as approve/reject — it's a queue-management decision.
+ */
+export async function snoozeAccessAction(
+  input: z.input<typeof snoozeSchema>,
+): Promise<ActionResult<{ requestId: string }>> {
+  return guarded<{ requestId: string }>(async () => {
+    const viewer = await resolveViewer();
+    assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.CUSTOMERS_APPROVE);
+    const { requestId } = snoozeSchema.parse(input);
+    const res = await snoozeRequest(requestId);
+    if (!res.ok) return { ok: false, error: "This request was already handled." };
+    await writeAudit({
+      actorType: ACTOR,
+      actorId: viewer.adminId,
+      action: "access.snooze",
+      entity: "AccessRequest",
+      entityId: requestId,
+    });
+    revalidate();
+    return { ok: true, requestId };
+  });
+}
+
+/** Move a skipped request back into the pending queue. */
+export async function unsnoozeAccessAction(
+  input: z.input<typeof snoozeSchema>,
+): Promise<ActionResult<{ requestId: string }>> {
+  return guarded<{ requestId: string }>(async () => {
+    const viewer = await resolveViewer();
+    assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.CUSTOMERS_APPROVE);
+    const { requestId } = snoozeSchema.parse(input);
+    const res = await unsnoozeRequest(requestId);
+    if (!res.ok) return { ok: false, error: "This request was already handled." };
+    await writeAudit({
+      actorType: ACTOR,
+      actorId: viewer.adminId,
+      action: "access.unsnooze",
+      entity: "AccessRequest",
+      entityId: requestId,
+    });
+    revalidate();
+    return { ok: true, requestId };
+  });
 }

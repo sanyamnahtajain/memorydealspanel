@@ -4,6 +4,11 @@ import * as React from "react";
 import { MapPinIcon, PhoneIcon, ReceiptIcon, UserIcon } from "lucide-react";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { Undo2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { unsnoozeAccessAction } from "@/server/actions/access";
 import { EmptyState, StatusChip, Pager } from "@/components/common";
 import {
   ApprovalSwipeDeck,
@@ -30,6 +35,8 @@ export interface DecidedRequest {
 
 export interface RequestsTabsProps {
   pending: PendingRequest[];
+  /** Skipped requests parked for later review (T: snooze). */
+  snoozed: PendingRequest[];
   decided: DecidedRequest[];
   /** 1-based current page of the decided history. */
   decidedPage: number;
@@ -57,6 +64,7 @@ const dateFormatter = new Intl.DateTimeFormat("en-IN", {
  */
 export function RequestsTabs({
   pending,
+  snoozed,
   decided,
   decidedPage,
   decidedPageCount,
@@ -78,11 +86,23 @@ export function RequestsTabs({
             </span>
           )}
         </TabsTrigger>
+        <TabsTrigger value="later">
+          Later
+          {snoozed.length > 0 && (
+            <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-[11px] leading-none font-semibold tabular-nums text-muted-foreground">
+              {snoozed.length}
+            </span>
+          )}
+        </TabsTrigger>
         <TabsTrigger value="decided">Decided</TabsTrigger>
       </TabsList>
 
       <TabsContent value="pending" className="mt-6">
         <ApprovalSwipeDeck requests={pending} />
+      </TabsContent>
+
+      <TabsContent value="later" className="mt-6">
+        <SnoozedList requests={snoozed} />
       </TabsContent>
 
       <TabsContent value="decided" className="mt-6 space-y-4">
@@ -174,5 +194,73 @@ function DecidedList({ requests }: { requests: DecidedRequest[] }) {
         ))}
       </ul>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Later (snoozed) list                                                */
+/* ------------------------------------------------------------------ */
+
+function SnoozedList({ requests }: { requests: PendingRequest[] }) {
+  const router = useRouter();
+  const [pendingId, setPendingId] = React.useState<string | null>(null);
+
+  if (requests.length === 0) {
+    return (
+      <p className="rounded-xl border border-border bg-muted/30 px-4 py-6 text-center text-sm text-muted-foreground">
+        Nothing parked for later — skip a request from the queue and it lands
+        here to review whenever you&apos;re ready.
+      </p>
+    );
+  }
+
+  async function moveBack(request: PendingRequest) {
+    setPendingId(request.id);
+    try {
+      const res = await unsnoozeAccessAction({ requestId: request.id });
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success(`${request.businessName} is back in the queue.`);
+      router.refresh();
+    } finally {
+      setPendingId(null);
+    }
+  }
+
+  return (
+    <ul className="flex flex-col gap-2">
+      {requests.map((request) => (
+        <li
+          key={request.id}
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-3.5"
+        >
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-foreground">
+              {request.businessName}
+            </p>
+            <p className="truncate text-xs text-muted-foreground">
+              {request.contactName} · {request.phone}
+              {request.city ? ` · ${request.city}` : ""}
+              {request.gstNumber ? ` · GST ${request.gstNumber}` : ""}
+            </p>
+            <p className="mt-0.5 text-[0.7rem] text-muted-foreground">
+              Requested {dateFormatter.format(new Date(request.createdAt))}
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={pendingId === request.id}
+            onClick={() => void moveBack(request)}
+            className="shrink-0"
+          >
+            <Undo2 aria-hidden className="size-3.5" />
+            Move back to queue
+          </Button>
+        </li>
+      ))}
+    </ul>
   );
 }

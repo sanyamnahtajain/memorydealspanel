@@ -32,6 +32,9 @@ enum CustomerStatus {
 
 enum RequestStatus {
   PENDING
+  // Skipped for now — parked in the "Later" tab, out of the pending queue
+  // and its badge, still counted as an OPEN request everywhere else.
+  SNOOZED
   APPROVED
   REJECTED
 }

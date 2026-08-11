@@ -94,7 +94,9 @@ export async function requestAccess(
       };
     }
     const pending = await prisma.accessRequest.findFirst({
-      where: { customerId: existing.id, status: "PENDING" },
+      // SNOOZED is still an OPEN request (just parked for later review) —
+      // without it a skipped customer could file a duplicate.
+      where: { customerId: existing.id, status: { in: ["PENDING", "SNOOZED"] } },
       select: { id: true },
     });
     if (pending) {
@@ -252,7 +254,9 @@ export async function approveRequest(
   });
 
   await prisma.accessRequest.updateMany({
-    where: { customerId, status: "PENDING" },
+    // Approving resolves the open request whether it sat in the queue or
+    // was parked in "Later" (SNOOZED).
+    where: { customerId, status: { in: ["PENDING", "SNOOZED"] } },
     data: { status: "APPROVED", decidedAt: now },
   });
 
@@ -270,7 +274,7 @@ export async function rejectRequest(
 ): Promise<Customer> {
   const now = new Date();
   await prisma.accessRequest.updateMany({
-    where: { customerId, status: "PENDING" },
+    where: { customerId, status: { in: ["PENDING", "SNOOZED"] } },
     data: { status: "REJECTED", reason: reason ?? null, decidedAt: now },
   });
   return prisma.customer.update({
@@ -495,4 +499,33 @@ export async function currentRequest(
     where: { customerId },
     orderBy: { createdAt: "desc" },
   });
+}
+
+/**
+ * Park a PENDING request in "Later" (T: skip-and-review-later). Conditional —
+ * only a request still PENDING can be snoozed, so a racing approve/reject
+ * wins cleanly. Never touches the customer row (their storefront status stays
+ * "pending review"; the skip is invisible to them).
+ */
+export async function snoozeRequest(
+  requestId: string,
+): Promise<{ ok: true } | { ok: false; error: "NOT_FOUND" }> {
+  const res = await prisma.accessRequest.updateMany({
+    where: { id: requestId, status: "PENDING" },
+    data: { status: "SNOOZED" },
+  });
+  if (res.count === 0) return { ok: false, error: "NOT_FOUND" };
+  return { ok: true };
+}
+
+/** Move a SNOOZED request back into the pending queue. */
+export async function unsnoozeRequest(
+  requestId: string,
+): Promise<{ ok: true } | { ok: false; error: "NOT_FOUND" }> {
+  const res = await prisma.accessRequest.updateMany({
+    where: { id: requestId, status: "SNOOZED" },
+    data: { status: "PENDING" },
+  });
+  if (res.count === 0) return { ok: false, error: "NOT_FOUND" };
+  return { ok: true };
 }
