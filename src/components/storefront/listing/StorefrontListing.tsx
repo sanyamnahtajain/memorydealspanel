@@ -125,11 +125,24 @@ export function StorefrontListing({
   const [page, setPage] = React.useState(initialPage);
   const [pending, setPending] = React.useState(false);
   const [exhausted, setExhausted] = React.useState(false);
-  // React's blessed reset-on-prop-change: adjust state during render when the
-  // base list identity changes (e.g. new category / new search).
-  const [baseline, setBaseline] = React.useState(initialItems);
-  if (baseline !== initialItems) {
-    setBaseline(initialItems);
+  // Reset accumulated pages ONLY when the listing identity actually changes
+  // (path or a facet-bearing param) — NEVER on array identity. A server
+  // action anywhere (e.g. quick-add revalidating the cart) refreshes the RSC
+  // payload and hands us a NEW initialItems array with the same content;
+  // resetting on identity collapsed the list back to page 1 mid-scroll (the
+  // page shrank under the viewport — the "jumped to the top, half the
+  // products gone" bug). view/sort are display-only and keep the pages.
+  const facetKey = React.useMemo(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("view");
+    params.delete("sort");
+    params.sort();
+    const qs = params.toString();
+    return qs ? `${pathname}?${qs}` : pathname;
+  }, [pathname, searchParams]);
+  const [baselineKey, setBaselineKey] = React.useState(facetKey);
+  if (baselineKey !== facetKey) {
+    setBaselineKey(facetKey);
     setAppended([]);
     setPage(initialPage);
     setExhausted(false);
@@ -162,10 +175,13 @@ export function StorefrontListing({
     writeUrl({ sort: value });
   };
 
-  const items = React.useMemo(
-    () => [...initialItems, ...appended],
-    [initialItems, appended],
-  );
+  const items = React.useMemo(() => {
+    // Refresh-safe merge: page 1 may re-render with drifted contents while
+    // pages 2+ stay appended — dedupe by product id so a product never
+    // renders twice.
+    const seen = new Set(initialItems.map((i) => i.product.id));
+    return [...initialItems, ...appended.filter((i) => !seen.has(i.product.id))];
+  }, [initialItems, appended]);
 
   const done = exhausted || !loadMore || initialItems.length < pageSize;
 

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { prisma } from "@/server/db";
 
 import { resolveViewer } from "@/server/auth/viewer";
 import { isCustomer, type CustomerViewer } from "@/server/types/viewer";
@@ -300,4 +301,29 @@ export async function setCartRequirementAction(input: {
     };
   }
   return result;
+}
+
+/**
+ * Line summary for the storefront "In cart" chips: (productId, variantId,
+ * quantity) only — NO prices. Anon/gated viewers get ok:false (chips hidden).
+ */
+export async function cartLineSummariesAction(): Promise<
+  | { ok: true; lines: { productId: string; variantId: string | null; quantity: number }[] }
+  | { ok: false }
+> {
+  const viewer = await resolveViewer();
+  if (!isCustomer(viewer)) return { ok: false };
+  const rows = await prisma.cartItem.findMany({
+    where: { customerId: viewer.customerId },
+    select: { productId: true, variantId: true, quantity: true },
+    take: 200,
+  });
+  return {
+    ok: true,
+    lines: rows.map((r) => ({
+      productId: r.productId,
+      variantId: r.variantId ?? null,
+      quantity: r.quantity,
+    })),
+  };
 }

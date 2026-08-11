@@ -250,7 +250,10 @@ export function StorefrontShell({
       </header>
 
       {/* ——— Content ——— */}
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-8 md:px-6 md:pb-12">
+      {/* Bottom padding clears the FIXED mobile tab bar (~3.5rem + safe
+          area) — the clearance used to ride the footer wrapper, but the
+          footer is desktop-only now, so main owns it. */}
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:px-6 md:pb-12">
         {children}
       </main>
 

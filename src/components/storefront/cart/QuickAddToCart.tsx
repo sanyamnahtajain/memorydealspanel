@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { minOrderableQty } from "@/lib/quantity";
 import { addToCartAction } from "@/server/actions/cart";
 import { broadcastCartCount } from "./CartBadge";
+import { setCartLineQty } from "./cart-lines-store";
 
 /**
  * QuickAddToCart — a compact, single-tap add-to-cart control for product cards.
@@ -79,6 +80,7 @@ export function QuickAddToCart({
 
       if (result.ok) {
         broadcastCartCount(result.itemCount);
+        setCartLineQty(productId, variantId, result.quantity);
         setJustAdded(true);
         if (resetRef.current) clearTimeout(resetRef.current);
         resetRef.current = setTimeout(() => setJustAdded(false), 1600);

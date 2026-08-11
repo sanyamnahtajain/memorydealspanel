@@ -14,6 +14,7 @@
  */
 
 import * as React from "react";
+import { InCartChip } from "@/components/storefront/cart/InCartChip";
 import Link from "next/link";
 import Image from "next/image";
 import { ImageOff } from "lucide-react";
@@ -116,6 +117,7 @@ function GridCard({
             className="bg-background/80 shadow-sm ring-1 ring-border/50 backdrop-blur hover:bg-background"
           />
         </div>
+        <InCartChip productId={product.id} />
         {image ? (
           <Image
             src={image.thumbUrl ?? image.url}
