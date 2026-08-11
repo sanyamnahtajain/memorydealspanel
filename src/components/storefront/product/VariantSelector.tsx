@@ -61,6 +61,9 @@ export interface VariantSelectorProps {
   optionTypes: ProductOptionType[];
   /** ACTIVE variants, gated by the DAL to the viewer's tier. */
   variants: AnyVariant[];
+  /** Google-only access gate (storefront law): when set, "Request access"
+   *  routes to Google instead of the password form. */
+  googleGateHref?: string | null;
   /** Result of `canSeePrices(viewer)` — the authoritative gate verdict. */
   showPrices: boolean;
   /** Present when the viewer is a logged-in customer; drives gated copy. */
@@ -132,6 +135,7 @@ export function VariantSelector({
   productName,
   productId,
   moq,
+  googleGateHref = null,
   packMultiple,
   optionTypes,
   variants,
@@ -321,7 +325,11 @@ export function VariantSelector({
         Enquire on WhatsApp
       </Button>
 
-      <RequestAccessSheet open={requestOpen} onOpenChange={setRequestOpen} />
+      <RequestAccessSheet
+        open={requestOpen}
+        onOpenChange={setRequestOpen}
+        googleGateHref={googleGateHref}
+      />
     </div>
   );
 }

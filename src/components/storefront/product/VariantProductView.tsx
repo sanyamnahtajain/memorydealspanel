@@ -45,6 +45,8 @@ export interface VariantProductViewProps {
   header?: React.ReactNode;
   /** Rendered after the selector (moq, description, specs). */
   footer?: React.ReactNode;
+  /** Google-only access gate — routes "Request access" to Google when set. */
+  googleGateHref?: string | null;
 }
 
 export function VariantProductView({
@@ -59,6 +61,7 @@ export function VariantProductView({
   status,
   header,
   footer,
+  googleGateHref = null,
 }: VariantProductViewProps) {
   const [selectedImages, setSelectedImages] =
     React.useState<PublicProductImage[]>(productImages);
@@ -88,6 +91,7 @@ export function VariantProductView({
         <div className="flex flex-col gap-5">
           {header}
           <VariantSelector
+            googleGateHref={googleGateHref}
             productName={productName}
             productId={productId}
             moq={moq}

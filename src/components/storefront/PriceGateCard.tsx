@@ -58,6 +58,8 @@ export interface PriceGateCardProps {
   size?: GateSize;
   /** Animate the reveal (default true). Pass false inside dense lists. */
   animate?: boolean;
+  /** Google-only gate: when set, "Request access" routes to Google. */
+  googleGateHref?: string | null;
   className?: string;
 }
 
@@ -67,6 +69,7 @@ export interface PriceGateCardProps {
  */
 export function PriceGateCard({
   product,
+  googleGateHref = null,
   canSeePrices,
   status,
   size = "md",
@@ -130,7 +133,7 @@ export function PriceGateCard({
           </span>
         </button>
       </ScaleTap>
-      <RequestAccessSheet open={open} onOpenChange={setOpen} />
+      <RequestAccessSheet open={open} onOpenChange={setOpen} googleGateHref={googleGateHref} />
     </div>
   );
 }

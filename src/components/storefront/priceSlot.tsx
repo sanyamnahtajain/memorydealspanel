@@ -1,4 +1,5 @@
 import * as React from "react";
+import { googleOAuthConfigured } from "@/server/services/google-auth";
 
 import { PriceGateCard } from "@/components/storefront/PriceGateCard";
 import { GstPriceLabel } from "@/components/storefront/GstPriceLabel";
@@ -57,6 +58,9 @@ export function renderPriceSlot(
       <PriceGateCard
         product={product}
         canSeePrices={seePrices}
+        googleGateHref={
+          googleOAuthConfigured() ? "/auth/google/start?returnTo=/account" : null
+        }
         status={isCustomer(viewer) ? viewer.status : undefined}
         size={size}
         // Dense listing grids (size "sm") skip the count-up for smoother scroll;

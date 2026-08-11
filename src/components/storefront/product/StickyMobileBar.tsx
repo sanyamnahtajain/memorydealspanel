@@ -36,6 +36,8 @@ export interface StickyMobileBarProps {
   priceLabel?: string;
   /** Present when the viewer is a logged-in customer; drives gated copy. */
   status?: CustomerStatus;
+  /** Google-only gate: when set, "Request access" routes to Google. */
+  googleGateHref?: string | null;
 }
 
 /** Short status word for a gated logged-in customer (no request form). */
@@ -60,6 +62,7 @@ export function StickyMobileBar({
   canSeePrices,
   priceLabel,
   status,
+  googleGateHref = null,
 }: StickyMobileBarProps) {
   const [open, setOpen] = React.useState(false);
   const showPrice = canSeePrices && priceLabel !== undefined;
@@ -134,7 +137,7 @@ export function StickyMobileBar({
         </div>
       </div>
 
-      <RequestAccessSheet open={open} onOpenChange={setOpen} />
+      <RequestAccessSheet open={open} onOpenChange={setOpen} googleGateHref={googleGateHref} />
     </>
   );
 }

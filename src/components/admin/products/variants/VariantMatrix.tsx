@@ -143,17 +143,17 @@ export function VariantMatrix({
         </p>
       </div>
 
-      <div className="rounded-lg border border-border">
-        <Table>
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <Table className="min-w-[64rem]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-10 text-center">Def.</TableHead>
               {axisNames.map((name) => (
                 <TableHead key={name}>{name}</TableHead>
               ))}
-              <TableHead className="min-w-[9rem]">SKU</TableHead>
-              <TableHead className="w-28">Price</TableHead>
-              <TableHead className="w-28">MRP</TableHead>
+              <TableHead className="min-w-[11rem]">SKU</TableHead>
+              <TableHead className="min-w-[7rem]">Price</TableHead>
+              <TableHead className="min-w-[7rem]">MRP</TableHead>
               <TableHead className="w-20">MOQ</TableHead>
               <TableHead className="w-20">Pack</TableHead>
               <TableHead className="w-20">Max</TableHead>
@@ -386,7 +386,7 @@ function RupeeCell({
         disabled={disabled}
         onChange={(e) => commit(e.target.value)}
         placeholder="0.00"
-        className="h-8 pl-5 font-tabular"
+        className="h-8 min-w-24 pl-5 font-tabular"
       />
     </div>
   );

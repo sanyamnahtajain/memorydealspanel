@@ -330,6 +330,9 @@ export default async function ProductDetailPage({ params }: PageParams) {
 
         {showVariantHero ? (
           <VariantProductView
+            googleGateHref={
+              googleOAuthConfigured() ? "/auth/google/start?returnTo=/account" : null
+            }
             productName={product.name}
             productImages={product.images}
             productId={product.id}
@@ -434,6 +437,9 @@ export default async function ProductDetailPage({ params }: PageParams) {
       </div>
 
       <StickyMobileBar
+        googleGateHref={
+          googleOAuthConfigured() ? "/auth/google/start?returnTo=/account" : null
+        }
         enquireHref={enquireHref}
         canSeePrices={showPrices}
         priceLabel={stickyPriceLabel}
