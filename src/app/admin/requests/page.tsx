@@ -70,7 +70,7 @@ export default async function AdminRequestsPage({
 
   const [pendingRows, snoozedRows, decidedRows, decidedTotal] = await Promise.all([
     prisma.accessRequest.findMany({
-      where: { status: "SNOOZED" },
+      where: { status: "PENDING" },
       orderBy: { createdAt: "asc" },
       select: {
         id: true,
@@ -88,7 +88,7 @@ export default async function AdminRequestsPage({
       },
     }),
     prisma.accessRequest.findMany({
-      where: { status: "PENDING" },
+      where: { status: "SNOOZED" },
       orderBy: { createdAt: "asc" },
       select: {
         id: true,
