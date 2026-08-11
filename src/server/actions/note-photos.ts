@@ -6,7 +6,7 @@ import { resolveViewer } from "@/server/auth/viewer";
 import { isCustomer } from "@/server/types/viewer";
 import { createUploadTarget, publicUrl, type UploadTarget } from "@/server/storage/r2";
 import { headers } from "next/headers";
-import { requestAccessLimiter } from "@/server/security/ratelimit";
+import { uploadLimiter } from "@/server/security/ratelimit";
 import { ATTACHMENT_MAX_BYTES } from "@/lib/requirement-notes";
 
 /**
@@ -48,7 +48,7 @@ export async function presignNotePhotoAction(input: {
   const h = await headers();
   const ip =
     h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? h.get("x-real-ip") ?? "unknown";
-  const limited = await requestAccessLimiter.limit(`note-photo:${viewer.customerId}:${ip}`);
+  const limited = await uploadLimiter.limit(`note-photo:${viewer.customerId}:${ip}`);
   if (!limited.ok) {
     return { ok: false, error: "Too many uploads — please wait a minute." };
   }

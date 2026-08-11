@@ -390,3 +390,27 @@ describe("snoozeRequest / unsnoozeRequest (skip & review later)", () => {
     expect(row?.status).toBe("APPROVED");
   });
 });
+
+describe("request-access rate limiting (CGNAT-safe)", () => {
+  it("distinct customers behind ONE shared IP are not blocked by each other", async () => {
+    const sharedIp = "203.0.113.99";
+    // 4 different phones from the same IP — under the old per-IP 3/hour
+    // budget the 4th stranger was refused; identity keying fixes that.
+    for (let i = 0; i < 4; i++) {
+      const phone = `+9198${String((Date.now() + i * 7919) % 1_00_00_00_00).padStart(8, "0")}`;
+      const res = await requestAccess(
+        {
+          businessName: `CGNAT Biz ${i}`,
+          contactName: `C ${i}`,
+          phone,
+          password: "password1234",
+          city: "Delhi",
+        },
+        "t",
+        sharedIp,
+      );
+      expect(res.ok, `stranger ${i} behind the shared IP should pass`).toBe(true);
+      if (res.ok) created.push(res.customerId);
+    }
+  });
+});

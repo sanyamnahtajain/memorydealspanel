@@ -4,7 +4,10 @@ import { hashPassword } from "@/server/auth/password";
 import { revokeAllForCustomer } from "@/server/auth/session";
 import { prisma } from "@/server/db";
 import { sendPushToAdmin } from "@/server/notify/push";
-import { requestAccessLimiter } from "@/server/security/ratelimit";
+import {
+  requestAccessLimiter,
+  requestAccessFloodLimiter,
+} from "@/server/security/ratelimit";
 import { verifyTurnstile } from "@/server/security/turnstile";
 
 /**
@@ -71,8 +74,19 @@ export async function requestAccess(
     }
   }
 
-  const limited = await requestAccessLimiter.limit(ip || "unknown");
-  if (!limited.ok) {
+  // Two-tier abuse wall (fixes the false "Too many requests" for real
+  // customers): the tight budget is keyed on the IDENTITY (ip + phone) so a
+  // person retrying their own form never collides with strangers, and the
+  // per-IP wall is wide because carrier CGNAT shares one IP across thousands
+  // of legitimate users. The key NEVER collapses to a shared constant — a
+  // missing IP falls back to the phone digits alone.
+  const phoneDigits = input.phone.replace(/\D/g, "").slice(-10);
+  const identityKey = `${ip || "na"}:${phoneDigits || "na"}`;
+  const [identity, flood] = await Promise.all([
+    requestAccessLimiter.limit(identityKey),
+    ip ? requestAccessFloodLimiter.limit(ip) : Promise.resolve({ ok: true as const }),
+  ]);
+  if (!identity.ok || !flood.ok) {
     return {
       ok: false,
       error: "Too many requests. Please try again in a little while.",

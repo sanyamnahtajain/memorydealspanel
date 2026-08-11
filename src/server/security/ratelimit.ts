@@ -160,10 +160,30 @@ export const loginLimiter: Limiter = createLimiter(
   "login",
 );
 
-/** Access requests: 3 per hour per key. */
+/**
+ * Access requests, PER IDENTITY (ip+phone key): enough headroom to fix form
+ * typos, still blocks scripted spam from one identity.
+ */
 export const requestAccessLimiter: Limiter = createLimiter(
-  { points: 3, window: 3600 },
+  { points: 5, window: 900 },
   "request-access",
+);
+
+/**
+ * Access requests, PER IP — the wide flood wall. Deliberately generous:
+ * Indian carrier CGNAT puts THOUSANDS of legitimate shops behind one IP, so
+ * a tight per-IP budget locks out strangers (the bug behind "Too many
+ * requests" for a first-time visitor). Volume abuse from one IP still trips.
+ */
+export const requestAccessFloodLimiter: Limiter = createLimiter(
+  { points: 30, window: 3600 },
+  "request-access-ip",
+);
+
+/** Requirement-photo presigns: per customer — must cover a 6-photo batch. */
+export const uploadLimiter: Limiter = createLimiter(
+  { points: 30, window: 3600 },
+  "note-upload",
 );
 
 /** General API traffic: 60 per minute per key. */
