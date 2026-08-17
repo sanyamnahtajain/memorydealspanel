@@ -105,4 +105,21 @@ describe("renderOrderPdf", () => {
     const without = await renderOrderPdf(DATA);
     expect(pdfText(without)).not.toContain("Includes GST");
   });
+
+  it("renders the same bill on an A5 sheet (smaller paper) with all content", async () => {
+    const bytes = await renderOrderPdf(DATA, "A5");
+    expect(bytes[0]).toBe(0x25); // %PDF
+    const text = pdfText(bytes);
+    expect(text).toContain("THE MEMORY DEALS");
+    expect(text).toContain("Khan Communication");
+    expect(text).toContain("Seven Hundred Fifty Only");
+  });
+
+  it("defaults to A4 (unchanged) when no size is given", async () => {
+    const a4 = await renderOrderPdf(DATA);
+    const explicit = await renderOrderPdf(DATA, "A4");
+    // Same page geometry: both start with the %PDF header and render the total.
+    expect(a4[0]).toBe(0x25);
+    expect(pdfText(explicit)).toContain("Seven Hundred Fifty Only");
+  });
 });

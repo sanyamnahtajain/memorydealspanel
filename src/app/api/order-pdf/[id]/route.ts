@@ -1,19 +1,22 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 
 import { resolveViewer } from "@/server/auth/viewer";
 import { isAdmin } from "@/server/types/viewer";
 import { buildOrderPdf } from "@/server/services/order-pdf";
+import { parseOrderPdfSize } from "@/lib/order-pdf-size";
 
 /**
  * GET /api/order-pdf/[id] — download a received order as an estimate-format
  * PDF. ADMIN-ONLY: order snapshots carry wholesale prices, so a non-admin is
  * refused before any data is read.
+ *
+ * `?size=A4|A5` picks the sheet (owner request); anything else falls back to A4.
  */
 
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  _request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
   const viewer = await resolveViewer();
@@ -22,8 +25,9 @@ export async function GET(
   }
 
   const { id } = await params;
+  const size = parseOrderPdfSize(request.nextUrl.searchParams.get("size"));
   try {
-    const result = await buildOrderPdf(id);
+    const result = await buildOrderPdf(id, size);
     if (!result) {
       return NextResponse.json({ ok: false, error: "Order not found." }, { status: 404 });
     }
@@ -31,7 +35,7 @@ export async function GET(
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="order-${result.orderNumber}.pdf"`,
+        "Content-Disposition": `attachment; filename="order-${result.orderNumber}-${size}.pdf"`,
         "Cache-Control": "no-store",
       },
     });

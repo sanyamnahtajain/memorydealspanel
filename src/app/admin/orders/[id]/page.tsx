@@ -10,6 +10,7 @@ import { objectIdSchema } from "@/lib/schemas/shared";
 import { AdminShell } from "@/components/shell/AdminShell";
 import { PageHeader } from "@/components/common";
 import { OrderDetailPanel } from "@/components/admin/orders/OrderDetailPanel";
+import { OrderPdfDownloadButton } from "@/components/admin/orders/OrderPdfDownloadButton";
 import type { OrderDetailDTO } from "@/server/actions/admin-orders";
 
 export const metadata: Metadata = {
@@ -130,15 +131,7 @@ export default async function AdminOrderDetailPage({
           title={`Order #${order.orderNumber}`}
           backHref="/admin/orders"
           backLabel="Orders"
-          actions={
-            <a
-              href={`/api/order-pdf/${order.id}`}
-              download
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-input bg-background px-3.5 text-sm font-medium shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground"
-            >
-              Download PDF
-            </a>
-          }
+          actions={<OrderPdfDownloadButton orderId={order.id} />}
         />
         <OrderDetailPanel order={order} />
       </div>

@@ -5,6 +5,7 @@ import { APP_NAME, CONTACT } from "@/lib/constants";
 import type { OrderItemSnapshot } from "@/server/services/orders";
 import { attachmentUrlPrefix } from "@/lib/requirement-notes";
 import { publicBaseOrEmpty } from "@/server/storage/r2";
+import { DEFAULT_ORDER_PDF_SIZE, type OrderPdfSize } from "@/lib/order-pdf-size";
 
 /**
  * Order PDF (owner request) — a received order rendered in the shop's
@@ -112,8 +113,25 @@ export interface OrderPdfData {
   requirements?: OrderPdfRequirement[];
 }
 
-const A4 = { w: 595.28, h: 841.89 } as const;
-const M = 46; // outer margin
+/**
+ * Sheet sizes the download offers (owner request). Dimensions in PDF points.
+ * A5 (half of A4) tightens the outer margin and the fixed money columns so the
+ * same estimate layout stays balanced on the smaller sheet — the description
+ * column takes the remaining width, and rows simply paginate sooner. A4 keeps
+ * its original numbers, so A4 bills render exactly as before.
+ */
+const PAPER: Record<
+  OrderPdfSize,
+  {
+    w: number;
+    h: number;
+    margin: number;
+    cols: { sno: number; qty: number; unit: number; rate: number; amount: number };
+  }
+> = {
+  A4: { w: 595.28, h: 841.89, margin: 46, cols: { sno: 34, qty: 56, unit: 40, rate: 70, amount: 84 } },
+  A5: { w: 419.53, h: 595.28, margin: 32, cols: { sno: 28, qty: 46, unit: 30, rate: 58, amount: 72 } },
+};
 const INK = rgb(0.08, 0.08, 0.08);
 const MUTED = rgb(0.4, 0.4, 0.4);
 
@@ -134,16 +152,21 @@ function ddmmyyyy(d: Date): string {
 }
 
 /** Render the order in the estimate-bill layout. PURE (no DB). */
-export async function renderOrderPdf(data: OrderPdfData): Promise<Uint8Array> {
+export async function renderOrderPdf(
+  data: OrderPdfData,
+  paperSize: OrderPdfSize = DEFAULT_ORDER_PDF_SIZE,
+): Promise<Uint8Array> {
+  const dim = PAPER[paperSize];
+  const M = dim.margin; // outer margin
   const doc = await PDFDocument.create();
   const helv = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
 
   const pages: PDFPage[] = [];
-  let page = doc.addPage([A4.w, A4.h]);
+  let page = doc.addPage([dim.w, dim.h]);
   pages.push(page);
-  const W = A4.w - M * 2;
-  let y = A4.h - M;
+  const W = dim.w - M * 2;
+  let y = dim.h - M;
 
   const text = (
     t: string, x: number, size: number, font: PDFFont,
@@ -156,16 +179,18 @@ export async function renderOrderPdf(data: OrderPdfData): Promise<Uint8Array> {
     page.drawText(s, { x: tx, y, size, font, color });
   };
   const hline = (yy: number) =>
-    page.drawLine({ start: { x: M, y: yy }, end: { x: A4.w - M, y: yy }, thickness: 0.8, color: INK });
+    page.drawLine({ start: { x: M, y: yy }, end: { x: dim.w - M, y: yy }, thickness: 0.8, color: INK });
 
   // Columns of the goods table (mirrors the bill: S.No wide description, Qty, Unit, Rate, Amount).
+  // Fixed widths come from the paper size; the description takes the remainder.
+  const { sno, qty, unit, rate, amount } = dim.cols;
   const cols = [
-    { label: "S.No", w: 34, align: "left" as const },
-    { label: "Description of Goods", w: W - 34 - 56 - 40 - 70 - 84, align: "left" as const },
-    { label: "Qty.", w: 56, align: "right" as const },
-    { label: "Unit", w: 40, align: "center" as const },
-    { label: "Rate", w: 70, align: "right" as const },
-    { label: "Amount (Rs.)", w: 84, align: "right" as const },
+    { label: "S.No", w: sno, align: "left" as const },
+    { label: "Description of Goods", w: W - sno - qty - unit - rate - amount, align: "left" as const },
+    { label: "Qty.", w: qty, align: "right" as const },
+    { label: "Unit", w: unit, align: "center" as const },
+    { label: "Rate", w: rate, align: "right" as const },
+    { label: "Amount (Rs.)", w: amount, align: "right" as const },
   ];
 
   const tableHeader = () => {
@@ -180,7 +205,7 @@ export async function renderOrderPdf(data: OrderPdfData): Promise<Uint8Array> {
   };
 
   const masthead = (first: boolean) => {
-    y = A4.h - M;
+    y = dim.h - M;
     if (first) {
       text("ESTIMATE", M, 9, helv, MUTED, "center", W);
       y -= 16;
@@ -216,7 +241,7 @@ export async function renderOrderPdf(data: OrderPdfData): Promise<Uint8Array> {
 
   data.lines.forEach((line, i) => {
     if (y < M + 96) {
-      page = doc.addPage([A4.w, A4.h]);
+      page = doc.addPage([dim.w, dim.h]);
       pages.push(page);
       masthead(false);
     }
@@ -244,7 +269,7 @@ export async function renderOrderPdf(data: OrderPdfData): Promise<Uint8Array> {
     if (line.breakdown && line.breakdown.length > 0) {
       for (const b of line.breakdown) {
         if (y < M + 96) {
-          page = doc.addPage([A4.w, A4.h]);
+          page = doc.addPage([dim.w, dim.h]);
           pages.push(page);
           masthead(false);
         }
@@ -257,9 +282,9 @@ export async function renderOrderPdf(data: OrderPdfData): Promise<Uint8Array> {
 
   // Totals block (kept on one page).
   if (y < M + 96) {
-    page = doc.addPage([A4.w, A4.h]);
+    page = doc.addPage([dim.w, dim.h]);
     pages.push(page);
-    y = A4.h - M;
+    y = dim.h - M;
   }
   y -= 4;
   hline(y);
@@ -315,9 +340,9 @@ export async function renderOrderPdf(data: OrderPdfData): Promise<Uint8Array> {
       return out;
     };
 
-    page = doc.addPage([A4.w, A4.h]);
+    page = doc.addPage([dim.w, dim.h]);
     pages.push(page);
-    y = A4.h - M;
+    y = dim.h - M;
     text("CUSTOMER REQUIREMENTS", M, 12, bold, INK, "center", W);
     y -= 10;
     hline(y);
@@ -325,18 +350,18 @@ export async function renderOrderPdf(data: OrderPdfData): Promise<Uint8Array> {
 
     for (const req of requirements) {
       if (y < M + 60) {
-        page = doc.addPage([A4.w, A4.h]);
+        page = doc.addPage([dim.w, dim.h]);
         pages.push(page);
-        y = A4.h - M;
+        y = dim.h - M;
       }
       text(req.name, M, 10.5, bold);
       y -= 15;
       if (req.note) {
         for (const lineText of wrap(req.note, 9.5, W - 8)) {
           if (y < M + 30) {
-            page = doc.addPage([A4.w, A4.h]);
+            page = doc.addPage([dim.w, dim.h]);
             pages.push(page);
-            y = A4.h - M;
+            y = dim.h - M;
           }
           text(lineText, M + 4, 9.5, helv);
           y -= 12;
@@ -365,9 +390,9 @@ export async function renderOrderPdf(data: OrderPdfData): Promise<Uint8Array> {
         const drawW = image.width * scale;
         const drawH = image.height * scale;
         if (y - drawH < M + 20) {
-          page = doc.addPage([A4.w, A4.h]);
+          page = doc.addPage([dim.w, dim.h]);
           pages.push(page);
-          y = A4.h - M;
+          y = dim.h - M;
         }
         page.drawImage(image, { x: M, y: y - drawH, width: drawW, height: drawH });
         y -= drawH + 14;
@@ -381,7 +406,7 @@ export async function renderOrderPdf(data: OrderPdfData): Promise<Uint8Array> {
     pages.forEach((p, i) => {
       const label = `Page ${i + 1} of ${pages.length}`;
       p.drawText(label, {
-        x: A4.w - M - helv.widthOfTextAtSize(label, 8),
+        x: dim.w - M - helv.widthOfTextAtSize(label, 8),
         y: M - 16, size: 8, font: helv, color: MUTED,
       });
     });
@@ -395,7 +420,10 @@ export async function renderOrderPdf(data: OrderPdfData): Promise<Uint8Array> {
 /* ------------------------------------------------------------------ */
 
 /** Load an order + customer and render the estimate PDF. Null when not found. */
-export async function buildOrderPdf(orderId: string): Promise<{ bytes: Uint8Array; orderNumber: string } | null> {
+export async function buildOrderPdf(
+  orderId: string,
+  paperSize: OrderPdfSize = DEFAULT_ORDER_PDF_SIZE,
+): Promise<{ bytes: Uint8Array; orderNumber: string } | null> {
   const order = await prisma.order.findUnique({
     where: { id: orderId },
     include: { customer: { select: { businessName: true, contactName: true, phone: true } } },
@@ -460,6 +488,6 @@ export async function buildOrderPdf(orderId: string): Promise<{ bytes: Uint8Arra
     couponCode: order.couponCode ?? null,
     discountPaise: order.discountPaise ?? 0,
     requirements,
-  });
+  }, paperSize);
   return { bytes, orderNumber: order.orderNumber };
 }
