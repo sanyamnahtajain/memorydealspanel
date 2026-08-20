@@ -64,13 +64,50 @@ export default async function AdminRequestsPage({
       ? Math.trunc(decidedPageParam)
       : 1;
 
-  const decidedWhere: Prisma.AccessRequestWhereInput = {
-    status: { in: ["APPROVED", "REJECTED"] },
-  };
+  // Free-text search + a decided-status filter, both driven by the URL so they
+  // survive refreshes and are shareable. The search runs SERVER-SIDE across the
+  // requester's customer fields and is applied to EVERY tab — so a needle stays
+  // findable in a 100-row haystack, including in the *paginated* Decided list
+  // (a client-only filter would only ever see the current page).
+  const rawQuery = params.q;
+  const query = (Array.isArray(rawQuery) ? rawQuery[0] : (rawQuery ?? "")).trim();
+
+  const rawDs = params.ds;
+  const dsParam = (Array.isArray(rawDs) ? rawDs[0] : (rawDs ?? "")).toLowerCase();
+  const decidedStatus: "all" | "approved" | "rejected" =
+    dsParam === "approved" ? "approved" : dsParam === "rejected" ? "rejected" : "all";
+
+  const customerWhere: Prisma.CustomerWhereInput | undefined = query
+    ? {
+        OR: [
+          { businessName: { contains: query, mode: "insensitive" } },
+          { contactName: { contains: query, mode: "insensitive" } },
+          { phone: { contains: query, mode: "insensitive" } },
+          { city: { contains: query, mode: "insensitive" } },
+          { gstNumber: { contains: query, mode: "insensitive" } },
+        ],
+      }
+    : undefined;
+
+  const withSearch = (
+    where: Prisma.AccessRequestWhereInput,
+  ): Prisma.AccessRequestWhereInput =>
+    customerWhere ? { ...where, customer: customerWhere } : where;
+
+  const decidedStatuses: ("APPROVED" | "REJECTED")[] =
+    decidedStatus === "approved"
+      ? ["APPROVED"]
+      : decidedStatus === "rejected"
+        ? ["REJECTED"]
+        : ["APPROVED", "REJECTED"];
+
+  const decidedWhere: Prisma.AccessRequestWhereInput = withSearch({
+    status: { in: decidedStatuses },
+  });
 
   const [pendingRows, snoozedRows, decidedRows, decidedTotal] = await Promise.all([
     prisma.accessRequest.findMany({
-      where: { status: "PENDING" },
+      where: withSearch({ status: "PENDING" }),
       orderBy: { createdAt: "asc" },
       select: {
         id: true,
@@ -88,7 +125,7 @@ export default async function AdminRequestsPage({
       },
     }),
     prisma.accessRequest.findMany({
-      where: { status: "SNOOZED" },
+      where: withSearch({ status: "SNOOZED" }),
       orderBy: { createdAt: "asc" },
       select: {
         id: true,
@@ -168,7 +205,11 @@ export default async function AdminRequestsPage({
     createdAt: row.createdAt.toISOString(),
   }));
 
-  const pendingCount = pending.length;
+  // The sidebar badge + header describe the REAL backlog, so during an active
+  // search (which narrows `pending`) fetch the true pending count separately.
+  const pendingCount = query
+    ? await prisma.accessRequest.count({ where: { status: "PENDING" } })
+    : pending.length;
 
   return (
     <AdminShell
@@ -193,6 +234,8 @@ export default async function AdminRequestsPage({
           decidedTotal={decidedTotal}
           decidedPageSize={DECIDED_PAGE_SIZE}
           decidedPageParam={DECIDED_PAGE_PARAM}
+          query={query}
+          decidedStatus={decidedStatus}
         />
 
         {/* Recent access decisions & grants — audited under the Customer

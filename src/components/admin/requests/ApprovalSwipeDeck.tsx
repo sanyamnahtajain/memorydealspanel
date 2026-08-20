@@ -17,7 +17,6 @@ import {
   MapPinIcon,
   PhoneIcon,
   ReceiptIcon,
-  Search as SearchIcon,
   UserIcon,
   XIcon,
   Clock as ClockIcon,
@@ -70,6 +69,9 @@ export interface PendingRequest {
 
 export interface ApprovalSwipeDeckProps {
   requests: PendingRequest[];
+  /** True when a page-level search is active — changes the empty-state wording
+   * from "all caught up" to "no matches" (the list was narrowed by a query). */
+  searching?: boolean;
 }
 
 type Decision = "approve" | "reject" | "later";
@@ -102,7 +104,7 @@ function defaultExpiry(): ExpiryValue {
  * lets the admin re-queue the request before the decision "settles" (the
  * server mutation is deferred until the toast is dismissed or expires).
  */
-export function ApprovalSwipeDeck({ requests }: ApprovalSwipeDeckProps) {
+export function ApprovalSwipeDeck({ requests, searching = false }: ApprovalSwipeDeckProps) {
   const isMobile = useIsMobile();
   const [queue, setQueue] = React.useState<PendingRequest[]>(requests);
 
@@ -261,25 +263,14 @@ export function ApprovalSwipeDeck({ requests }: ApprovalSwipeDeckProps) {
     [commitSnooze, scheduleDecision],
   );
 
-  /* --------------------------- search + select -------------------------- */
+  /* ------------------------------ select mode --------------------------- */
   const router = useRouter();
-  const [search, setSearch] = React.useState("");
   const [selectMode, setSelectMode] = React.useState(false);
   // Selection tracks customerIds (bulk approve/reject are customer-keyed).
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [bulkApproving, setBulkApproving] = React.useState(false);
   const [bulkRejecting, setBulkRejecting] = React.useState(false);
   const [bulkBusy, setBulkBusy] = React.useState(false);
-
-  const query = search.trim().toLowerCase();
-  const filtered = React.useMemo(() => {
-    if (!query) return queue;
-    return queue.filter((r) =>
-      [r.businessName, r.contactName, r.phone, r.city ?? "", r.gstNumber ?? ""].some(
-        (field) => field.toLowerCase().includes(query),
-      ),
-    );
-  }, [queue, query]);
 
   const toggleSelect = React.useCallback((customerId: string) => {
     setSelected((prev) => {
@@ -290,20 +281,20 @@ export function ApprovalSwipeDeck({ requests }: ApprovalSwipeDeckProps) {
     });
   }, []);
 
-  const allFilteredSelected =
-    filtered.length > 0 && filtered.every((r) => selected.has(r.customerId));
+  const allSelected =
+    queue.length > 0 && queue.every((r) => selected.has(r.customerId));
 
   const toggleSelectAll = React.useCallback(() => {
     setSelected((prev) => {
       const next = new Set(prev);
-      const all = filtered.length > 0 && filtered.every((r) => next.has(r.customerId));
-      for (const r of filtered) {
+      const all = queue.length > 0 && queue.every((r) => next.has(r.customerId));
+      for (const r of queue) {
         if (all) next.delete(r.customerId);
         else next.add(r.customerId);
       }
       return next;
     });
-  }, [filtered]);
+  }, [queue]);
 
   const exitSelectMode = React.useCallback(() => {
     setSelectMode(false);
@@ -319,7 +310,7 @@ export function ApprovalSwipeDeck({ requests }: ApprovalSwipeDeckProps) {
         | { ok: false; error: string }
       >,
     ) => {
-      const ids = filtered
+      const ids = queue
         .filter((r) => selected.has(r.customerId))
         .map((r) => r.customerId);
       if (ids.length === 0) return;
@@ -344,7 +335,7 @@ export function ApprovalSwipeDeck({ requests }: ApprovalSwipeDeckProps) {
       );
       router.refresh();
     },
-    [filtered, selected, router],
+    [queue, selected, router],
   );
 
   const doBulkApprove = React.useCallback(
@@ -365,30 +356,20 @@ export function ApprovalSwipeDeck({ requests }: ApprovalSwipeDeckProps) {
     return (
       <EmptyState
         illustration="empty-box"
-        title="All caught up"
-        description="There are no pending access requests to review right now."
+        title={searching ? "No matches" : "All caught up"}
+        description={
+          searching
+            ? "No pending requests match your search."
+            : "There are no pending access requests to review right now."
+        }
       />
     );
   }
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Toolbar: filter + multi-select toggle */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-0 flex-1">
-          <SearchIcon
-            className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-            aria-hidden
-          />
-          <input
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search business, contact, phone, city or GSTIN"
-            aria-label="Search pending requests"
-            className="h-9 w-full rounded-lg border border-input bg-transparent pr-3 pl-9 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-          />
-        </div>
+      {/* Toolbar: multi-select toggle (search lives at the page level). */}
+      <div className="flex items-center justify-end">
         {selectMode ? (
           <Button variant="outline" size="sm" onClick={exitSelectMode}>
             Cancel
@@ -405,30 +386,24 @@ export function ApprovalSwipeDeck({ requests }: ApprovalSwipeDeckProps) {
         )}
       </div>
 
-      {filtered.length === 0 ? (
-        <EmptyState
-          illustration="empty-box"
-          title="No matches"
-          description="No pending requests match your search."
-        />
-      ) : selectMode ? (
+      {selectMode ? (
         <SelectableList
-          requests={filtered}
+          requests={queue}
           selected={selected}
           onToggle={toggleSelect}
-          allSelected={allFilteredSelected}
+          allSelected={allSelected}
           onToggleAll={toggleSelectAll}
         />
       ) : isMobile ? (
         <SwipeDeck
-          requests={filtered}
+          requests={queue}
           onApprove={(request) => setApproving(request)}
           onReject={handleReject}
           onSnooze={handleSnooze}
         />
       ) : (
         <RequestList
-          requests={filtered}
+          requests={queue}
           onApprove={(request) => setApproving(request)}
           onReject={handleReject}
           onSnooze={handleSnooze}

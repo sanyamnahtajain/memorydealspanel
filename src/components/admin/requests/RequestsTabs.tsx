@@ -1,12 +1,20 @@
 "use client";
 
 import * as React from "react";
-import { MapPinIcon, PhoneIcon, ReceiptIcon, UserIcon } from "lucide-react";
+import {
+  MapPinIcon,
+  PhoneIcon,
+  ReceiptIcon,
+  UserIcon,
+  Search as SearchIcon,
+  X as XIcon,
+} from "lucide-react";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Undo2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { unsnoozeAccessAction } from "@/server/actions/access";
 import { EmptyState, StatusChip, Pager } from "@/components/common";
@@ -48,6 +56,10 @@ export interface RequestsTabsProps {
   decidedPageSize: number;
   /** URL param name that drives the decided-tab pagination. */
   decidedPageParam: string;
+  /** Current server-side search query (drives all three tabs). */
+  query: string;
+  /** Approved/Rejected sub-filter for the decided history. */
+  decidedStatus: "all" | "approved" | "rejected";
 }
 
 const dateFormatter = new Intl.DateTimeFormat("en-IN", {
@@ -71,12 +83,17 @@ export function RequestsTabs({
   decidedTotal,
   decidedPageSize,
   decidedPageParam,
+  query,
+  decidedStatus,
 }: RequestsTabsProps) {
   // When the URL carries a decided-tab page (>1), the admin was browsing the
   // history — open that tab so navigation lands where they expect.
   const initialTab = decidedPage > 1 ? "decided" : "pending";
+  const searching = query.trim().length > 0;
   return (
-    <Tabs defaultValue={initialTab} className="w-full">
+    <div className="space-y-5">
+      <RequestsSearch initial={query} decidedPageParam={decidedPageParam} />
+      <Tabs defaultValue={initialTab} className="w-full">
       <TabsList>
         <TabsTrigger value="pending">
           Pending
@@ -98,15 +115,19 @@ export function RequestsTabs({
       </TabsList>
 
       <TabsContent value="pending" className="mt-6">
-        <ApprovalSwipeDeck requests={pending} />
+        <ApprovalSwipeDeck requests={pending} searching={searching} />
       </TabsContent>
 
       <TabsContent value="later" className="mt-6">
-        <SnoozedList requests={snoozed} />
+        <SnoozedList requests={snoozed} searching={searching} />
       </TabsContent>
 
       <TabsContent value="decided" className="mt-6 space-y-4">
-        <DecidedList requests={decided} />
+        <DecidedStatusFilter
+          value={decidedStatus}
+          decidedPageParam={decidedPageParam}
+        />
+        <DecidedList requests={decided} searching={searching} />
         {decidedTotal > 0 ? (
           <Pager
             page={decidedPage}
@@ -117,7 +138,155 @@ export function RequestsTabs({
           />
         ) : null}
       </TabsContent>
-    </Tabs>
+      </Tabs>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Search + decided filter (URL-driven, server-side)                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Free-text search that drives the whole page. Debounced so a fast typist
+ * doesn't fire a request per keystroke; writes `?q=` (and clears the decided
+ * page) via a REPLACE so it doesn't spam the history stack. Because this is a
+ * soft navigation, the client `Tabs` keep their active tab across searches.
+ */
+function RequestsSearch({
+  initial,
+  decidedPageParam,
+}: {
+  initial: string;
+  decidedPageParam: string;
+}) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [value, setValue] = React.useState(initial);
+  const focusedRef = React.useRef(false);
+
+  // Re-sync when the URL query changes from ELSEWHERE (back button, cleared
+  // filter) — but never while the field is focused, or the debounced round-trip
+  // would clobber characters the user is still typing. Done in an effect so the
+  // focus ref is read outside render.
+  React.useEffect(() => {
+    if (!focusedRef.current) setValue(initial);
+  }, [initial]);
+
+  const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const commit = React.useCallback(
+    (next: string) => {
+      const params = new URLSearchParams(searchParams.toString());
+      const trimmed = next.trim();
+      if (trimmed) params.set("q", trimmed);
+      else params.delete("q");
+      params.delete(decidedPageParam); // a new search resets decided paging
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [router, pathname, searchParams, decidedPageParam],
+  );
+
+  React.useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
+
+  function onChange(next: string) {
+    setValue(next);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => commit(next), 300);
+  }
+
+  function clear() {
+    if (timer.current) clearTimeout(timer.current);
+    setValue("");
+    commit("");
+  }
+
+  return (
+    <div className="relative">
+      <SearchIcon
+        className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+        aria-hidden
+      />
+      <input
+        type="search"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onFocus={() => {
+          focusedRef.current = true;
+        }}
+        onBlur={() => {
+          focusedRef.current = false;
+        }}
+        placeholder="Search all requests — business, contact, phone, city or GSTIN"
+        aria-label="Search all access requests"
+        className="h-10 w-full rounded-lg border border-input bg-transparent pr-9 pl-9 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+      />
+      {value && (
+        <button
+          type="button"
+          onClick={clear}
+          aria-label="Clear search"
+          className="absolute top-1/2 right-2 grid size-6 -translate-y-1/2 place-items-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+        >
+          <XIcon className="size-4" aria-hidden />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Approved / Rejected sub-filter chips for the decided history. */
+function DecidedStatusFilter({
+  value,
+  decidedPageParam,
+}: {
+  value: "all" | "approved" | "rejected";
+  decidedPageParam: string;
+}) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  function setStatus(next: "all" | "approved" | "rejected") {
+    const params = new URLSearchParams(searchParams.toString());
+    if (next === "all") params.delete("ds");
+    else params.set("ds", next);
+    params.delete(decidedPageParam); // changing the filter resets paging
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }
+
+  const options = [
+    { key: "all", label: "All" },
+    { key: "approved", label: "Approved" },
+    { key: "rejected", label: "Rejected" },
+  ] as const;
+
+  return (
+    <div className="flex items-center gap-2" role="group" aria-label="Filter by decision">
+      {options.map((option) => (
+        <button
+          key={option.key}
+          type="button"
+          onClick={() => setStatus(option.key)}
+          aria-pressed={value === option.key}
+          className={cn(
+            "rounded-full border px-3 py-1 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50",
+            value === option.key
+              ? "border-primary bg-primary/10 font-medium text-primary"
+              : "border-border text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+          )}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -125,13 +294,23 @@ export function RequestsTabs({
 /* Decided history                                                     */
 /* ------------------------------------------------------------------ */
 
-function DecidedList({ requests }: { requests: DecidedRequest[] }) {
+function DecidedList({
+  requests,
+  searching,
+}: {
+  requests: DecidedRequest[];
+  searching: boolean;
+}) {
   if (requests.length === 0) {
     return (
       <EmptyState
         illustration="empty-box"
-        title="No decisions yet"
-        description="Approved and rejected requests will appear here."
+        title={searching ? "No matches" : "No decisions yet"}
+        description={
+          searching
+            ? "No decided requests match your search."
+            : "Approved and rejected requests will appear here."
+        }
       />
     );
   }
@@ -201,15 +380,22 @@ function DecidedList({ requests }: { requests: DecidedRequest[] }) {
 /* Later (snoozed) list                                                */
 /* ------------------------------------------------------------------ */
 
-function SnoozedList({ requests }: { requests: PendingRequest[] }) {
+function SnoozedList({
+  requests,
+  searching,
+}: {
+  requests: PendingRequest[];
+  searching: boolean;
+}) {
   const router = useRouter();
   const [pendingId, setPendingId] = React.useState<string | null>(null);
 
   if (requests.length === 0) {
     return (
       <p className="rounded-xl border border-border bg-muted/30 px-4 py-6 text-center text-sm text-muted-foreground">
-        Nothing parked for later — skip a request from the queue and it lands
-        here to review whenever you&apos;re ready.
+        {searching
+          ? "No parked requests match your search."
+          : "Nothing parked for later — skip a request from the queue and it lands here to review whenever you're ready."}
       </p>
     );
   }
