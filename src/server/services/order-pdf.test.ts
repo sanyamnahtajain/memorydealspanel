@@ -122,4 +122,32 @@ describe("renderOrderPdf", () => {
     expect(a4[0]).toBe(0x25);
     expect(pdfText(explicit)).toContain("Seven Hundred Fifty Only");
   });
+
+  it("wraps a long product name (no truncation) and prints the customer note inline", async () => {
+    const longName =
+      "Premium Tempered Glass Full Screen Protector Oleophobic Matte Finish";
+    const withNote: OrderPdfData = {
+      ...DATA,
+      lines: [
+        {
+          name: longName,
+          qty: 5,
+          ratePaise: 5000,
+          amountPaise: 25000,
+          note: "Customer wants matte finish only, pack in bubblewrap.",
+        },
+      ],
+      totalQty: 5,
+      grandTotalPaise: 25000,
+    };
+    for (const size of ["A4", "A5"] as const) {
+      const text = pdfText(await renderOrderPdf(withNote, size));
+      // Every word of the long name survives (wrapping, never truncation)…
+      for (const word of ["Premium", "Oleophobic", "Matte", "Protector"]) {
+        expect(text).toContain(word);
+      }
+      // …and the customer note is printed on the bill itself.
+      expect(text).toContain("bubblewrap");
+    }
+  });
 });

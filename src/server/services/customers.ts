@@ -7,6 +7,7 @@ import {
   approveRequest,
   computeCustomerPriceAccess,
   extendGrant,
+  rejectRequest,
   revokeGrant,
 } from "./access";
 
@@ -428,4 +429,9 @@ export async function bulkExtend(
 /** Revoke access for many customers (revokes grants + sessions, EXPIRED). */
 export async function bulkRevoke(ids: string[]): Promise<BulkResult> {
   return runBulk(ids, (id) => revokeGrant(id));
+}
+
+/** Reject many pending customers with one (optional) shared reason. */
+export async function bulkReject(ids: string[], reason?: string): Promise<BulkResult> {
+  return runBulk(ids, (id) => rejectRequest(id, reason));
 }

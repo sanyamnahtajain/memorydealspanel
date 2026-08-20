@@ -83,6 +83,8 @@ export interface OrderPdfLine {
   amountPaise: number;
   /** Frozen per-model split, rendered as muted sub-rows for preparation. */
   breakdown?: { modelName: string; qty: number }[];
+  /** Customer requirement note, shown (wrapped, muted) under the item line. */
+  note?: string;
 }
 
 /** One customer requirement (note + photo bytes) appended after the bill. */
@@ -181,6 +183,31 @@ export async function renderOrderPdf(
   const hline = (yy: number) =>
     page.drawLine({ start: { x: M, y: yy }, end: { x: dim.w - M, y: yy }, thickness: 0.8, color: INK });
 
+  /**
+   * Word-wrap `raw` to lines that fit `width` at `size`. Long single tokens are
+   * hard-broken by character so nothing ever overflows the column. Never
+   * returns an empty array (so callers can rely on `.length >= 1`).
+   */
+  const wrapToWidth = (raw: string, font: PDFFont, size: number, width: number): string[] => {
+    const out: string[] = [];
+    let cur = "";
+    for (let word of winAnsiSafe(raw).split(/\s+/).filter(Boolean)) {
+      // A token wider than the whole column: chop it into column-wide chunks.
+      while (font.widthOfTextAtSize(word, size) > width && word.length > 1) {
+        let chunk = word;
+        while (chunk.length > 1 && font.widthOfTextAtSize(chunk, size) > width) chunk = chunk.slice(0, -1);
+        if (cur) { out.push(cur); cur = ""; }
+        out.push(chunk);
+        word = word.slice(chunk.length);
+      }
+      const candidate = cur ? `${cur} ${word}` : word;
+      if (font.widthOfTextAtSize(candidate, size) <= width) cur = candidate;
+      else { if (cur) out.push(cur); cur = word; }
+    }
+    if (cur) out.push(cur);
+    return out.length > 0 ? out : [""];
+  };
+
   // Columns of the goods table (mirrors the bill: S.No wide description, Qty, Unit, Rate, Amount).
   // Fixed widths come from the paper size; the description takes the remainder.
   const { sno, qty, unit, rate, amount } = dim.cols;
@@ -239,32 +266,59 @@ export async function renderOrderPdf(
 
   masthead(true);
 
+  const descCol = cols[1];
+  const descX = M + cols[0].w; // description column starts after S.No
+
   data.lines.forEach((line, i) => {
-    if (y < M + 96) {
+    // The FULL product name wraps to as many lines as it needs (never
+    // truncated — the whole reason the name was invisible on the A5 sheet),
+    // and the customer's requirement note prints (muted) right under it, so
+    // it's always on the bill instead of only in the photo appendix.
+    const nameLines = wrapToWidth(line.name, helv, 9, descCol.w - 8);
+    const noteLines = line.note ? wrapToWidth(line.note, helv, 8, descCol.w - 12) : [];
+    const rowHeight = nameLines.length * 12 + noteLines.length * 10;
+
+    // Page-break when this whole (possibly tall) row wouldn't clear the bottom.
+    if (y - rowHeight < M + 40) {
       page = doc.addPage([dim.w, dim.h]);
       pages.push(page);
       masthead(false);
     }
-    let x = M;
-    const cells = [
+
+    const rowTop = y;
+
+    // Fixed cells (S.No, Qty, Unit, Rate, Amount) sit on the first line.
+    const fixed: (string | null)[] = [
       `${i + 1} .`,
-      line.name,
+      null,
       line.qty.toFixed(2),
       "pcs",
       money(line.ratePaise),
       money(line.amountPaise),
     ];
-    cells.forEach((val, ci) => {
-      const c = cols[ci];
-      let v = winAnsiSafe(val);
-      // Truncate the description to its column.
-      if (ci === 1) {
-        while (v.length > 1 && helv.widthOfTextAtSize(v, 9) > c.w - 8) v = v.slice(0, -1);
+    let x = M;
+    cols.forEach((c, ci) => {
+      const val = fixed[ci];
+      if (ci !== 1 && val != null) {
+        y = rowTop;
+        text(winAnsiSafe(val), x + 4, 9, helv, INK, c.align, c.w - 8);
       }
-      text(v, x + 4, 9, helv, INK, c.align, c.w - 8);
       x += c.w;
     });
-    y -= 14;
+
+    // Description column: wrapped name lines, then wrapped note lines.
+    y = rowTop;
+    for (const nl of nameLines) {
+      text(nl, descX + 4, 9, helv, INK, "left", descCol.w - 8);
+      y -= 12;
+    }
+    for (const nl of noteLines) {
+      text(nl, descX + 8, 8, helv, MUTED, "left", descCol.w - 12);
+      y -= 10;
+    }
+
+    // Normalize to the bottom of the tallest column, plus a little breathing room.
+    y = rowTop - rowHeight - 2;
     // Model-split sub-rows (allocation lines) — staff pick per model.
     if (line.breakdown && line.breakdown.length > 0) {
       for (const b of line.breakdown) {
@@ -316,34 +370,16 @@ export async function renderOrderPdf(
     text(`Includes GST: Rs. ${money(data.totalTaxPaise)}`, M + 2, 8.5, helv, MUTED);
   }
 
-  // ---- Customer requirements (notes + photos), after the bill ----------
-  const requirements = (data.requirements ?? []).filter(
-    (r) => r.note || r.images.length > 0,
-  );
+  // ---- Customer requirement PHOTOS, after the bill ---------------------
+  // The note TEXT now prints inline under each item above, so this appendix is
+  // only for the photographed lists (items that actually carry images). The
+  // note is repeated (muted) under each photo group as a caption for staff.
+  const requirements = (data.requirements ?? []).filter((r) => r.images.length > 0);
   if (requirements.length > 0) {
-    // Word-wrap a note into lines that fit the printable width.
-    const wrap = (raw: string, size: number, width: number): string[] => {
-      const out: string[] = [];
-      for (const para of winAnsiSafe(raw).split(/\r?\n/)) {
-        let current = "";
-        for (const word of para.split(/\s+/)) {
-          const candidate = current ? `${current} ${word}` : word;
-          if (helv.widthOfTextAtSize(candidate, size) <= width) {
-            current = candidate;
-          } else {
-            if (current) out.push(current);
-            current = word;
-          }
-        }
-        out.push(current);
-      }
-      return out;
-    };
-
     page = doc.addPage([dim.w, dim.h]);
     pages.push(page);
     y = dim.h - M;
-    text("CUSTOMER REQUIREMENTS", M, 12, bold, INK, "center", W);
+    text("CUSTOMER REQUIREMENT PHOTOS", M, 12, bold, INK, "center", W);
     y -= 10;
     hline(y);
     y -= 18;
@@ -357,13 +393,13 @@ export async function renderOrderPdf(
       text(req.name, M, 10.5, bold);
       y -= 15;
       if (req.note) {
-        for (const lineText of wrap(req.note, 9.5, W - 8)) {
+        for (const lineText of wrapToWidth(req.note, helv, 9.5, W - 8)) {
           if (y < M + 30) {
             page = doc.addPage([dim.w, dim.h]);
             pages.push(page);
             y = dim.h - M;
           }
-          text(lineText, M + 4, 9.5, helv);
+          text(lineText, M + 4, 9.5, helv, MUTED);
           y -= 12;
         }
         y -= 4;
@@ -438,6 +474,10 @@ export async function buildOrderPdf(
     amountPaise: it.lineTotalPaise,
     ...(it.breakdown && it.breakdown.length > 0
       ? { breakdown: it.breakdown }
+      : {}),
+    // Customer requirement note → printed inline (muted) under the item.
+    ...(typeof it.note === "string" && it.note.trim() !== ""
+      ? { note: it.note.trim() }
       : {}),
   }));
 

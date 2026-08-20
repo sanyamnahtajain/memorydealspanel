@@ -292,15 +292,35 @@ export function useGridController<Row extends GridRow>(
     return pinnedFirst;
   }, [pinnedColumns, columnOrder, hidden]);
 
+  // Global search is deferred: typing updates the input (and `search`) at the
+  // highest priority, while the expensive re-filter runs against this deferred
+  // value — so the keystroke never blocks on a large-catalog scan (React keeps
+  // the last result on screen until the new one is ready).
+  const deferredSearch = React.useDeferredValue(search);
+
+  // Precomputed per-row search haystack: every cell's text, lowercased once and
+  // joined, keyed by row id. Rebuilt ONLY when the data or columns change — so
+  // each keystroke is a cheap `Map.get(...).includes(q)` instead of re-reading
+  // and re-lowercasing every cell across the whole catalog on every character.
+  const rowHaystack = React.useMemo(() => {
+    const map = new Map<string, string>();
+    for (const row of allRows) {
+      let text = "";
+      // "\n" separates cells so a query cannot match across a cell boundary
+      // (preserving the original per-column `.some()` semantics).
+      for (const col of columns) text += cellText(row, col).toLowerCase() + "\n";
+      map.set(row.id, text);
+    }
+    return map;
+  }, [allRows, columns]);
+
   // Filtered + sorted rows (the visible order the user navigates).
   const searchFilteredRows = React.useMemo(() => {
     const byFilter = applyFilters(allRows, filters, columns);
-    const q = search.trim().toLowerCase();
+    const q = deferredSearch.trim().toLowerCase();
     if (!q) return byFilter;
-    return byFilter.filter((row) =>
-      columns.some((col) => cellText(row, col).toLowerCase().includes(q)),
-    );
-  }, [allRows, filters, columns, search]);
+    return byFilter.filter((row) => (rowHaystack.get(row.id) ?? "").includes(q));
+  }, [allRows, filters, columns, deferredSearch, rowHaystack]);
 
   const viewRows = React.useMemo(
     () => applySort(searchFilteredRows, sort, columns),
@@ -660,9 +680,12 @@ export function useGridController<Row extends GridRow>(
   }, []);
 
   const searchMatches = React.useMemo<CellCoord[]>(() => {
-    const q = search.trim().toLowerCase();
+    const q = deferredSearch.trim().toLowerCase();
     if (!q) return [];
     const out: CellCoord[] = [];
+    // Only scans the ALREADY search-filtered rows (viewRows), so this stays
+    // small; derived from the same deferred query as the filter above so the
+    // highlighted cells always match the rows actually on screen.
     for (const row of viewRows) {
       for (const col of viewColumns) {
         if (cellText(row, col).toLowerCase().includes(q)) {
@@ -671,7 +694,7 @@ export function useGridController<Row extends GridRow>(
       }
     }
     return out;
-  }, [search, viewRows, viewColumns]);
+  }, [deferredSearch, viewRows, viewColumns]);
 
   const gotoMatch = React.useCallback(
     (index: number) => {

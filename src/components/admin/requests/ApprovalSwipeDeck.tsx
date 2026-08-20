@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import {
   AnimatePresence,
   motion,
@@ -11,9 +12,12 @@ import {
 } from "motion/react";
 import {
   CheckIcon,
+  CheckCheck as CheckCheckIcon,
+  ListChecks as ListChecksIcon,
   MapPinIcon,
   PhoneIcon,
   ReceiptIcon,
+  Search as SearchIcon,
   UserIcon,
   XIcon,
   Clock as ClockIcon,
@@ -42,6 +46,8 @@ import {
   approveAccessAction,
   rejectAccessAction,
   snoozeAccessAction,
+  bulkApproveAccessAction,
+  bulkRejectAccessAction,
 } from "@/server/actions/access";
 
 /* ------------------------------------------------------------------ */
@@ -255,6 +261,106 @@ export function ApprovalSwipeDeck({ requests }: ApprovalSwipeDeckProps) {
     [commitSnooze, scheduleDecision],
   );
 
+  /* --------------------------- search + select -------------------------- */
+  const router = useRouter();
+  const [search, setSearch] = React.useState("");
+  const [selectMode, setSelectMode] = React.useState(false);
+  // Selection tracks customerIds (bulk approve/reject are customer-keyed).
+  const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  const [bulkApproving, setBulkApproving] = React.useState(false);
+  const [bulkRejecting, setBulkRejecting] = React.useState(false);
+  const [bulkBusy, setBulkBusy] = React.useState(false);
+
+  const query = search.trim().toLowerCase();
+  const filtered = React.useMemo(() => {
+    if (!query) return queue;
+    return queue.filter((r) =>
+      [r.businessName, r.contactName, r.phone, r.city ?? "", r.gstNumber ?? ""].some(
+        (field) => field.toLowerCase().includes(query),
+      ),
+    );
+  }, [queue, query]);
+
+  const toggleSelect = React.useCallback((customerId: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(customerId)) next.delete(customerId);
+      else next.add(customerId);
+      return next;
+    });
+  }, []);
+
+  const allFilteredSelected =
+    filtered.length > 0 && filtered.every((r) => selected.has(r.customerId));
+
+  const toggleSelectAll = React.useCallback(() => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      const all = filtered.length > 0 && filtered.every((r) => next.has(r.customerId));
+      for (const r of filtered) {
+        if (all) next.delete(r.customerId);
+        else next.add(r.customerId);
+      }
+      return next;
+    });
+  }, [filtered]);
+
+  const exitSelectMode = React.useCallback(() => {
+    setSelectMode(false);
+    setSelected(new Set());
+  }, []);
+
+  /** Commit a bulk decision, then reconcile the optimistic queue with a refresh. */
+  const runBulk = React.useCallback(
+    async (
+      verb: "approve" | "reject",
+      call: (ids: string[]) => Promise<
+        | { ok: true; count: number; failed: { id: string; error: string }[] }
+        | { ok: false; error: string }
+      >,
+    ) => {
+      const ids = filtered
+        .filter((r) => selected.has(r.customerId))
+        .map((r) => r.customerId);
+      if (ids.length === 0) return;
+      setBulkBusy(true);
+      const res = await call(ids);
+      setBulkBusy(false);
+      setBulkApproving(false);
+      setBulkRejecting(false);
+      if (!res.ok) {
+        toast.error(`Couldn't ${verb} the selected requests`, { description: res.error });
+        return;
+      }
+      const failedIds = new Set(res.failed.map((f) => f.id));
+      const doneIds = new Set(ids.filter((id) => !failedIds.has(id)));
+      setQueue((prev) => prev.filter((r) => !doneIds.has(r.customerId)));
+      setSelected(new Set());
+      setSelectMode(false);
+      const past = verb === "approve" ? "Approved" : "Rejected";
+      toast.success(
+        `${past} ${res.count} request${res.count === 1 ? "" : "s"}` +
+          (res.failed.length ? ` · ${res.failed.length} failed` : ""),
+      );
+      router.refresh();
+    },
+    [filtered, selected, router],
+  );
+
+  const doBulkApprove = React.useCallback(
+    (expiry: ExpiryValue) =>
+      runBulk("approve", (ids) =>
+        bulkApproveAccessAction({ customerIds: ids, expiry: expiryValueToInput(expiry) }),
+      ),
+    [runBulk],
+  );
+
+  const doBulkReject = React.useCallback(
+    (reason: string | undefined) =>
+      runBulk("reject", (ids) => bulkRejectAccessAction({ customerIds: ids, reason })),
+    [runBulk],
+  );
+
   if (queue.length === 0) {
     return (
       <EmptyState
@@ -266,17 +372,63 @@ export function ApprovalSwipeDeck({ requests }: ApprovalSwipeDeckProps) {
   }
 
   return (
-    <>
-      {isMobile ? (
+    <div className="flex flex-col gap-4">
+      {/* Toolbar: filter + multi-select toggle */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-0 flex-1">
+          <SearchIcon
+            className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden
+          />
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search business, contact, phone, city or GSTIN"
+            aria-label="Search pending requests"
+            className="h-9 w-full rounded-lg border border-input bg-transparent pr-3 pl-9 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          />
+        </div>
+        {selectMode ? (
+          <Button variant="outline" size="sm" onClick={exitSelectMode}>
+            Cancel
+          </Button>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setSelectMode(true)}
+            aria-label="Select multiple requests to approve or reject at once"
+          >
+            <ListChecksIcon aria-hidden /> Select
+          </Button>
+        )}
+      </div>
+
+      {filtered.length === 0 ? (
+        <EmptyState
+          illustration="empty-box"
+          title="No matches"
+          description="No pending requests match your search."
+        />
+      ) : selectMode ? (
+        <SelectableList
+          requests={filtered}
+          selected={selected}
+          onToggle={toggleSelect}
+          allSelected={allFilteredSelected}
+          onToggleAll={toggleSelectAll}
+        />
+      ) : isMobile ? (
         <SwipeDeck
-          requests={queue}
+          requests={filtered}
           onApprove={(request) => setApproving(request)}
           onReject={handleReject}
           onSnooze={handleSnooze}
         />
       ) : (
         <RequestList
-          requests={queue}
+          requests={filtered}
           onApprove={(request) => setApproving(request)}
           onReject={handleReject}
           onSnooze={handleSnooze}
@@ -290,7 +442,36 @@ export function ApprovalSwipeDeck({ requests }: ApprovalSwipeDeckProps) {
         }}
         onConfirm={handleApproveConfirmed}
       />
-    </>
+
+      {/* Bulk action bar + its confirm dialogs (select mode only). */}
+      {selectMode && (
+        <BulkActionBar
+          count={selected.size}
+          busy={bulkBusy}
+          onApprove={() => setBulkApproving(true)}
+          onReject={() => setBulkRejecting(true)}
+          onClear={() => setSelected(new Set())}
+        />
+      )}
+      <BulkApproveDialog
+        open={bulkApproving}
+        count={selected.size}
+        busy={bulkBusy}
+        onOpenChange={(open) => {
+          if (!open) setBulkApproving(false);
+        }}
+        onConfirm={doBulkApprove}
+      />
+      <BulkRejectDialog
+        open={bulkRejecting}
+        count={selected.size}
+        busy={bulkBusy}
+        onOpenChange={(open) => {
+          if (!open) setBulkRejecting(false);
+        }}
+        onConfirm={doBulkReject}
+      />
+    </div>
   );
 }
 
@@ -720,6 +901,260 @@ function RejectDialog({
             }}
           >
             <XIcon aria-hidden /> Reject request
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Selectable list (bulk mode — mobile AND desktop)                    */
+/* ------------------------------------------------------------------ */
+
+function SelectableList({
+  requests,
+  selected,
+  onToggle,
+  allSelected,
+  onToggleAll,
+}: {
+  requests: PendingRequest[];
+  selected: Set<string>;
+  onToggle: (customerId: string) => void;
+  allSelected: boolean;
+  onToggleAll: () => void;
+}) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-border bg-card">
+      <div className="flex items-center gap-3 border-b border-border bg-muted/30 px-4 py-2.5">
+        <input
+          type="checkbox"
+          checked={allSelected}
+          onChange={onToggleAll}
+          aria-label="Select all pending requests"
+          className="size-4 accent-primary"
+        />
+        <span className="text-sm font-medium text-muted-foreground">
+          Select all ({requests.length})
+        </span>
+      </div>
+      <ul className="divide-y divide-border">
+        {requests.map((request) => {
+          const checked = selected.has(request.customerId);
+          return (
+            <li key={request.id}>
+              <button
+                type="button"
+                onClick={() => onToggle(request.customerId)}
+                aria-pressed={checked}
+                className={cn(
+                  "flex w-full items-center gap-3 p-4 text-left outline-none transition-colors focus-visible:bg-accent/60",
+                  checked ? "bg-primary/5" : "hover:bg-accent/40",
+                )}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  readOnly
+                  tabIndex={-1}
+                  aria-hidden
+                  className="pointer-events-none size-4 shrink-0 accent-primary"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <h3 className="truncate font-medium text-foreground">
+                      {request.businessName}
+                    </h3>
+                    <StatusChip variant="pending" />
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                    <span className="inline-flex items-center gap-1.5">
+                      <UserIcon className="size-3.5" aria-hidden />
+                      {request.contactName}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <PhoneIcon className="size-3.5" aria-hidden />
+                      {request.phone}
+                    </span>
+                    {request.city && (
+                      <span className="inline-flex items-center gap-1.5">
+                        <MapPinIcon className="size-3.5" aria-hidden />
+                        {request.city}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Bulk action bar + confirm dialogs                                   */
+/* ------------------------------------------------------------------ */
+
+function BulkActionBar({
+  count,
+  busy,
+  onApprove,
+  onReject,
+  onClear,
+}: {
+  count: number;
+  busy: boolean;
+  onApprove: () => void;
+  onReject: () => void;
+  onClear: () => void;
+}) {
+  return (
+    <AnimatePresence>
+      {count > 0 && (
+        <motion.div
+          initial={{ y: 80, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: 80, opacity: 0 }}
+          transition={springs.snappy}
+          // Sits ABOVE the mobile admin tab bar (which is in normal flow at the
+          // very bottom); drops to the screen edge on md+ where there is no tab bar.
+          className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] z-40 mx-auto flex w-[calc(100%-2rem)] max-w-xl items-center gap-2 rounded-2xl border border-border bg-card/95 p-3 shadow-lg backdrop-blur md:bottom-4"
+        >
+          <span className="pl-1 text-sm font-medium text-foreground">
+            {count} selected
+          </span>
+          <div className="ml-auto flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={onClear} disabled={busy}>
+              Clear
+            </Button>
+            <Button variant="destructive" size="sm" onClick={onReject} disabled={busy}>
+              <XIcon aria-hidden /> Reject
+            </Button>
+            <Button size="sm" onClick={onApprove} disabled={busy}>
+              <CheckCheckIcon aria-hidden /> Approve
+            </Button>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+function BulkApproveDialog({
+  open,
+  count,
+  busy,
+  onOpenChange,
+  onConfirm,
+}: {
+  open: boolean;
+  count: number;
+  busy: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: (expiry: ExpiryValue) => void;
+}) {
+  const [expiry, setExpiry] = React.useState<ExpiryValue>(defaultExpiry);
+
+  // Reset the dial to the default each time the dialog opens (render-phase).
+  const [wasOpen, setWasOpen] = React.useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) setExpiry(defaultExpiry());
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle>Approve {count} request{count === 1 ? "" : "s"}</DialogTitle>
+          <DialogDescription>
+            Choose how long the selected customers can see prices. The same
+            validity applies to all of them.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="py-2">
+          <ExpiryDial value={expiry} onChange={setExpiry} />
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
+            Cancel
+          </Button>
+          <Button onClick={() => onConfirm(expiry)} disabled={busy}>
+            <CheckCheckIcon aria-hidden />
+            {busy ? "Approving…" : `Approve ${count}`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function BulkRejectDialog({
+  open,
+  count,
+  busy,
+  onOpenChange,
+  onConfirm,
+}: {
+  open: boolean;
+  count: number;
+  busy: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: (reason: string | undefined) => void;
+}) {
+  const [reason, setReason] = React.useState("");
+
+  const [wasOpen, setWasOpen] = React.useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) setReason("");
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle>Reject {count} request{count === 1 ? "" : "s"}</DialogTitle>
+          <DialogDescription>
+            Optionally add a reason saved with every rejection. The same reason
+            applies to all selected customers.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="py-1">
+          <label
+            htmlFor="bulk-reject-reason"
+            className="mb-1.5 block text-sm font-medium text-foreground"
+          >
+            Reason <span className="text-muted-foreground">(optional)</span>
+          </label>
+          <textarea
+            id="bulk-reject-reason"
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            rows={3}
+            maxLength={500}
+            placeholder="e.g. Could not verify GSTIN"
+            className="w-full resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          />
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={() => onConfirm(reason.trim() || undefined)}
+            disabled={busy}
+          >
+            <XIcon aria-hidden />
+            {busy ? "Rejecting…" : `Reject ${count}`}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -22,6 +22,7 @@ import {
 import {
   bulkApprove,
   bulkExtend,
+  bulkReject,
   bulkRevoke,
   type BulkResult,
 } from "@/server/services/customers";
@@ -125,6 +126,11 @@ const bulkSchema = z.object({
 
 const bulkRevokeSchema = z.object({
   customerIds: z.array(objectIdSchema).min(1, "Select at least one customer"),
+});
+
+const bulkRejectSchema = z.object({
+  customerIds: z.array(objectIdSchema).min(1, "Select at least one customer"),
+  reason: z.string().trim().max(500).optional(),
 });
 
 /* ------------------------------------------------------------------ */
@@ -433,6 +439,31 @@ export async function bulkRevokeAccessAction(
       entity: "Customer",
       entityId: customerIds[0]!,
       diff: { customerIds },
+    });
+
+    revalidate();
+    return bulkResult(result);
+  });
+}
+
+export async function bulkRejectAccessAction(
+  input: z.input<typeof bulkRejectSchema>,
+): Promise<ActionResult<{ count: number; failed: { id: string; error: string }[] }>> {
+  return guarded(async () => {
+    const viewer = await resolveViewer();
+    assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.CUSTOMERS_APPROVE);
+
+    const { customerIds, reason } = bulkRejectSchema.parse(input);
+    const result = await bulkReject(customerIds, reason);
+
+    await writeAudit({
+      actorType: ACTOR,
+      actorId: viewer.adminId,
+      action: "access.bulkReject",
+      entity: "Customer",
+      entityId: customerIds[0]!,
+      diff: { customerIds, reason: reason ?? null },
     });
 
     revalidate();
