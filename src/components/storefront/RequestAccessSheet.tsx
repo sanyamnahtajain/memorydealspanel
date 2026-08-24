@@ -248,20 +248,90 @@ interface RequestAccessFormProps {
   google?: { token: string; email: string; name: string | null } | null;
 }
 
+/**
+ * The half-filled form is kept in sessionStorage.
+ *
+ * The Google signup handoff is single-use and time-limited, so a visitor can
+ * reach Submit only to be told to sign in again. Sending them back through
+ * Google is fine; making them retype their business name, phone, GSTIN and
+ * city is not — that is where people give up. The draft survives the round
+ * trip, so re-authenticating costs one tap and nothing else.
+ *
+ * Session-scoped (not localStorage) so it disappears when the tab closes, and
+ * the password is never written — see toDraft.
+ */
+const DRAFT_KEY = "md-request-access-draft";
+
+/** Everything except the password, which must never be persisted. */
+function toDraft(values: FormValues): Partial<FormValues> {
+  const { password: _password, ...rest } = values;
+  return rest;
+}
+
+function saveDraft(values: FormValues): void {
+  try {
+    window.sessionStorage.setItem(DRAFT_KEY, JSON.stringify(toDraft(values)));
+  } catch {
+    /* private mode / storage full — the draft simply won't persist */
+  }
+}
+
+function readDraft(): Partial<FormValues> | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return null;
+    // Only keep known string fields — a hand-edited blob cannot inject keys.
+    const out: Partial<FormValues> = {};
+    for (const key of Object.keys(EMPTY_FORM) as (keyof FormValues)[]) {
+      const value = (parsed as Record<string, unknown>)[key];
+      if (key !== "password" && typeof value === "string") out[key] = value;
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+function clearDraft(): void {
+  try {
+    window.sessionStorage.removeItem(DRAFT_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** True when the submit failed because the Google handoff was spent/expired. */
+function isExpiredGoogleError(message: string): boolean {
+  return /google sign-in expired/i.test(message);
+}
+
 export function RequestAccessForm({ onClose, google = null }: RequestAccessFormProps) {
   const viaGoogle = Boolean(google);
-  const [values, setValues] = React.useState<FormValues>(() => ({
-    ...EMPTY_FORM,
-    contactName: google?.name ?? "",
-    email: google?.email ?? "",
-  }));
+  const [values, setValues] = React.useState<FormValues>(() => {
+    // A draft from before a Google round trip wins over the empty form, but
+    // the verified Google identity always wins over the draft.
+    const draft = readDraft() ?? {};
+    return {
+      ...EMPTY_FORM,
+      ...draft,
+      contactName: draft.contactName || (google?.name ?? ""),
+      email: google?.email ?? draft.email ?? "",
+    };
+  });
   const [errors, setErrors] = React.useState<FieldErrors>({});
   const [token, setToken] = React.useState("");
   const [state, setState] = React.useState<SubmitState>({ phase: "form" });
 
   const setField = React.useCallback(
     (name: keyof FormValues, value: string) => {
-      setValues((prev) => ({ ...prev, [name]: value }));
+      setValues((prev) => {
+        const next = { ...prev, [name]: value };
+        saveDraft(next);
+        return next;
+      });
       setErrors((prev) => {
         if (!prev[name]) return prev;
         const next = { ...prev };

@@ -28,8 +28,20 @@ const JWKS_URL = "https://www.googleapis.com/oauth2/v3/certs";
 const ISSUERS = ["https://accounts.google.com", "accounts.google.com"];
 
 const STATE_TTL_MS = 10 * 60 * 1000;
-/** The signup handoff rides the request-access form while it's filled in. */
-const SIGNUP_TTL_MS = 15 * 60 * 1000;
+/**
+ * The signup handoff rides the request-access form while it's filled in, so
+ * its clock starts BEFORE the visitor has typed anything.
+ *
+ * Fifteen minutes was too short and produced the worst possible failure: a
+ * shopkeeper filling five fields on a phone — often stopping to look up their
+ * GSTIN — came back to "your Google sign-in expired", having lost the form.
+ * They read that as the site asking them to sign in again for no reason.
+ *
+ * An hour is safe. The token is server-side, single-use, and already bound to
+ * a Google-verified identity; the only thing the window bounds is how long an
+ * unfinished signup form stays fillable.
+ */
+const SIGNUP_TTL_MS = 60 * 60 * 1000;
 
 let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 function googleJwks(): ReturnType<typeof createRemoteJWKSet> {
