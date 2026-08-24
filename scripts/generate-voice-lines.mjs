@@ -16,6 +16,9 @@
  *
  *   ELEVENLABS_API_KEY=... node scripts/generate-voice-lines.mjs --force
  *
+ * Each file is built as: opening chime → spoken line → closing chime, so the
+ * asset is self-contained. Pass --no-chimes for speech only.
+ *
  * Pick a different voice with ELEVENLABS_VOICE_ID. The default is a
  * multilingual voice that handles Devanagari; if the Hindi comes out with an
  * English accent, browse voices in the ElevenLabs dashboard and set that env
@@ -43,12 +46,28 @@ const API = "https://api.elevenlabs.io/v1/text-to-speech";
 // eleven_multilingual_v2 speaks Devanagari; the older monolingual models do not.
 const MODEL_ID = process.env.ELEVENLABS_MODEL_ID ?? "eleven_multilingual_v2";
 /**
- * A MALE voice (owner request). "Adam" is deep, steady and available on every
- * ElevenLabs account, and carries well over shop noise. Override with
- * ELEVENLABS_VOICE_ID if you find a Hindi-native voice you prefer — browse
- * the dashboard's Voice Library and paste its id.
+ * Voice presets. The owner asked for a SOFT voice with a warm, marketing
+ * read — not the flat announcement voice. Pick one by name:
+ *
+ *   ELEVENLABS_VOICE=soft-female   (default)
+ *   ELEVENLABS_VOICE=soft-male
+ *
+ * or paste any voice id from the ElevenLabs Voice Library:
+ *
+ *   ELEVENLABS_VOICE_ID=<id>
+ *
+ * These are stock voices present on every account. If the Hindi comes out
+ * with an English accent, browse the library for a Hindi-native voice and
+ * pass its id — the wording and everything else stays the same.
  */
-const VOICE_ID = process.env.ELEVENLABS_VOICE_ID ?? "pNInz6obpgDQGcFmaJgB";
+const VOICE_PRESETS = {
+  "soft-female": { id: "EXAVITQu4vr4xnSDxMaL", label: "soft female (Bella)" },
+  "soft-male": { id: "ErXwobaYiN019PkySvjV", label: "soft male (Antoni)" },
+};
+const PRESET =
+  VOICE_PRESETS[process.env.ELEVENLABS_VOICE ?? "soft-female"] ??
+  VOICE_PRESETS["soft-female"];
+const VOICE_ID = process.env.ELEVENLABS_VOICE_ID ?? PRESET.id;
 
 /**
  * The lines. Hindi, because that is what these customers speak in the shop,
@@ -119,12 +138,13 @@ async function generate(line, apiKey) {
       text: line.text,
       model_id: MODEL_ID,
       voice_settings: {
-        // Clarity over character: this is an announcement in a noisy shop,
-        // not a performance. High stability keeps the delivery even, and
-        // style is near zero so the voice does not "act" the line.
-        stability: 0.72,
-        similarity_boost: 0.8,
-        style: 0.05,
+        // A warm marketing read rather than a flat announcement: stability
+        // loosened so the delivery has some lift, style raised so it carries
+        // a little warmth — but not so far that it starts performing, which
+        // reads as insincere on a message about someone's own order.
+        stability: 0.45,
+        similarity_boost: 0.85,
+        style: 0.45,
         use_speaker_boost: true,
       },
     }),
@@ -144,6 +164,49 @@ async function generate(line, apiKey) {
   return audio;
 }
 
+/**
+ * The opening and closing chimes, generated once and reused for every line.
+ *
+ * ElevenLabs' sound-generation endpoint makes these, so the whole audio asset
+ * is self-contained: chime → spoken line → chime, in ONE mp3. The owner asked
+ * for the sound to sit before and after the script, and baking it in means it
+ * plays identically wherever the file is used, including anywhere the app's
+ * own tune engine is not involved.
+ *
+ * If sound generation is unavailable on the account, we fall back to speech
+ * only — a missing chime must never cost you the voice line.
+ */
+const SOUND_API = "https://api.elevenlabs.io/v1/sound-generation";
+
+async function generateSound(prompt, seconds, apiKey) {
+  const response = await fetch(SOUND_API, {
+    method: "POST",
+    headers: {
+      "xi-api-key": apiKey,
+      "Content-Type": "application/json",
+      Accept: "audio/mpeg",
+    },
+    body: JSON.stringify({
+      text: prompt,
+      duration_seconds: seconds,
+      // Follow the prompt closely; we want a clean chime, not an improvisation.
+      prompt_influence: 0.6,
+    }),
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`${response.status} ${response.statusText} ${detail.slice(0, 200)}`);
+  }
+  return Buffer.from(await response.arrayBuffer());
+}
+
+const OPEN_PROMPT =
+  "a short soft pleasant notification chime, two gentle bell tones rising, " +
+  "warm and clean, no music bed, no reverb tail";
+const CLOSE_PROMPT =
+  "a short soft notification end chime, one gentle bell tone falling, warm " +
+  "and clean, fading out quickly";
+
 async function main() {
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) {
@@ -156,7 +219,30 @@ async function main() {
   }
 
   const force = process.argv.includes("--force");
+  const noChimes = process.argv.includes("--no-chimes");
   await mkdir(OUT_DIR, { recursive: true });
+
+  console.log(`[voice] voice: ${process.env.ELEVENLABS_VOICE_ID ?? PRESET.label}`);
+
+  // Generate the two chimes once and reuse them for every line.
+  let openChime = null;
+  let closeChime = null;
+  if (!noChimes) {
+    try {
+      openChime = await generateSound(OPEN_PROMPT, 1.2, apiKey);
+      closeChime = await generateSound(CLOSE_PROMPT, 1.0, apiKey);
+      await writeFile(join(OUT_DIR, "chime-open.mp3"), openChime);
+      await writeFile(join(OUT_DIR, "chime-close.mp3"), closeChime);
+      console.log("[voice] chimes generated (start + end)");
+    } catch (error) {
+      console.warn(
+        `[voice] could not generate chimes (${error.message}) — ` +
+          "continuing with speech only.",
+      );
+      openChime = null;
+      closeChime = null;
+    }
+  }
 
   let written = 0;
   let skipped = 0;
@@ -172,7 +258,12 @@ async function main() {
     }
 
     try {
-      const audio = await generate(line, apiKey);
+      const speech = await generate(line, apiKey);
+      // chime → line → chime, in one file. MP3 is a frame stream, so joining
+      // buffers of the same format plays back as one continuous track.
+      const audio = Buffer.concat(
+        [openChime, speech, closeChime].filter(Boolean),
+      );
       await writeFile(target, audio);
       console.log(
         `[voice] wrote  ${line.file}  ${(audio.length / 1024).toFixed(0)}kB  — ${line.note}`,

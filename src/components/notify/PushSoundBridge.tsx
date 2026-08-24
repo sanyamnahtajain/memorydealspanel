@@ -65,10 +65,6 @@ export function PushSoundBridge() {
   // The SSE side owns staff sound; this bridge owns the storefront.
   const onAdminSurface = pathname.startsWith("/admin");
 
-  // Pending voice-line timers, cleared on unmount so a line cannot start
-  // speaking after the user has navigated away.
-  const voiceTimers = React.useRef<number[]>([]);
-
   React.useEffect(() => {
     if (onAdminSurface) return;
     if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
@@ -85,15 +81,13 @@ export function PushSoundBridge() {
       const { title, body, url, sound } = event.data.payload;
 
       if (sound !== "none" && !isMuted()) {
-        playTune(sound === "long" ? "long" : "short");
-        // …then speak the line for this event, if one has been generated.
-        // Delayed so the tune lands first and the two do not talk over each
-        // other. Silent no-op when the audio file isn't there.
-        const voiceTimer = window.setTimeout(
-          () => playVoice(event.data.payload.type),
-          sound === "long" ? 1400 : 900,
-        );
-        voiceTimers.current.push(voiceTimer);
+        const tune = sound === "long" ? "long" : "short";
+        // A generated voice line already carries its own opening and closing
+        // chime, so it plays INSTEAD of the tune — layering both would give
+        // the customer two openings over each other. If the line turns out to
+        // be missing (not generated yet), we fall back to the tune.
+        const spoke = playVoice(event.data.payload.type, () => playTune(tune));
+        if (!spoke) playTune(tune);
       }
 
       // An in-app toast, because a notification card is easy to miss when the
@@ -107,12 +101,9 @@ export function PushSoundBridge() {
     };
 
     navigator.serviceWorker.addEventListener("message", onMessage);
-    const timers = voiceTimers.current;
     return () => {
       window.removeEventListener("pointerdown", unlock);
       navigator.serviceWorker.removeEventListener("message", onMessage);
-      for (const id of timers) window.clearTimeout(id);
-      timers.length = 0;
       stopVoice();
     };
   }, [onAdminSurface, router]);
