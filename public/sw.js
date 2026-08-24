@@ -26,7 +26,7 @@
  * open — while the OS handles the background case.
  */
 
-const CACHE_VERSION = "v4";
+const CACHE_VERSION = "v5";
 const CACHE_NAME = `memorydeals-${CACHE_VERSION}`;
 const OFFLINE_URL = "/offline";
 
@@ -78,7 +78,9 @@ self.addEventListener("push", (event) => {
     }
   }
 
-  const title = payload.title || "MemoryDeals";
+  // Brand fallback, matching APP_NAME in src/lib/constants.ts. A payload
+  // should always carry its own title; this is the last resort.
+  const title = payload.title || "The Memory Deals";
   const url = payload.url || "/";
   // Staff alerts are addressed to /admin; everything else opens the storefront.
   const isAdminPayload =
@@ -92,7 +94,7 @@ self.addEventListener("push", (event) => {
     badge: "/favicon.png",
     // Same tag => the new card REPLACES the old one instead of stacking, so
     // three updates to one order stay one notification.
-    tag: payload.tag || payload.type || "memorydeals",
+    tag: payload.tag || payload.type || "the-memory-deals",
     // …but still alert for the replacement; a silent swap would be missed.
     renotify: Boolean(payload.tag || payload.type),
     requireInteraction: payload.requireInteraction === true,

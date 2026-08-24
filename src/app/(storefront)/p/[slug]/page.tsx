@@ -338,7 +338,12 @@ export default async function ProductDetailPage({ params }: PageParams) {
         // Static, price-free object — no user input is interpolated.
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
-      <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:py-8">
+      {/* No horizontal padding here: StorefrontShell's <main> already applies
+          px-4 (md:px-6). This container used to add its own on top, so the
+          product page sat in double the gutter of every other page — most
+          obvious in the installed app on a phone, where screen width is
+          scarcest. Vertical padding is tighter on small screens too. */}
+      <div className="mx-auto w-full max-w-5xl py-3 sm:py-8">
         <ProductBreadcrumb productName={product.name} category={category} />
 
         {showVariantHero ? (

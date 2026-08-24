@@ -85,6 +85,12 @@ export default async function RootLayout({
       suppressHydrationWarning
     >
       <head>
+        {/* Stops Chrome's "Translate this page?" bar. The catalogue is written
+            for Indian retailers in English, and machine-translating product
+            names, brands and spec strings produced nonsense — the owner asked
+            for the prompt gone. Trade-off: it also disables manual Chrome
+            translation for this site. */}
+        <meta name="google" content="notranslate" />
         {/* Render-blocking theme bootstrap — sets the `dark` class before the
             first paint to prevent a flash of the wrong theme (FOUC). */}
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
