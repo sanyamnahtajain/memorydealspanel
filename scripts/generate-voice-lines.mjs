@@ -26,6 +26,13 @@
  * own sound; no website can substitute a voice line there. These play when
  * the app is OPEN (see src/lib/notify/voice.ts). The text of a notification
  * is what reaches a locked phone, and that lives in src/lib/notify/copy.ts.
+ *
+ * THE OPENING AND CLOSING CHIMES ARE NOT IN THESE FILES. The app plays the
+ * Memory Deals tune before the voice and a short sign-off after it
+ * (src/lib/notify/voice.ts). Keeping the wrapper in the app rather than baked
+ * into each MP3 means the chime can be retuned without paying to regenerate
+ * eight files, and every line stays perfectly in sync with the tune the rest
+ * of the app already uses.
  */
 import { mkdir, writeFile, access } from "node:fs/promises";
 import { join } from "node:path";
@@ -35,8 +42,13 @@ const API = "https://api.elevenlabs.io/v1/text-to-speech";
 
 // eleven_multilingual_v2 speaks Devanagari; the older monolingual models do not.
 const MODEL_ID = process.env.ELEVENLABS_MODEL_ID ?? "eleven_multilingual_v2";
-// "Rachel" — a widely available default. Override with ELEVENLABS_VOICE_ID.
-const VOICE_ID = process.env.ELEVENLABS_VOICE_ID ?? "21m00Tcm4TlvDq8ikWAM";
+/**
+ * A MALE voice (owner request). "Adam" is deep, steady and available on every
+ * ElevenLabs account, and carries well over shop noise. Override with
+ * ELEVENLABS_VOICE_ID if you find a Hindi-native voice you prefer — browse
+ * the dashboard's Voice Library and paste its id.
+ */
+const VOICE_ID = process.env.ELEVENLABS_VOICE_ID ?? "pNInz6obpgDQGcFmaJgB";
 
 /**
  * The lines. Hindi, because that is what these customers speak in the shop,
@@ -107,11 +119,12 @@ async function generate(line, apiKey) {
       text: line.text,
       model_id: MODEL_ID,
       voice_settings: {
-        // Steady and clear rather than expressive: this is an announcement in
-        // a noisy shop, not a performance.
-        stability: 0.55,
-        similarity_boost: 0.75,
-        style: 0.15,
+        // Clarity over character: this is an announcement in a noisy shop,
+        // not a performance. High stability keeps the delivery even, and
+        // style is near zero so the voice does not "act" the line.
+        stability: 0.72,
+        similarity_boost: 0.8,
+        style: 0.05,
         use_speaker_boost: true,
       },
     }),
