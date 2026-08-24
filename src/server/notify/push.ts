@@ -171,8 +171,12 @@ export const prismaPushStore: PushStore = {
     if (query?.audience === "customer") {
       where.audience = "customer";
     } else if (query?.audience === "admin") {
-      // Legacy rows predate the column and are admin subscriptions.
-      where.OR = [{ audience: "admin" }, { audience: null }];
+      // Exact match, deliberately. Rows written before this column existed
+      // have the field ABSENT, and in MongoDB an absent field matches
+      // neither `null` nor `not: "customer"` — so no clever filter rescues
+      // them. They are fixed once by scripts/backfill-push-audience.mjs,
+      // which must run against any database that predates this feature.
+      where.audience = "admin";
     }
     if (query?.customerId) where.customerId = query.customerId;
     if (query?.customerIds) where.customerId = { in: query.customerIds };
