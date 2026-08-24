@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import {
   ArrowRight,
+  BellRing,
   Building2,
   Database,
   Layers,
@@ -86,6 +87,21 @@ export default async function AdminSettingsPage() {
           description="The minimum delivery charge customers are told about on the cart, orders and bills."
         >
           <DeliverySettingsForm initial={parseDeliveryRules(storeSettings.deliveryRules)} />
+        </SettingsSection>
+
+        {/* Notifications — which alerts reach staff phones, plus the composer. */}
+        <SettingsSection
+          icon={BellRing}
+          title="Notifications"
+          description="Choose which alerts ring on your phone, turn this device on, and send your own message to customers or staff."
+        >
+          <Link
+            href="/admin/settings/notifications"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-primary underline-offset-4 hover:underline"
+          >
+            Manage notifications
+            <ArrowRight className="size-4" aria-hidden />
+          </Link>
         </SettingsSection>
 
         {/* Billing groups — brand buckets with tiered discounts. */}

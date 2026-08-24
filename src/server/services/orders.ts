@@ -41,7 +41,7 @@ import {
 } from "@/lib/allocation";
 import { limit } from "@/server/security/ratelimit";
 import { writeAudit } from "@/server/security/audit";
-import { sendPushToAdmin } from "@/server/notify/push";
+import { notifyAdmins } from "@/server/notify/push";
 import { withPlacementLock } from "@/server/services/placement-lock";
 import type { StockStatus } from "@/lib/schemas/shared";
 import {
@@ -1596,15 +1596,21 @@ async function notifyAdminsOfOrder(
   itemCount: number,
   subtotalPaise: number,
 ): Promise<void> {
+  // The Notification row IS the admin live feed (see src/lib/admin-events.ts):
+  // the SSE stream tails this collection and AdminLiveEvents renders
+  // "order.placed" as the full-screen ringing takeover. Keep the type string
+  // exactly as that registry expects.
   await prisma.notification.create({
     data: {
       type: "order.placed",
       payload: { orderNumber, itemCount, subtotalPaise } as Prisma.InputJsonValue,
     },
   });
-  await sendPushToAdmin({
+  // The loud one: `admin.order.placed` is a locked-on topic with the LONG ring
+  // and requireInteraction, so a phone in a noisy shop cannot miss it.
+  await notifyAdmins("admin.order.placed", {
     title: "New order request",
-    body: `Order ${orderNumber} — ${itemCount} item${itemCount === 1 ? "" : "s"}.`,
+    body: `Order ${orderNumber} — ${itemCount} item${itemCount === 1 ? "" : "s"} · ${formatPaise(subtotalPaise)}`,
     url: "/admin/orders",
   });
 }

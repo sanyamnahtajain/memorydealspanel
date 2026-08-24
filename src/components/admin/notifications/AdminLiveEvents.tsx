@@ -12,10 +12,19 @@ import {
   Volume2,
   VolumeX,
   BellRing,
+  PackageX,
 } from "lucide-react";
 
 import { formatPaise } from "@/components/common/PricePill";
 import { ADMIN_EVENT_NAME, type AdminEventDTO } from "@/lib/admin-events";
+import {
+  installAudioUnlockListeners,
+  startLoopingTune,
+  stopTune,
+  unlockAudio,
+  type TuneKind,
+  playBlip,
+} from "@/lib/notify/tune";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 
@@ -33,16 +42,15 @@ import { Button } from "@/components/ui/button";
  * fixed-position descendants — rendered in place, "fixed inset-0" would
  * collapse into the 56px header strip (the exact breakage this fixes).
  *
- * SOUND: browsers refuse audio before a user gesture. The ringer therefore
- * (re)tries to create + resume the AudioContext on EVERY bar, any tap on the
- * takeover unlocks it, and a "tap to enable sound" hint shows while locked.
+ * SOUND: the actual music lives in @/lib/notify/tune (the shared Memory Deals
+ * notification sound). Browsers refuse audio before a user gesture, so the
+ * ringer (re)tries to unlock on EVERY repeat, any tap on the takeover unlocks
+ * it, and a "tap to enable sound" hint shows while locked.
  */
 
 /* ------------------------------------------------------------------ */
 /* Event registry — ADD NEW EVENT TYPES HERE                           */
 /* ------------------------------------------------------------------ */
-
-type Tune = "order" | "request" | "ping";
 
 interface EventMeta {
   title: string;
@@ -51,7 +59,8 @@ interface EventMeta {
   /** Label on the takeover's primary action ("View order"). */
   actionLabel: string;
   icon: React.ComponentType<{ className?: string }>;
-  tune: Tune;
+  /** "long" is the insistent staff alert; "short" the friendly one. */
+  tune: TuneKind;
   /** "takeover" = full-screen ringing alert; "toast" = quiet corner note. */
   alert: "takeover" | "toast";
 }
@@ -76,7 +85,7 @@ const EVENT_META: Record<string, EventMeta> = {
     href: "/admin/orders",
     actionLabel: "View order",
     icon: PackagePlus,
-    tune: "order",
+    tune: "long",
     alert: "takeover",
   },
   access_request: {
@@ -85,7 +94,7 @@ const EVENT_META: Record<string, EventMeta> = {
     href: "/admin/requests",
     actionLabel: "Review request",
     icon: UserPlus,
-    tune: "request",
+    tune: "long",
     alert: "takeover",
   },
   renewal_request: {
@@ -96,8 +105,22 @@ const EVENT_META: Record<string, EventMeta> = {
     href: "/admin/requests",
     actionLabel: "Review renewal",
     icon: UserPlus,
-    tune: "request",
+    tune: "long",
     alert: "takeover",
+  },
+  "order.cancelledByCustomer": {
+    title: "Order cancelled",
+    describe: (p) => {
+      const number = str(p.orderNumber);
+      return number ? `#${number} withdrawn by the customer` : "";
+    },
+    href: "/admin/orders",
+    actionLabel: "Open orders",
+    icon: PackageX,
+    // A withdrawal needs to be seen, but nothing is waiting on staff — a
+    // toast, not a takeover that must be dismissed.
+    tune: "short",
+    alert: "toast",
   },
 };
 
@@ -107,7 +130,7 @@ const FALLBACK_META: EventMeta = {
   href: "/admin/dashboard",
   actionLabel: "Open",
   icon: Bell,
-  tune: "ping",
+  tune: "short",
   alert: "toast",
 };
 
@@ -119,81 +142,8 @@ const metaFor = (type: string): EventMeta => EVENT_META[type] ?? FALLBACK_META;
 
 const MUTE_KEY = "md-admin-sound-muted";
 
-let audioCtx: AudioContext | null = null;
-let unlockArmed = false;
-
-/**
- * Best-effort audio bring-up. Safe to call anytime; only truly unlocks during
- * or after a user gesture (browser policy). Returns whether audio can play NOW.
- */
-function ensureAudio(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    audioCtx = audioCtx ?? new AudioContext();
-    if (audioCtx.state === "suspended") void audioCtx.resume();
-    return audioCtx.state === "running";
-  } catch {
-    return false;
-  }
-}
-
-/** Arm ONE global first-gesture unlock (idempotent across mounts). */
-function armAudioUnlock() {
-  if (typeof window === "undefined" || unlockArmed) return;
-  unlockArmed = true;
-  const unlock = () => ensureAudio();
-  window.addEventListener("pointerdown", unlock, { passive: true });
-  window.addEventListener("keydown", unlock);
-}
-
-/** One enveloped note (sine + a square harmonic — cuts through a noisy shop). */
-function note(ctx: AudioContext, freq: number, at: number, dur: number, peak: number) {
-  for (const [type, mult, share] of [
-    ["sine", 1, 1],
-    ["square", 2, 0.22],
-  ] as const) {
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = type;
-    osc.frequency.value = freq * mult;
-    gain.gain.setValueAtTime(0, at);
-    gain.gain.linearRampToValueAtTime(peak * share, at + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, at + dur);
-    osc.connect(gain).connect(ctx.destination);
-    osc.start(at);
-    osc.stop(at + dur + 0.05);
-  }
-}
-
-/** One bar (~1.6s) of the ring — the loop replays it while unacknowledged. */
-function playBar(tune: Tune): boolean {
-  if (!ensureAudio() || !audioCtx) return false;
-  try {
-    const t = audioCtx.currentTime;
-    const LOUD = 0.32;
-    if (tune === "order") {
-      // Urgent ascending triplet, twice — the Zomato-style "new order" nag.
-      note(audioCtx, 880, t, 0.22, LOUD);
-      note(audioCtx, 1108.7, t + 0.18, 0.22, LOUD);
-      note(audioCtx, 1318.5, t + 0.36, 0.36, LOUD);
-      note(audioCtx, 880, t + 0.8, 0.22, LOUD);
-      note(audioCtx, 1108.7, t + 0.98, 0.22, LOUD);
-      note(audioCtx, 1318.5, t + 1.16, 0.42, LOUD);
-    } else if (tune === "request") {
-      note(audioCtx, 987.8, t, 0.3, LOUD);
-      note(audioCtx, 784, t + 0.26, 0.44, LOUD);
-      note(audioCtx, 987.8, t + 0.8, 0.3, LOUD);
-      note(audioCtx, 784, t + 1.06, 0.5, LOUD);
-    } else {
-      note(audioCtx, 1046.5, t, 0.4, 0.18);
-    }
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-const BAR_MS = 1_600;
+/** How often the phone buzzes while the takeover is up. */
+const VIBRATE_MS = 1_600;
 
 function isMuted(): boolean {
   try {
@@ -203,17 +153,18 @@ function isMuted(): boolean {
   }
 }
 
-/** Loops the ring bar (+ phone vibration) until stopped. */
+/** Loops the Memory Deals tune (+ phone vibration) until stopped. */
 function useRinger(onAudibleChange: (audible: boolean) => void) {
-  const timer = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  const buzzTimer = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const cb = React.useRef(onAudibleChange);
   React.useEffect(() => {
     cb.current = onAudibleChange;
   }, [onAudibleChange]);
 
   const stop = React.useCallback(() => {
-    if (timer.current) clearInterval(timer.current);
-    timer.current = null;
+    stopTune();
+    if (buzzTimer.current) clearInterval(buzzTimer.current);
+    buzzTimer.current = null;
     try {
       navigator.vibrate?.(0);
     } catch {
@@ -222,21 +173,28 @@ function useRinger(onAudibleChange: (audible: boolean) => void) {
   }, []);
 
   const start = React.useCallback(
-    (tune: Tune) => {
+    (tune: TuneKind) => {
       stop();
-      const bar = () => {
-        // Re-attempt every bar: the moment the admin's first tap unlocks
-        // audio, the NEXT bar rings — no reload, no lost alert.
-        const audible = !isMuted() && playBar(tune);
-        cb.current(audible || isMuted());
+      // The tune module re-attempts the unlock on every repeat, and retries
+      // quickly while it is still locked or muted: the moment the admin's
+      // first tap lets audio through, the NEXT repeat rings — no reload, no
+      // lost alert. Mute is re-read each time so the header toggle takes
+      // effect mid-ring.
+      startLoopingTune(tune, {
+        shouldPlay: () => !isMuted(),
+        onRepeat: (audible) => cb.current(audible || isMuted()),
+      });
+      // Vibration keeps its own faster beat — a phone in a pocket should buzz
+      // more often than once per tune.
+      const buzz = () => {
         try {
           navigator.vibrate?.([320, 160, 320]);
         } catch {
           /* unsupported */
         }
       };
-      bar();
-      timer.current = setInterval(bar, BAR_MS);
+      buzz();
+      buzzTimer.current = setInterval(buzz, VIBRATE_MS);
     },
     [stop],
   );
@@ -269,7 +227,7 @@ export function AdminLiveEvents() {
   const current = queue[0] ?? null;
 
   React.useEffect(() => {
-    armAudioUnlock();
+    installAudioUnlockListeners();
     const source = new EventSource("/api/admin/events");
 
     const onEvent = (raw: MessageEvent) => {
@@ -348,7 +306,7 @@ export function AdminLiveEvents() {
           exit={{ opacity: 0, transition: { duration: 0.18 } }}
           onPointerDown={() => {
             // Any tap on the takeover is the unlocking gesture.
-            ensureAudio();
+            unlockAudio();
           }}
           className="fixed inset-0 z-[95] flex flex-col items-center justify-center overflow-y-auto bg-background px-6 py-10 text-center"
           style={{
@@ -451,8 +409,10 @@ export function AdminSoundToggle() {
       /* private mode */
     }
     if (!next) {
-      ensureAudio(); // the click IS a gesture — unlock right here
-      playBar("ping"); // audible confirmation on unmute
+      unlockAudio(); // the click IS a gesture — unlock right here
+      // A short blip, not the full 4.5s tune — this is a toggle
+      // acknowledgement, not an alert.
+      playBlip();
     }
   }
 

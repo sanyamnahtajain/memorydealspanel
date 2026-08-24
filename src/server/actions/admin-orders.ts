@@ -10,6 +10,8 @@ import { assertAdmin, isForbiddenError } from "@/server/dal/guard";
 import { assertPermission } from "@/server/auth/require-permission";
 import { PERMISSIONS } from "@/lib/permissions";
 import { writeAudit } from "@/server/security/audit";
+import { notifyCustomer } from "@/server/notify/push";
+import { ORDER_STATUS_LABEL } from "@/components/storefront/orders/order-status";
 import { objectIdSchema } from "@/lib/schemas/shared";
 import { PAGE_SIZES } from "@/lib/constants";
 import {
@@ -432,6 +434,22 @@ export async function setOrderStatusAction(
       .catch((error) => {
         console.error("[actions/admin-orders] notify failed:", error);
       });
+
+    // …and push it to their phone, so the buyer learns about the change
+    // without opening the app. Fire-and-forget: the status is already
+    // committed and a push must never fail the admin's action. Labels come
+    // from ORDER_STATUS_LABEL so the notification, the chip and the timeline
+    // all say the same word.
+    void notifyCustomer(result.customerId, "order.status", {
+      title: `Order ${result.orderNumber}`,
+      body: `Your order is now ${ORDER_STATUS_LABEL[status]}.`,
+      url: `/account/orders/${result.orderNumber}`,
+      // One tag per order: three status changes replace each other rather
+      // than stacking three cards on the buyer's lock screen.
+      tag: `order.status:${result.orderNumber}`,
+    }).catch((error) => {
+      console.error("[actions/admin-orders] status push failed:", error);
+    });
 
     revalidate();
     return { ok: true, id, status };

@@ -2,6 +2,7 @@ import { prisma } from "@/server/db";
 import { resolveViewer } from "@/server/auth/viewer";
 import { isAdmin } from "@/server/types/viewer";
 import {
+  ADMIN_FEED_TYPES,
   ADMIN_EVENT_NAME,
   ADMIN_EVENTS_HEARTBEAT_MS,
   ADMIN_EVENTS_POLL_MS,
@@ -53,7 +54,12 @@ export async function GET(request: Request): Promise<Response> {
         void (async () => {
           try {
             const rows = await prisma.notification.findMany({
-              where: { createdAt: { gt: cursor } },
+              // Staff-facing types only — the same table also holds rows
+              // addressed to buyers and the nudge job's dedupe bookkeeping.
+              where: {
+                createdAt: { gt: cursor },
+                type: { in: [...ADMIN_FEED_TYPES] },
+              },
               orderBy: { createdAt: "asc" },
               take: 50,
               select: { id: true, type: true, payload: true, createdAt: true },

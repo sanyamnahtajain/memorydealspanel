@@ -19,6 +19,7 @@ import { SlabyPromoCard } from "@/components/slaby/SlabyPromoCard"
 import { WishlistBadge } from "@/components/storefront/wishlist/WishlistBadge"
 import { CartBadge } from "@/components/storefront/cart/CartBadge"
 import { SearchOverlay } from "@/components/storefront/SearchOverlay"
+import { NotifyGate } from "@/components/notify/NotifyGate"
 import { searchCategoryChips } from "@/components/storefront/search/actions"
 import type { CategoryChip } from "@/components/storefront/search/types"
 import {
@@ -328,6 +329,12 @@ export function StorefrontShell({
         onClose={() => setSearchOpen(false)}
         categories={searchCategories}
       />
+
+      {/* ——— Notification ask ———
+          Sibling of the global <InstallPrompt /> (mounted in the root layout).
+          Self-gating: it only appears when the usage algorithm says the moment
+          is right, and it sits above the fixed mobile tab bar. */}
+      <NotifyGate variant="storefront" />
     </div>
   )
 }

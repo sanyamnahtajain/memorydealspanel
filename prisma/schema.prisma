@@ -195,6 +195,9 @@ model Customer {
   wishlist     WishlistItem[]
   cartItems    CartItem[]
   orders       Order[]
+  // Per-person notification preferences (muted topic list). Parsed
+  // defensively in src/lib/notify/prefs.ts; absent => topic defaults.
+  notifyPrefs  Json?
   lastLoginAt  DateTime?
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
@@ -294,6 +297,8 @@ model Admin {
   isActive     Boolean   @default(true)
   roleId       String?   @db.ObjectId
   role         Role?     @relation(fields: [roleId], references: [id])
+  // Per-person notification preferences — see src/lib/notify/prefs.ts.
+  notifyPrefs  Json?
   lastLoginAt  DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
@@ -357,6 +362,10 @@ model Notification {
   createdAt DateTime  @default(now())
 
   @@index([readAt, createdAt])
+  // The daily nudge cron (/api/cron/notify) dedupes by asking "did we already
+  // send this milestone?" as `type in (...) AND createdAt >= cutoff` — one
+  // query per run. Without this index that read is a full collection scan.
+  @@index([type, createdAt])
 }
 
 // Web Push subscriptions (admin devices) — populated when an admin enables
@@ -367,10 +376,20 @@ model PushSubscription {
   p256dh    String
   auth      String
   adminId   String?  @db.ObjectId
+  // Web Push now serves BOTH audiences. "admin" | "customer" — a device is
+  // only ever sent notifications addressed to its own audience, so a buyer's
+  // browser can never receive an internal staff alert.
+  audience   String   @default("admin")
+  // Set for audience="customer": the buyer this device belongs to.
+  customerId String?  @db.ObjectId
   userAgent String?
+  // Refreshed on every re-subscribe; lets us prune devices that went quiet.
+  lastSeenAt DateTime?
   createdAt DateTime @default(now())
 
   @@index([adminId])
+  @@index([audience])
+  @@index([customerId])
 }
 
 model PageView {

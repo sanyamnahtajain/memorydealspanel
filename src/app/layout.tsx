@@ -10,6 +10,7 @@ import {
   prefsScript,
 } from "@/components/preferences/prefs-script";
 import { PWARegister } from "@/components/pwa/PWARegister";
+import { PushSoundBridge } from "@/components/notify/PushSoundBridge";
 import { InstallPrompt } from "@/components/pwa/InstallPrompt";
 import { SplashScreen } from "@/components/pwa/SplashScreen";
 import { ScrollToTop } from "@/components/common/ScrollToTop";
@@ -125,6 +126,10 @@ export default async function RootLayout({
             <SplashScreen />
             <InstallPrompt />
             <AppToaster />
+            {/* Turns a push that arrives while the app is open into the
+                branded tune + an in-app toast. Both surfaces need it, so it
+                lives here rather than in either shell. */}
+            <PushSoundBridge />
           </PreferencesProvider>
         </ThemeProvider>
       </body>

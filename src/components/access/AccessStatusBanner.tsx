@@ -134,13 +134,17 @@ export function AccessStatusBanner() {
       transition={{ type: "spring", stiffness: 420, damping: 34 }}
       className={cn("border-b", TONE_CLASSES[tone])}
     >
-      <div className="mx-auto flex w-full max-w-6xl items-center gap-2.5 px-4 py-2 md:px-6">
-        <ToneIcon className="size-4 shrink-0" aria-hidden />
+      {/* Items start (not centre) so a wrapped message keeps the icon and the
+          buttons aligned to the first line rather than drifting down. */}
+      <div className="mx-auto flex w-full max-w-6xl items-start gap-2.5 px-4 py-2.5 md:px-6">
+        <ToneIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">{copy.title}</p>
-          <p className="hidden truncate text-xs opacity-80 sm:block">
-            {copy.body}
-          </p>
+          {/* This text is the whole point of the banner, so it WRAPS. It used
+              to truncate, which cut the message in half on a phone — and the
+              explanation was hidden on phones entirely, where most of these
+              customers read it. */}
+          <p className="text-sm leading-snug font-medium">{copy.title}</p>
+          <p className="mt-0.5 text-xs leading-snug opacity-80">{copy.body}</p>
         </div>
 
         {copy.cta === "renew" && renewState ? (

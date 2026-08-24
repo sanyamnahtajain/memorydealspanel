@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -12,10 +13,31 @@ import { DownloadIcon, ShareIcon, XIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useEngagement } from "@/components/notify/useEngagement";
 
 /**
- * The (not-yet-standardised) `beforeinstallprompt` event. Typed locally
- * because it's absent from the DOM lib.
+ * The "add this app to your home screen" card.
+ *
+ * The storefront and the ADMIN panel are two separate PWAs (own manifests,
+ * names, start URLs) — so install state, copy and cadence are per-variant.
+ * Without the split, a customer-storefront install on the same browser profile
+ * would silently suppress the ADMIN install prompt forever.
+ *
+ * WHEN it appears is no longer a fixed snooze timer. It is decided by the
+ * shared usage algorithm in `src/lib/notify/engagement.ts`, the same one that
+ * governs the notification ask — because the owner's complaint was precisely
+ * that a single skipped prompt meant the user was effectively never asked
+ * again. The algorithm waits until the person has actually used the shop,
+ * then re-asks on a widening ladder (3d, 7d, 21d, 45d, 90d) that never gives
+ * up entirely, and it guarantees at most one interruption per visit across
+ * both prompts.
+ *
+ * Platform behaviour is unchanged:
+ *  - Chromium: captures `beforeinstallprompt`, suppresses the default
+ *    mini-bar, and shows this card whose CTA triggers the native prompt.
+ *  - iOS Safari: no install event exists, so we show an Add-to-Home-Screen
+ *    hint. On iOS this card matters twice over — web notifications do not
+ *    work at all until the app is installed.
  */
 interface BeforeInstallPromptEvent extends Event {
   readonly platforms: string[];
@@ -26,14 +48,6 @@ interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
 }
 
-/**
- * The storefront and the ADMIN panel are two separate PWAs (own manifests,
- * names, start URLs) — so install state, snooze state, copy and cadence are
- * per-variant. Without the split, a customer-storefront install on the same
- * browser profile would silently suppress the ADMIN install prompt forever
- * (the exact bug this fixes). The admin variant nags more often (owner
- * request): staff should run the installed app to get ringing order alerts.
- */
 type InstallVariant = "storefront" | "admin";
 
 interface VariantConfig {
@@ -41,10 +55,9 @@ interface VariantConfig {
   title: string;
   /** One-line pitch under the title (non-iOS). */
   body: string;
-  /** Re-prompt cadence after a dismissal. */
-  snoozeMs: number;
+  /** Extra line shown on iOS, where install also unlocks alerts. */
+  iosBody: string;
   installedKey: string;
-  dismissKey: string;
   /** Which paths this variant lives on (each PWA has its own scope). */
   onPath: (pathname: string) => boolean;
 }
@@ -53,17 +66,17 @@ const VARIANTS: Record<InstallVariant, VariantConfig> = {
   storefront: {
     title: "Install MemoryDeals",
     body: "Add it to your home screen for faster access.",
-    snoozeMs: 4 * 60 * 60 * 1000, // 4h
+    iosBody:
+      "Add it to your home screen to open it faster and get order updates.",
     installedKey: "md-pwa-installed",
-    dismissKey: "md-pwa-install-dismissed-at",
     onPath: (p) => !p.startsWith("/admin"),
   },
   admin: {
     title: "Install TMD Admin",
     body: "Order alerts ring loudest in the installed app — add it to this device.",
-    snoozeMs: 2 * 60 * 60 * 1000, // 2h — staff should really install it
+    iosBody:
+      "Add it to your home screen. On iPhone, order alerts only work in the installed app.",
     installedKey: "md-pwa-admin-installed",
-    dismissKey: "md-pwa-admin-dismissed-at",
     onPath: (p) => p.startsWith("/admin"),
   },
 };
@@ -97,19 +110,6 @@ function isInstalled(cfg: VariantConfig): boolean {
   return isStandalone();
 }
 
-/** Milliseconds left on the current snooze, or 0 if not snoozed. */
-function snoozeRemaining(cfg: VariantConfig): number {
-  try {
-    const raw = window.localStorage.getItem(cfg.dismissKey);
-    const at = raw ? parseInt(raw, 10) : 0;
-    if (!at) return 0;
-    const remaining = at + cfg.snoozeMs - Date.now();
-    return remaining > 0 ? remaining : 0;
-  } catch {
-    return 0;
-  }
-}
-
 function markInstalled(cfg: VariantConfig) {
   try {
     window.localStorage.setItem(cfg.installedKey, "1");
@@ -118,26 +118,6 @@ function markInstalled(cfg: VariantConfig) {
   }
 }
 
-function markDismissedNow(cfg: VariantConfig) {
-  try {
-    window.localStorage.setItem(cfg.dismissKey, String(Date.now()));
-  } catch {
-    /* ignore — snooze simply won't persist across reloads. */
-  }
-}
-
-/**
- * Subtle, dismissible "Install app" affordance.
- *
- * - Chromium: captures `beforeinstallprompt`, suppresses the default mini-bar,
- *   and shows a custom card whose CTA triggers the native prompt.
- * - iOS Safari: no install event exists, so shows an Add-to-Home-Screen hint.
- * - Dismissal snoozes per variant and then re-prompts, repeating until the app
- *   is installed; already-installed (standalone) sessions never see it.
- *
- * Token-styled; renders nothing until it has something to show. Safe on both
- * the light storefront and dark admin surfaces.
- */
 /** No-op subscription — the client snapshot never changes after hydration. */
 function subscribeNoop(): () => void {
   return () => {};
@@ -152,10 +132,13 @@ export function InstallPrompt({
 }) {
   const cfg = VARIANTS[variant];
   const pathname = usePathname() ?? "/";
+  const engagement = useEngagement(variant);
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(
     null,
   );
   const [hasPrompt, setHasPrompt] = useState(false);
+  const [visible, setVisible] = useState(false);
+  const askedRef = useRef(false);
 
   // Client-mounted gate: `false` on the server and the first client paint (so
   // we render `null` and hydration matches), `true` thereafter — no
@@ -171,33 +154,11 @@ export function InstallPrompt({
   const [iosHint] = useState(
     () => typeof window !== "undefined" && isIos() && !isStandalone(),
   );
-  const [snoozed, setSnoozed] = useState(() => {
-    if (typeof window === "undefined") return true;
-    return isInstalled(cfg) || snoozeRemaining(cfg) > 0;
-  });
 
-  // Re-show once the snooze window elapses, unless already installed. Runs in a
-  // timeout/handler (never synchronously in an effect), so state updates stay
-  // outside the effect body.
-  const scheduleReshow = useCallback(
-    (delay: number) => {
-      return window.setTimeout(
-        () => {
-          if (!isInstalled(cfg)) setSnoozed(false);
-        },
-        Math.max(0, Math.min(delay, 2 ** 31 - 1)),
-      );
-    },
-    [cfg],
-  );
-
+  // Listen for the platform's install signals.
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (isInstalled(cfg)) return; // permanently suppressed
-
-    // If currently snoozed, arm a timer to reveal when the window elapses.
-    const remaining = snoozeRemaining(cfg);
-    const timer = remaining > 0 ? scheduleReshow(remaining) : undefined;
 
     const onBeforeInstall = (event: Event) => {
       event.preventDefault();
@@ -208,28 +169,52 @@ export function InstallPrompt({
       markInstalled(cfg);
       setHasPrompt(false);
       setDeferred(null);
-      setSnoozed(true);
+      setVisible(false);
+      engagement.markSatisfied("install");
     };
 
     window.addEventListener("beforeinstallprompt", onBeforeInstall);
     window.addEventListener("appinstalled", onInstalled);
 
     return () => {
-      if (timer) window.clearTimeout(timer);
       window.removeEventListener("beforeinstallprompt", onBeforeInstall);
       window.removeEventListener("appinstalled", onInstalled);
     };
-  }, [cfg, scheduleReshow]);
+  }, [cfg, engagement]);
 
-  // Each variant only lives on its own PWA's paths (separate manifests).
-  const onOwnSurface = cfg.onPath(pathname);
-  const visible = mounted && onOwnSurface && !snoozed && (hasPrompt || iosHint);
+  // Ask the algorithm whether this is a good moment.
+  useEffect(() => {
+    if (!mounted || !engagement.ready) return;
+    if (askedRef.current) return;
+    // Nothing installable to offer yet: no captured prompt and not iOS.
+    if (!hasPrompt && !iosHint) return;
+    if (isInstalled(cfg)) return;
+    // Each variant only lives on its own PWA's paths (separate manifests), so
+    // the admin card can never surface on a customer's storefront.
+    if (!cfg.onPath(pathname)) return;
 
-  const snooze = useCallback(() => {
-    markDismissedNow(cfg);
-    setSnoozed(true);
-    scheduleReshow(cfg.snoozeMs);
-  }, [cfg, scheduleReshow]);
+    const decision = engagement.decide("install", {
+      installed: false,
+      // Install is a platform prompt, not a permission one — these two fields
+      // only matter to the "notify" branch of the algorithm.
+      permission: "default",
+      iosNeedsInstall: iosHint,
+    });
+    if (!decision.ask) return;
+
+    askedRef.current = true;
+    const timer = window.setTimeout(() => {
+      setVisible(true);
+      engagement.markAsked("install");
+    }, 1800);
+
+    return () => window.clearTimeout(timer);
+  }, [cfg, engagement, hasPrompt, iosHint, mounted, pathname]);
+
+  const dismiss = useCallback(() => {
+    engagement.markDeclined("install");
+    setVisible(false);
+  }, [engagement]);
 
   const install = useCallback(async () => {
     if (!deferred) return;
@@ -239,19 +224,20 @@ export function InstallPrompt({
       const choice = await deferred.userChoice;
       if (choice.outcome === "accepted") {
         markInstalled(cfg);
-        setSnoozed(true);
+        engagement.markSatisfied("install");
+        setVisible(false);
         return;
       }
-      // Declined the native sheet → snooze like a dismissal.
-      snooze();
+      // Declined the native sheet → the same as dismissing this card.
+      dismiss();
     } catch {
-      snooze();
+      dismiss();
     } finally {
       setDeferred(null);
     }
-  }, [cfg, deferred, snooze]);
+  }, [cfg, deferred, dismiss, engagement]);
 
-  if (!visible) return null;
+  if (!mounted || !visible || !cfg.onPath(pathname)) return null;
 
   return (
     <AnimatePresence>
@@ -275,11 +261,16 @@ export function InstallPrompt({
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium">{cfg.title}</p>
           {iosHint ? (
-            <p className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
-              Tap
-              <ShareIcon className="inline size-3.5" aria-hidden />
-              then &ldquo;Add to Home Screen&rdquo;.
-            </p>
+            <>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {cfg.iosBody}
+              </p>
+              <p className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+                Tap
+                <ShareIcon className="inline size-3.5" aria-hidden />
+                then &ldquo;Add to Home Screen&rdquo;.
+              </p>
+            </>
           ) : (
             <p className="mt-0.5 text-xs text-muted-foreground">{cfg.body}</p>
           )}
@@ -289,7 +280,7 @@ export function InstallPrompt({
               <Button size="sm" onClick={install}>
                 Install app
               </Button>
-              <Button size="sm" variant="ghost" onClick={snooze}>
+              <Button size="sm" variant="ghost" onClick={dismiss}>
                 Not now
               </Button>
             </div>
@@ -299,7 +290,7 @@ export function InstallPrompt({
         <Button
           size="icon-sm"
           variant="ghost"
-          onClick={snooze}
+          onClick={dismiss}
           aria-label="Dismiss install prompt"
           className="-mt-0.5 -mr-0.5 shrink-0"
         >

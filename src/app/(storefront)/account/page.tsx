@@ -18,6 +18,8 @@ import { getSellerTaxProfile } from "@/server/services/tax-profile";
 import { getGstViewPreference } from "@/server/prefs/gst-view";
 import { GstViewToggle } from "@/components/storefront/GstViewToggle";
 import { BusinessProfileForm } from "@/components/storefront/account/BusinessProfileForm";
+import { NotificationSettingsPanel } from "@/components/notify/NotificationSettingsPanel";
+import { getNotifyTopicStates } from "@/server/services/notify-prefs";
 
 export const metadata: Metadata = {
   title: "Your account — MemoryDeals",
@@ -58,7 +60,7 @@ export default async function AccountPage({
     redirect(viewer.kind === "admin" ? "/admin/dashboard" : "/account/login");
   }
 
-  const [{ renew, request }, customer, openRequest] = await Promise.all([
+  const [{ renew, request }, customer, openRequest, notifyTopics] = await Promise.all([
     searchParams,
     prisma.customer.findUnique({
       where: { id: viewer.customerId },
@@ -88,6 +90,9 @@ export default async function AccountPage({
       },
       select: { id: true },
     }),
+    // Notification switches for this customer (no prices, no device state —
+    // the device half is resolved in the browser by the panel itself).
+    getNotifyTopicStates({ kind: "customer", id: viewer.customerId }),
   ]);
 
   if (!customer) {
@@ -218,10 +223,31 @@ export default async function AccountPage({
           </div>
         </FadeUp>
 
+        {/* Alerts — the manual switches for notifications. The device half
+            (is this browser allowed to alert, is the app installed) is
+            resolved client-side inside the panel; only the per-topic choices
+            come from the server. */}
+        <FadeUp delay={0.12}>
+          <div className="space-y-4 rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-sm ring-1 ring-foreground/5 sm:p-7">
+            <div className="space-y-1">
+              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Alerts
+              </p>
+              <h2 className="font-heading text-lg font-semibold tracking-tight">
+                Order and price alerts
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Choose what we tell you, and turn alerts on for this device.
+              </p>
+            </div>
+            <NotificationSettingsPanel topics={notifyTopics} variant="storefront" />
+          </div>
+        </FadeUp>
+
         {/* Business & tax details — GSTIN + place of supply. Only when the
             seller has GST enabled; otherwise this card is absent (pre-GST). */}
         {gstEnabled ? (
-          <FadeUp delay={0.12}>
+          <FadeUp delay={0.14}>
             <div className="space-y-4 rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-sm ring-1 ring-foreground/5 sm:p-7">
               <div className="space-y-1">
                 <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">

@@ -23,6 +23,7 @@ import {
   AdminSoundToggle,
 } from "@/components/admin/notifications/AdminLiveEvents"
 import { InstallPrompt } from "@/components/pwa/InstallPrompt"
+import { NotifyGate } from "@/components/notify/NotifyGate"
 import { TabBadge } from "@/components/shell/TabBadge"
 import { Logo } from "@/components/brand/Logo"
 import {
@@ -202,6 +203,10 @@ export function AdminShell({
             {/* Frequent "install TMD Admin" nag (2h snooze) until installed —
                 staff get ringing alerts most reliably in the installed app. */}
             <InstallPrompt variant="admin" />
+            {/* The notification ask, shown only when the usage algorithm says
+                the moment is right. Staff can also turn alerts on by hand in
+                Settings. */}
+            <NotifyGate variant="admin" />
             <ThemeToggle variant="compact" className="ml-auto" />
             <AdminSoundToggle />
             <Tooltip

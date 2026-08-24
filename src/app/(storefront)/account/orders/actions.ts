@@ -6,6 +6,7 @@ import { z } from "zod";
 import { prisma } from "@/server/db";
 import { resolveViewer } from "@/server/auth/viewer";
 import { canSeePrices, isCustomer } from "@/server/types/viewer";
+import { notifyAdmins } from "@/server/notify/push";
 import { writeAudit } from "@/server/security/audit";
 import { limit } from "@/server/security/ratelimit";
 import { addToCart, CartError } from "@/server/services/cart";
@@ -226,6 +227,16 @@ export async function cancelOrderAction(
       .catch((error) => {
         console.error("[actions/orders] cancel notify failed:", error);
       });
+
+    // …and ring their phones. Fire-and-forget: the order is already cancelled
+    // and a push failure must never turn a successful cancel into an error.
+    void notifyAdmins("admin.order.cancelled", {
+      title: "Order cancelled",
+      body: `Order ${number} was cancelled by the customer.`,
+      url: "/admin/orders",
+    }).catch((error) => {
+      console.error("[actions/orders] cancel push failed:", error);
+    });
 
     await writeAudit({
       actorType: "customer",

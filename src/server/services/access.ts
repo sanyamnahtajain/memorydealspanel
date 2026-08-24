@@ -1,9 +1,9 @@
-import type { AccessRequest, Customer } from "@prisma/client";
+import type { AccessRequest, Customer, Prisma } from "@prisma/client";
 import type { AccessRequestInput } from "@/lib/schemas/customer";
 import { hashPassword } from "@/server/auth/password";
 import { revokeAllForCustomer } from "@/server/auth/session";
 import { prisma } from "@/server/db";
-import { sendPushToAdmin } from "@/server/notify/push";
+import { notifyAdmins, notifyCustomer } from "@/server/notify/push";
 import {
   requestAccessLimiter,
   requestAccessFloodLimiter,
@@ -196,7 +196,9 @@ async function notifyAdminsOfRequest(
   }
 
   try {
-    await sendPushToAdmin({
+    // Typed topic (not the deprecated sendPushToAdmin): staff preferences and
+    // the LONG "money is waiting" ring both come from the topic catalogue.
+    await notifyAdmins("admin.access.request", {
       title: "New access request",
       body: `${businessName} requested price access`,
       url: `/admin/requests`,
@@ -276,6 +278,17 @@ export async function approveRequest(
     data: { status: "APPROVED", decidedAt: now },
   });
 
+  // Tell the buyer their prices are open. Fire-and-forget on purpose: the
+  // approval is already committed, and `notifyCustomer` (which owns the
+  // preference check) must never be able to fail or delay it.
+  void notifyCustomer(customerId, "access.approved", {
+    title: "Prices are open for you",
+    body: "You can now see prices and place orders.",
+    url: "/",
+  }).catch((error) => {
+    console.error("[access] approval push failed:", error);
+  });
+
   return { customer, grant };
 }
 
@@ -312,6 +325,42 @@ async function findLiveGrant(customerId: string, now: Date) {
     },
     orderBy: { approvedAt: "desc" },
   });
+}
+
+/**
+ * The BULK form of `findLiveGrant`: which of `customerIds` hold a live grant
+ * (unrevoked, unexpired) right now. Exported so audience resolvers — the admin
+ * broadcast composer, mainly — can answer "who can see prices?" with ONE query
+ * instead of one per customer, without restating the access rule.
+ *
+ * `expiringBefore` narrows to grants that END inside a window (a FINITE
+ * `expiresAt` after `now` and at or before the cutoff) — the "access ending
+ * soon" audience. An unlimited grant is never expiring, so it is excluded.
+ *
+ * Pass `null` for `customerIds` to scan every customer. Callers with a long id
+ * list should chunk it themselves; the filter here is the same one
+ * `findLiveGrant` uses, so the two can never drift.
+ */
+export async function customerIdsWithLiveGrant(
+  customerIds: string[] | null = null,
+  options: { now?: Date; expiringBefore?: Date } = {},
+): Promise<string[]> {
+  if (customerIds !== null && customerIds.length === 0) return [];
+  const now = options.now ?? new Date();
+
+  const where: Prisma.AccessGrantWhereInput = { revokedAt: null };
+  if (customerIds !== null) where.customerId = { in: customerIds };
+  if (options.expiringBefore) {
+    where.expiresAt = { gt: now, lte: options.expiringBefore };
+  } else {
+    where.OR = [{ expiresAt: null }, { expiresAt: { gt: now } }];
+  }
+
+  const grants = await prisma.accessGrant.findMany({
+    where,
+    select: { customerId: true },
+  });
+  return [...new Set(grants.map((grant) => grant.customerId))];
 }
 
 /**
@@ -658,7 +707,7 @@ async function notifyAdminsOfRenewal(
     console.error("[access] failed to persist renewal notification:", error);
   }
   try {
-    await sendPushToAdmin({
+    await notifyAdmins("admin.access.renewal", {
       title: "Access renewal request",
       body: `${businessName} is asking to renew their price access.`,
       url: "/admin/requests",

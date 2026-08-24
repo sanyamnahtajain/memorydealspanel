@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 
-import { prisma } from "@/server/db";
 import { listActive } from "@/server/dal/categories";
 import { listActivePublicBrands } from "@/server/dal/brands";
 import { listForViewer } from "@/server/dal/products";
@@ -39,21 +38,11 @@ export const revalidate = 300;
 
 const FEATURED_LIMIT = 8;
 
-/**
- * Rounds a live count DOWN to a friendly "1,100+" figure so the ISR-cached
- * line never overstates the catalogue. Counts below one step print exactly.
- */
-function approxCount(n: number, step: number): string {
-  if (n < step) return n.toLocaleString("en-IN");
-  return `${(Math.floor(n / step) * step).toLocaleString("en-IN")}+`;
-}
-
 export default async function HomePage() {
-  const [categories, brands, featured, productCount] = await Promise.all([
+  const [categories, brands, featured] = await Promise.all([
     listActive(),
     listActivePublicBrands(),
     listForViewer(ANON_VIEWER, { take: FEATURED_LIMIT }),
-    prisma.product.count({ where: { status: "ACTIVE", deletedAt: null } }),
   ]);
 
   const featuredItems: ProductCardItem[] = featured.map((product) => ({
@@ -67,20 +56,6 @@ export default async function HomePage() {
   return (
     <StorefrontShell topNotice="Prices are subject to change without prior notice — please confirm current rates before placing your order.">
       <HomeSections>
-        {/* Catalogue scale, understated: one muted line under the hero
-            (owner request — the stats tiles are gone). */}
-        <p className="text-center text-sm text-muted-foreground">
-          {approxCount(productCount, 100)} products
-          <span aria-hidden className="mx-2 text-muted-foreground/50">
-            ·
-          </span>
-          {approxCount(brands.length, 10)} brands
-          <span aria-hidden className="mx-2 text-muted-foreground/50">
-            ·
-          </span>
-          wholesale prices on approval
-        </p>
-
         {/* Shop by brand — leverages the brand master; surfaced first. */}
         {brands.length > 0 ? (
           <section aria-labelledby="home-brands">
