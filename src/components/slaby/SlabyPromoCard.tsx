@@ -19,13 +19,19 @@ import { useSlabyBranding } from "./useSlabyBranding";
 const SHOWN_AT_KEY = "md-slaby-promo-at";
 const APPEAR_DELAY_MS = 6_000;
 
-/** Paths where a marketing card would get in the way of the job at hand. */
+/**
+ * Paths where a marketing card would get in the way of the job at hand.
+ * `/p/` matters most in the installed-app (PWA) view: product pages carry the
+ * sticky "See price / Enquire" bar at the same bottom offset, and the promo
+ * must never cover the store's primary CTA.
+ */
 function isQuietPath(pathname: string): boolean {
   return (
     pathname.startsWith("/account/cart") ||
     pathname.startsWith("/account/orders") ||
     pathname.startsWith("/account/login") ||
     pathname.startsWith("/signup") ||
+    pathname.startsWith("/p/") ||
     pathname.startsWith("/admin")
   );
 }
@@ -103,7 +109,7 @@ export function SlabyPromoCard() {
             href={slabyHref("promo")}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-primary outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
+            className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-[#2563EB] outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 dark:text-[#60A5FA]"
           >
             Explore Slaby
             <ArrowUpRight className="size-3.5" aria-hidden />

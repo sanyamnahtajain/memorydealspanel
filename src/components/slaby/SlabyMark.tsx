@@ -31,9 +31,14 @@ export function SlabyWordmark({ className = "h-4" }: { className?: string }) {
   );
 }
 
+/** The Slaby brand blue (the TradeOS original), lightened a step in dark mode. */
+export const SLABY_BLUE_TEXT = "text-[#2563EB] dark:text-[#60A5FA]";
+
 /**
- * "Built with Slaby" badge — a quiet, non-blocking attribution link. Pure
- * presentation: the CALLER decides whether it renders (placement toggles).
+ * "Built with Slaby" badge — a non-blocking attribution link with a little
+ * presence: a blue-tinted pill, muted prefix, and the wordmark in the ORIGINAL
+ * Slaby blue (owner request — never the page's ink color). Pure presentation:
+ * the CALLER decides whether it renders (placement toggles).
  */
 export function SlabyBadge({
   placement,
@@ -51,13 +56,13 @@ export function SlabyBadge({
       target="_blank"
       rel="noopener noreferrer"
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50",
+        "inline-flex items-center gap-1.5 rounded-full border border-[#2563EB]/25 bg-[#2563EB]/5 px-3 py-1 text-xs font-medium text-muted-foreground outline-none transition-colors hover:border-[#2563EB]/40 hover:bg-[#2563EB]/10 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 dark:border-[#60A5FA]/25 dark:bg-[#60A5FA]/10 dark:hover:bg-[#60A5FA]/15",
         className,
       )}
       aria-label={`${prefix} Slaby — opens slaby.in`}
     >
       <span>{prefix}</span>
-      <SlabyWordmark className="h-3.5 translate-y-px" />
+      <SlabyWordmark className={cn("h-3.5 translate-y-px", SLABY_BLUE_TEXT)} />
     </a>
   );
 }
