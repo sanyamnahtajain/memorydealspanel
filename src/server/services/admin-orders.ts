@@ -13,6 +13,7 @@ import {
   type OrderBillingSnapshot,
 } from "@/lib/billing-groups/snapshot";
 import {
+  frozenDeliveryChargePaise,
   parseStoredDeliveryDisclosure,
   type DeliveryDisclosure,
 } from "@/lib/delivery";
@@ -273,6 +274,11 @@ export interface OrderDetail extends OrderListItem {
   billing: OrderBillingSnapshot | null;
   /** Delivery disclosure frozen at placement, or null when none applied. */
   delivery: DeliveryDisclosure | null;
+  /**
+   * The delivery CHARGE frozen at placement (integer paise); 0 on an order
+   * placed before delivery became a real money line, or with it off.
+   */
+  deliveryChargePaise: number;
   /** The "+N days" access extension this order granted, when it did. */
   accessExtension: OrderAccessExtension | null;
 }
@@ -450,6 +456,7 @@ export async function getOrder(id: string): Promise<OrderDetail | null> {
       groupDiscountPaise: true,
       billingGroups: true,
       deliveryDisclosure: true,
+      deliveryChargePaise: true,
       accessExtension: true,
     },
   });
@@ -464,6 +471,7 @@ export async function getOrder(id: string): Promise<OrderDetail | null> {
     tax: toOrderTaxSnapshot(row),
     billing: parseOrderBillingSnapshot(row.billingGroups),
     delivery: parseStoredDeliveryDisclosure(row.deliveryDisclosure),
+    deliveryChargePaise: frozenDeliveryChargePaise(row.deliveryChargePaise),
     accessExtension: parseOrderAccessExtension(row.accessExtension),
   };
 }
@@ -709,6 +717,7 @@ export async function getCustomerOrderByNumber(
       discountPaise: true,
       billingGroups: true,
       deliveryDisclosure: true,
+      deliveryChargePaise: true,
       accessExtension: true,
     },
   });
@@ -728,6 +737,7 @@ export async function getCustomerOrderByNumber(
     tax: toOrderTaxSnapshot(row),
     billing: parseOrderBillingSnapshot(row.billingGroups),
     delivery: parseStoredDeliveryDisclosure(row.deliveryDisclosure),
+    deliveryChargePaise: frozenDeliveryChargePaise(row.deliveryChargePaise),
     accessExtension: parseOrderAccessExtension(row.accessExtension),
   };
 }

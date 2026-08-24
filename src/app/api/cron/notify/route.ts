@@ -150,14 +150,22 @@ interface NotifySummary {
   ok: true;
   /** Buyers whose access lands on a milestone today. */
   due: number;
-  /** Reminders actually pushed this run. */
+  /** Milestones processed this run (recorded + handed to the sender). */
   sent: number;
+  /**
+   * Devices a message actually REACHED. This is the number that matters: a
+   * high `sent` with `delivered: 0` means nobody has alerts switched on yet
+   * (usually the VAPID keys are missing), not that the job is healthy.
+   */
+  delivered: number;
   /** Milestones skipped because this run is a repeat. */
   alreadySent: number;
   /** Sent counts per milestone, for eyeballing the job in the Vercel log. */
   byMilestone: Record<string, number>;
-  /** Idle-cart reminders pushed this run. */
+  /** Idle-cart reminders processed this run. */
   cartReminders: number;
+  /** Devices those cart reminders actually reached. */
+  cartDelivered: number;
   /** ISO timestamp the sweep ran at. */
   ranAt: string;
 }
@@ -172,7 +180,7 @@ export async function GET(request: Request): Promise<Response> {
 
   // The cart sweep is independent of the expiry sweep, so it runs even when
   // no access is expiring today — hence it is resolved before the early exit.
-  const cartReminders = await sweepIdleCarts(now);
+  const cart = await sweepIdleCarts(now);
 
   const empty = (): NotifySummary => ({
     ok: true,
@@ -180,7 +188,9 @@ export async function GET(request: Request): Promise<Response> {
     sent: 0,
     alreadySent: 0,
     byMilestone,
-    cartReminders,
+    delivered: 0,
+    cartReminders: cart.processed,
+    cartDelivered: cart.delivered,
     ranAt: now.toISOString(),
   });
 
@@ -261,6 +271,7 @@ export async function GET(request: Request): Promise<Response> {
   );
 
   let sent = 0;
+  let delivered = 0;
   let alreadySent = 0;
 
   for (const entry of due) {
@@ -301,7 +312,12 @@ export async function GET(request: Request): Promise<Response> {
     // `notifyCustomer` owns the preference gate and never throws; the catch is
     // belt-and-braces so one bad recipient cannot end the run.
     try {
-      await notifyCustomer(entry.customerId, TOPIC[entry.milestone], message);
+      const result = await notifyCustomer(
+        entry.customerId,
+        TOPIC[entry.milestone],
+        message,
+      );
+      delivered += result.sent;
     } catch (error) {
       console.error("[cron/notify] push failed:", error);
     }
@@ -323,9 +339,11 @@ export async function GET(request: Request): Promise<Response> {
     ok: true,
     due: due.length,
     sent,
+    delivered,
     alreadySent,
     byMilestone,
-    cartReminders,
+    cartReminders: cart.processed,
+    cartDelivered: cart.delivered,
     ranAt: now.toISOString(),
   };
 
@@ -351,7 +369,9 @@ const CART_REMINDER_TYPE = "cart.reminder";
  * Like the expiry sweep, the reminder is RECORDED before it is sent, so a
  * crash costs one missed nudge rather than a repeat on every retry.
  */
-async function sweepIdleCarts(now: Date): Promise<number> {
+async function sweepIdleCarts(
+  now: Date,
+): Promise<{ processed: number; delivered: number }> {
   const oldest = new Date(now.getTime() - CART_IDLE_MAX_MS);
   const newest = new Date(now.getTime() - CART_IDLE_MIN_MS);
 
@@ -363,9 +383,9 @@ async function sweepIdleCarts(now: Date): Promise<number> {
     });
   } catch (error) {
     console.error("[cron/notify] failed to read carts:", error);
-    return 0;
+    return { processed: 0, delivered: 0 };
   }
-  if (rows.length === 0) return 0;
+  if (rows.length === 0) return { processed: 0, delivered: 0 };
 
   // One cart per buyer: the freshest line is when they last touched it.
   const carts = new Map<string, { itemCount: number; lastTouchedAt: Date }>();
@@ -401,7 +421,7 @@ async function sweepIdleCarts(now: Date): Promise<number> {
   } catch (error) {
     // Fail CLOSED: without the cooldown history we could spam everyone.
     console.error("[cron/notify] failed to read cart reminder history:", error);
-    return 0;
+    return { processed: 0, delivered: 0 };
   }
 
   // Only buyers who could actually place the order.
@@ -410,10 +430,11 @@ async function sweepIdleCarts(now: Date): Promise<number> {
     reachable = new Set(await customerIdsWithLiveGrant(customerIds, { now }));
   } catch (error) {
     console.error("[cron/notify] failed to resolve cart access:", error);
-    return 0;
+    return { processed: 0, delivered: 0 };
   }
 
   let sent = 0;
+  let delivered = 0;
   for (const [customerId, cart] of carts) {
     if (!reachable.has(customerId)) continue;
 
@@ -438,16 +459,17 @@ async function sweepIdleCarts(now: Date): Promise<number> {
     }
 
     try {
-      await notifyCustomer(
+      const result = await notifyCustomer(
         customerId,
         "cart.reminder",
         cartReminderMessage(cart.itemCount),
       );
+      delivered += result.sent;
     } catch (error) {
       console.error("[cron/notify] cart push failed:", error);
     }
     sent += 1;
   }
 
-  return sent;
+  return { processed: sent, delivered };
 }

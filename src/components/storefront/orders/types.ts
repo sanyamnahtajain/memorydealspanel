@@ -112,4 +112,10 @@ export interface OrderHistoryDetail {
   billing: OrderBillingView | null;
   /** Frozen delivery terms shown at placement (not a price — never gated). */
   delivery: { minChargePaise: number; note: string | null } | null;
+  /**
+   * The delivery CHARGE frozen at placement (paise). 0 for an order placed
+   * before delivery was charged (or with it off) — the totals then render
+   * exactly as they always have.
+   */
+  deliveryChargePaise: number;
 }

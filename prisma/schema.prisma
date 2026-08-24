@@ -538,6 +538,13 @@ model Order {
   // Delivery disclosure FROZEN at placement (src/lib/delivery.ts); absent on
   // orders placed before the feature or while it was off.
   deliveryDisclosure Json?
+  // The delivery CHARGE actually collected on this order (integer paise),
+  // frozen at placement. A CHARGE, not goods: it sits OUTSIDE `subtotalPaise`,
+  // outside every discount and outside the GST taxable base, and is added last
+  // to reach the payable total. ABSENT on orders placed before delivery became
+  // a real money line — every reader treats missing as 0, so those orders keep
+  // their exact historical total.
+  deliveryChargePaise Int?
   // Set when placing this order AUTO-EXTENDED the customer's access (the
   // +30-days reward). Lets the admin see it and ROLL IT BACK on cancellation
   // (anti-abuse: junk orders to farm access). {days, previousExpiresAt,

@@ -3,12 +3,15 @@ import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf
 import { prisma } from "@/server/db";
 import { APP_NAME, CONTACT } from "@/lib/constants";
 import { BUSINESS_PHONE } from "@/server/contact";
-import type { OrderItemSnapshot } from "@/server/services/orders";
+import { orderPayablePaise, type OrderItemSnapshot } from "@/server/services/orders";
 import { attachmentUrlPrefix } from "@/lib/requirement-notes";
 import { publicBaseOrEmpty } from "@/server/storage/r2";
 import { DEFAULT_ORDER_PDF_SIZE, type OrderPdfSize } from "@/lib/order-pdf-size";
 import { lineKey, parseOrderBillingSnapshot } from "@/lib/billing-groups/snapshot";
-import { parseStoredDeliveryDisclosure } from "@/lib/delivery";
+import {
+  frozenDeliveryChargePaise,
+  parseStoredDeliveryDisclosure,
+} from "@/lib/delivery";
 import { bucketBillNumber } from "@/lib/billing-groups/engine";
 import { GENERAL_GROUP_CODE, GENERAL_GROUP_NAME } from "@/lib/billing-groups/types";
 
@@ -150,6 +153,14 @@ export interface OrderPdfData {
    * collected, printed under the totals with the weight/size/PIN-code caveat.
    */
   delivery?: { minChargePaise: number; note: string | null } | null;
+  /**
+   * The delivery CHARGE frozen on the order (integer paise). When > 0 it prints
+   * as a REAL totals line ("Delivery (minimum)") just before the Grand Total —
+   * and `grandTotalPaise` above must ALREADY include it, so the amount in words
+   * matches the figure. 0 (or absent) on an order placed before delivery was
+   * charged: nothing extra prints and the bill is byte-for-byte as it was.
+   */
+  deliveryChargePaise?: number;
 }
 
 /**
@@ -230,6 +241,9 @@ export async function renderOrderPdf(
 ): Promise<Uint8Array> {
   const dim = PAPER[paperSize];
   const M = dim.margin; // outer margin
+  // The delivery charge already inside `data.grandTotalPaise`; 0 disables every
+  // delivery line below, so a pre-charge order prints exactly as it always did.
+  const deliveryChargePaise = data.deliveryChargePaise ?? 0;
   const doc = await PDFDocument.create();
   const helv = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
@@ -464,6 +478,11 @@ export async function renderOrderPdf(
     y -= 16;
     if (spec.subtotalPaise != null) totalsRow("Subtotal", money(spec.subtotalPaise), helv, 9.5);
     for (const d of spec.discounts) totalsRow(d.label, `- ${money(d.paise)}`, helv, 9.5);
+    // Delivery is a CHARGE: it prints AFTER every discount and is added, not
+    // subtracted. Only on the order's own totals — never inside a bucket bill.
+    if (deliveryChargePaise > 0) {
+      totalsRow("Delivery (minimum)", `+ ${money(deliveryChargePaise)}`, helv, 9.5);
+    }
     text("Grand Total", M + W * 0.35, 10, bold, INK, "right", W * 0.2);
     text(`${spec.totalQty.toFixed(2)} pcs`, M + W * 0.56, 10, bold, INK, "left", 0);
     text(money(spec.grandTotalPaise), M, 10.5, bold, INK, "right", W);
@@ -554,7 +573,8 @@ export async function renderOrderPdf(
    * dotted rule, the coupon (order-level), then the grand total + words.
    */
   const orderTotalBlock = (bills: BillPage[]) => {
-    const needed = 130 + bills.length * 13 + couponRows.length * 13;
+    const needed =
+      130 + bills.length * 13 + couponRows.length * 13 + (deliveryChargePaise > 0 ? 13 : 0);
     if (y < M + needed) newPage();
     y -= 4;
     hline(y);
@@ -578,6 +598,13 @@ export async function renderOrderPdf(
     for (const d of couponRows) {
       text(d.label, M + 2, 9.5, helv);
       text(`- ${money(d.paise)}`, M, 9.5, helv, INK, "right", W);
+      y -= 13;
+    }
+    // Delivery: one charge for the WHOLE order, so it belongs here — after the
+    // per-bill totals and the coupon — never split across the bucket bills.
+    if (deliveryChargePaise > 0) {
+      text("Delivery (minimum)", M + 2, 9.5, helv);
+      text(`+ ${money(deliveryChargePaise)}`, M, 9.5, helv, INK, "right", W);
       y -= 13;
     }
     text("Grand Total", M + 2, 10.5, bold);
@@ -621,23 +648,32 @@ export async function renderOrderPdf(
     orderTotalBlock(bills);
   }
 
-  // ---- Delivery disclosure (owner request) — under the totals ----------
-  // The frozen minimum delivery charge + the weight/size/PIN-code caveat.
-  // Simple English, never added into the goods total.
+  // ---- Delivery terms (owner request) — under the totals ---------------
+  // The frozen minimum delivery charge + the weight/size/PIN-code caveat, in
+  // simple English. Two eras, both printed verbatim as the buyer saw them:
+  //  - charged (today): the amount IS a line in the Grand Total above, and is
+  //    still a MINIMUM that can rise;
+  //  - disclosed-only (orders placed before the charge): the original "extra
+  //    (not included above)" wording, so an old bill reprints unchanged.
   if (data.delivery) {
-    if (y < M + 70) newPage();
+    // Room for the heading + the (longer, charged) caveat + an optional note.
+    if (y < M + 96) newPage();
     y -= 4;
     dotted(y);
     y -= 15;
     text(
-      `Delivery: at least Rs. ${money(data.delivery.minChargePaise)} extra (not included above).`,
+      deliveryChargePaise > 0
+        ? `Delivery (minimum): Rs. ${money(deliveryChargePaise)} — included in the Grand Total above.`
+        : `Delivery: at least Rs. ${money(data.delivery.minChargePaise)} extra (not included above).`,
       M + 2,
       9,
       bold,
     );
     y -= 12;
     for (const nl of wrapToWidth(
-      "Final delivery charge depends on parcel weight, parcel size and the PIN code.",
+      deliveryChargePaise > 0
+        ? "This is the minimum. The final delivery charge depends on parcel weight, parcel size and the PIN code; anything above this is confirmed before dispatch."
+        : "Final delivery charge depends on parcel weight, parcel size and the PIN code.",
       helv,
       8,
       W - 8,
@@ -883,6 +919,11 @@ export async function buildOrderPdf(
       }
     : undefined;
 
+  // The payable total = frozen goods total (incl. GST, net of every discount)
+  // PLUS the frozen delivery charge. `orderPayablePaise` is the one formula
+  // every surface shares; a pre-charge order reads 0 delivery and is unchanged.
+  const deliveryChargePaise = frozenDeliveryChargePaise(order.deliveryChargePaise);
+
   const bytes = await renderOrderPdf({
     orderNumber: order.orderNumber,
     placedAt: order.placedAt,
@@ -890,7 +931,8 @@ export async function buildOrderPdf(
     partyPhone: order.customer.phone ?? null,
     lines,
     totalQty: items.reduce((s, it) => s + it.quantity, 0),
-    grandTotalPaise: order.grandTotalPaise ?? order.subtotalPaise,
+    grandTotalPaise: orderPayablePaise(order),
+    deliveryChargePaise,
     totalTaxPaise: order.taxApplied ? order.totalTaxPaise : null,
     couponCode: order.couponCode ?? null,
     discountPaise: order.discountPaise ?? 0,

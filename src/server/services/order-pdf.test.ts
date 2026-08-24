@@ -71,6 +71,40 @@ const DATA: OrderPdfData = {
   totalTaxPaise: null,
 };
 
+const BILLED: OrderPdfData = {
+  ...DATA,
+  grandTotalPaise: 72000, // 750 − 6% of the 500 dealer bucket (30)
+  billing: {
+    groupDiscountPaise: 3000,
+    buckets: [
+      {
+        code: "DLR",
+        name: "Dealer",
+        separateBill: true,
+        notes: "Deliver to the dealer counter.",
+        billNumber: "5108/DLR",
+        lineIndexes: [0],
+        subtotalPaise: 50000,
+        discountPaise: 3000,
+        appliedPercentBps: 600,
+        netPaise: 47000,
+      },
+      {
+        code: "GEN",
+        name: "General",
+        separateBill: false,
+        notes: null,
+        billNumber: "5108/GEN",
+        lineIndexes: [1, 2],
+        subtotalPaise: 25000,
+        discountPaise: 0,
+        appliedPercentBps: null,
+        netPaise: 25000,
+      },
+    ],
+  },
+};
+
 describe("renderOrderPdf", () => {
   it("renders the estimate layout with masthead, party, lines, total and words", async () => {
     const bytes = await renderOrderPdf(DATA);
@@ -124,40 +158,6 @@ describe("renderOrderPdf", () => {
   });
 
   describe("billing buckets", () => {
-    const BILLED: OrderPdfData = {
-      ...DATA,
-      grandTotalPaise: 72000, // 750 − 6% of the 500 dealer bucket (30)
-      billing: {
-        groupDiscountPaise: 3000,
-        buckets: [
-          {
-            code: "DLR",
-            name: "Dealer",
-            separateBill: true,
-            notes: "Deliver to the dealer counter.",
-            billNumber: "5108/DLR",
-            lineIndexes: [0],
-            subtotalPaise: 50000,
-            discountPaise: 3000,
-            appliedPercentBps: 600,
-            netPaise: 47000,
-          },
-          {
-            code: "GEN",
-            name: "General",
-            separateBill: false,
-            notes: null,
-            billNumber: "5108/GEN",
-            lineIndexes: [1, 2],
-            subtotalPaise: 25000,
-            discountPaise: 0,
-            appliedPercentBps: null,
-            netPaise: 25000,
-          },
-        ],
-      },
-    };
-
     it("prints sequential bills (BILL 1 OF n …) closed by ONE ORDER TOTAL — no summary table", async () => {
       const text = pdfText(await renderOrderPdf(BILLED));
       // No summary table (owner request) — the document IS the bills.
@@ -208,6 +208,84 @@ describe("renderOrderPdf", () => {
     expect(single).toContain("Free above Rs. 50,000.");
     // Absent → nothing printed (old orders unchanged).
     expect(pdfText(await renderOrderPdf(DATA))).not.toContain("Delivery: at least");
+  });
+
+  describe("delivery as a REAL totals line", () => {
+    const delivery = { minChargePaise: 250_00, note: null };
+
+    it("single bill: prints the charge as a totals row and the words match the total", async () => {
+      // Goods 750.00 + delivery 250.00 = 1,000.00 payable.
+      const text = pdfText(
+        await renderOrderPdf({
+          ...DATA,
+          delivery,
+          deliveryChargePaise: 250_00,
+          grandTotalPaise: 75000 + 25000,
+        }),
+      );
+      expect(text).toContain("Delivery (minimum)");
+      expect(text).toContain("+ 250.00");
+      expect(text).toContain("1,000.00");
+      // The amount in words is the PAYABLE total, delivery included.
+      expect(text).toContain("One Thousand Only");
+      expect(text).not.toContain("Seven Hundred Fifty Only");
+      // The note now says it IS in the total, and still calls it a minimum.
+      expect(text).toContain("Delivery (minimum): Rs. 250.00");
+      expect(text).toContain("included in the Grand Total above");
+      expect(text).toContain("PIN code");
+      expect(text).not.toContain("not included above");
+    });
+
+    it("bucketed bills: the charge lands ONCE, in the closing ORDER TOTAL", async () => {
+      // Goods 720.00 (750 − 30 dealer) + delivery 250.00 = 970.00.
+      const text = pdfText(
+        await renderOrderPdf({
+          ...BILLED,
+          delivery,
+          deliveryChargePaise: 250_00,
+          grandTotalPaise: 72000 + 25000,
+        }),
+      );
+      expect(text).toContain("ORDER TOTAL");
+      expect(text).toContain("Nine Hundred Seventy Only");
+      // Exactly one delivery money row — never repeated per bill.
+      expect(text.match(/\+ 250\.00/g)?.length).toBe(1);
+      // The per-bill totals are GOODS only: delivery never joins a bill total.
+      expect(text).toContain("Bill Total");
+      expect(text).toContain("470.00"); // dealer bill, post-discount
+      expect(text).toContain("250.00"); // general bill goods total
+    });
+
+    it("renders the charged layout on A5 too", async () => {
+      const text = pdfText(
+        await renderOrderPdf(
+          { ...DATA, delivery, deliveryChargePaise: 250_00, grandTotalPaise: 100000 },
+          "A5",
+        ),
+      );
+      expect(text).toContain("Delivery (minimum)");
+      expect(text).toContain("One Thousand Only");
+    });
+
+    it("a HISTORICAL order (disclosure, no frozen charge) prints exactly as before", async () => {
+      const before = pdfText(await renderOrderPdf({ ...DATA, delivery }));
+      const explicitZero = pdfText(
+        await renderOrderPdf({ ...DATA, delivery, deliveryChargePaise: 0 }),
+      );
+      expect(explicitZero).toBe(before);
+      expect(before).toContain("Delivery: at least Rs. 250.00 extra");
+      expect(before).toContain("not included above");
+      expect(before).not.toContain("Delivery (minimum)");
+      // The total is still the goods total, untouched.
+      expect(before).toContain("Seven Hundred Fifty Only");
+    });
+
+    it("delivery OFF adds no line at all", async () => {
+      const text = pdfText(await renderOrderPdf(DATA));
+      expect(text).not.toContain("Delivery (minimum)");
+      expect(text).not.toContain("+ 250.00");
+      expect(text).toContain("Seven Hundred Fifty Only");
+    });
   });
 
   it("wraps a long product name (no truncation) and prints the customer note inline", async () => {

@@ -61,9 +61,31 @@ const MODEL_ID = process.env.ELEVENLABS_MODEL_ID ?? "eleven_multilingual_v2";
  * pass its id — the wording and everything else stays the same.
  */
 const VOICE_PRESETS = {
-  "soft-female": { id: "EXAVITQu4vr4xnSDxMaL", label: "soft female (Bella)" },
-  "soft-male": { id: "ErXwobaYiN019PkySvjV", label: "soft male (Antoni)" },
+  // Soft and warm — the default, and what the owner asked for.
+  "soft-female": { id: "EXAVITQu4vr4xnSDxMaL", label: "Bella — soft female" },
+  "soft-male": { id: "ErXwobaYiN019PkySvjV", label: "Antoni — soft, warm male" },
+  // The rest of the well-known stock set, so you can try a few quickly.
+  rachel: { id: "21m00Tcm4TlvDq8ikWAM", label: "Rachel — calm female (most used)" },
+  adam: { id: "pNInz6obpgDQGcFmaJgB", label: "Adam — deep male" },
+  josh: { id: "TxGEqnHWrfWFTfGW9XjX", label: "Josh — young deep male" },
+  arnold: { id: "VR6AewLTigWG4xSOukaG", label: "Arnold — crisp male" },
+  domi: { id: "AZnzlk1XvdvUeBnXmlld", label: "Domi — strong female" },
+  elli: { id: "MF3mGyEYCl7XYWbV9V6O", label: "Elli — young female" },
+  sam: { id: "yoZ06aMxZJJ28mfd3POQ", label: "Sam — raspy male" },
 };
+
+/** `--list-voices` prints the presets and exits, so you can pick one fast. */
+function listVoices() {
+  console.log("[voice] presets — pass one as ELEVENLABS_VOICE=<name>:\n");
+  for (const [name, preset] of Object.entries(VOICE_PRESETS)) {
+    console.log(`  ${name.padEnd(12)} ${preset.label}`);
+  }
+  console.log(
+    "\n  Any other voice: copy its id from the ElevenLabs Voice Library and\n" +
+      "  pass ELEVENLABS_VOICE_ID=<id>. For Hindi that sounds native rather\n" +
+      "  than accented, filter the library by Hindi and use that id.\n",
+  );
+}
 const PRESET =
   VOICE_PRESETS[process.env.ELEVENLABS_VOICE ?? "soft-female"] ??
   VOICE_PRESETS["soft-female"];
@@ -208,6 +230,11 @@ const CLOSE_PROMPT =
   "and clean, fading out quickly";
 
 async function main() {
+  if (process.argv.includes("--list-voices")) {
+    listVoices();
+    return;
+  }
+
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) {
     console.error(
@@ -215,6 +242,11 @@ async function main() {
         "        Run: ELEVENLABS_API_KEY=... node scripts/generate-voice-lines.mjs",
     );
     process.exitCode = 1;
+    return;
+  }
+
+  if (process.argv.includes("--list-voices")) {
+    listVoices();
     return;
   }
 

@@ -9,6 +9,7 @@ import {
 } from "@/lib/slaby/branding";
 import {
   parseDeliveryRules,
+  resolveDeliveryChargePaise,
   resolveDeliveryDisclosure,
   type DeliveryDisclosure,
   type DeliveryRules,
@@ -159,6 +160,26 @@ export async function getDeliveryRules(): Promise<DeliveryRules> {
 /** The disclosure the storefront/PDF must show, or null when off. */
 export async function getDeliveryDisclosure(): Promise<DeliveryDisclosure | null> {
   return resolveDeliveryDisclosure(await getDeliveryRules());
+}
+
+/**
+ * The full delivery terms in ONE read: what to SHOW (`disclosure`) and what to
+ * CHARGE (`chargePaise`). Placement and the cart both need both, and they must
+ * come from the same snapshot of the rules — never two separate reads that an
+ * admin edit could land between.
+ */
+export interface DeliveryTerms {
+  disclosure: DeliveryDisclosure | null;
+  /** Integer paise added to the total; 0 when delivery is off. */
+  chargePaise: number;
+}
+
+export async function getDeliveryTerms(): Promise<DeliveryTerms> {
+  const rules = await getDeliveryRules();
+  return {
+    disclosure: resolveDeliveryDisclosure(rules),
+    chargePaise: resolveDeliveryChargePaise(rules),
+  };
 }
 
 /** Replace the delivery rules (validated by the action's zod schema). */

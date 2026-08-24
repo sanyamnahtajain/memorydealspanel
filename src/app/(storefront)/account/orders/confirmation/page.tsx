@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { FadeUp } from "@/components/motion/primitives";
 import { OrderTaxBreakup } from "@/components/storefront/orders/OrderTaxBreakup";
 import { DeliveryNotice } from "@/components/storefront/orders/DeliveryNotice";
+import { DeliveryChargeRow } from "@/components/orders/DeliveryChargeRow";
 import { OrderBucketSections } from "@/components/orders/billing/OrderBucketSections";
 import { BillingTotalsRows } from "@/components/orders/billing/BillingTotalsRows";
 import { toOrderBillingView } from "@/components/orders/billing/types";
@@ -87,6 +88,12 @@ export default async function OrderConfirmationPage({
   // Bucket amounts are prices — only a priced viewer gets the grouped view.
   const billing = priced ? toOrderBillingView(order.billing, order.orderNumber) : null;
   const totalDiscountPaise = (billing?.groupDiscountPaise ?? 0) + order.discountPaise;
+  // Frozen delivery CHARGE — added after every discount and after GST. 0 on an
+  // order placed before it was charged, which renders exactly as it always did.
+  // With GST on, the delivery line + payable total live in the tax breakup.
+  const deliveryChargePaise = order.deliveryChargePaise;
+  const showDeliveryHere = priced && deliveryChargePaise > 0 && !order.tax;
+  const showTotalRow = showDeliveryHere || (totalDiscountPaise > 0 && !order.tax);
 
   const renderItem = (item: OrderItemSnapshot) => (
     <li className="flex gap-3 p-3">
@@ -192,12 +199,21 @@ export default async function OrderConfirmationPage({
                       </span>
                     </div>
                   ) : null}
-                  {/* With GST the frozen grand total (breakup below) already nets the discounts. */}
-                  {totalDiscountPaise > 0 && !order.tax ? (
+                  {showDeliveryHere ? (
+                    <DeliveryChargeRow
+                      chargePaise={deliveryChargePaise}
+                      className="border-t border-border pt-1.5"
+                    />
+                  ) : null}
+                  {/* With GST the frozen grand total (breakup below) already nets the
+                      discounts, and carries the delivery line + payable total. */}
+                  {showTotalRow ? (
                     <div className="flex items-center justify-between border-t border-border pt-1.5">
                       <span className="text-sm font-medium text-muted-foreground">Total</span>
                       <span className="text-base font-semibold text-foreground tabular-nums">
-                        {formatPaise(order.subtotalPaise - totalDiscountPaise)}
+                        {formatPaise(
+                          order.subtotalPaise - totalDiscountPaise + deliveryChargePaise,
+                        )}
                       </span>
                     </div>
                   ) : null}
@@ -211,10 +227,24 @@ export default async function OrderConfirmationPage({
         {priced && order.tax ? (
           <FadeUp delay={0.07}>
             <div className="mt-4">
-              <OrderTaxBreakup tax={order.tax} proforma />
-              {/* The delivery terms the buyer accepted (frozen at placement). */}
-              <DeliveryNotice delivery={order.delivery} className="mt-2" />
+              <OrderTaxBreakup
+                tax={order.tax}
+                proforma
+                deliveryChargePaise={deliveryChargePaise}
+              />
             </div>
+          </FadeUp>
+        ) : null}
+
+        {/* The delivery terms the buyer accepted (frozen at placement). Shown
+            whether or not GST applied — it is a charge on every order. */}
+        {order.delivery ? (
+          <FadeUp delay={0.08}>
+            <DeliveryNotice
+              delivery={order.delivery}
+              charged={deliveryChargePaise > 0}
+              className="mt-4"
+            />
           </FadeUp>
         ) : null}
 

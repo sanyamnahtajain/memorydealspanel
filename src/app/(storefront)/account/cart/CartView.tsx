@@ -31,6 +31,7 @@ import { MAX_CART_NOTE_LENGTH, MAX_QTY_PER_LINE } from "@/lib/schemas/cart";
 import { Button } from "@/components/ui/button";
 import { CartLineRow } from "@/components/storefront/cart/CartLineRow";
 import { DeliveryNotice } from "@/components/storefront/orders/DeliveryNotice";
+import { DeliveryChargeRow } from "@/components/orders/DeliveryChargeRow";
 import type { DeliveryDisclosure } from "@/lib/delivery";
 import { BucketCard } from "@/components/storefront/billing/BucketCard";
 import {
@@ -125,6 +126,14 @@ export interface CartLineData {
 export interface CartViewProps {
   /** Delivery minimum-charge disclosure (owner request) — shown to ALL. */
   deliveryDisclosure?: DeliveryDisclosure | null;
+  /**
+   * The delivery charge ADDED to the cart total, in paise (0 when delivery is
+   * off). A store-wide charge rather than a catalog price, so it is shown to
+   * every viewer — but it only joins the payable total for a PRICED one.
+   * Added LAST: after the bucket discounts and after the coupon, so neither
+   * can ever discount it.
+   */
+  deliveryChargePaise?: number;
   initialLines: CartLineData[];
   initialSubtotalPaise: number | null;
   priced: boolean;
@@ -166,6 +175,7 @@ export function CartView({
   initialSubtotalPaise,
   minOrderValuePaise = null,
   deliveryDisclosure = null,
+  deliveryChargePaise = 0,
   priced,
   canOrder,
   initialTax,
@@ -287,11 +297,15 @@ export function CartView({
 
   // The customer-facing total that "Place order" commits to: the GST grand
   // total (already on the bucket-discounted base) when GST applies, else
-  // subtotal − bucket discounts; the coupon comes off after either.
+  // subtotal − bucket discounts; the coupon comes off after either. The
+  // delivery charge is added LAST — it is a charge, not goods, so no discount
+  // and no tax touches it (see src/lib/delivery.ts).
   const payablePaise =
     (taxPreview
       ? taxPreview.grandTotalPaise
-      : (subtotalPaise ?? 0) - groupDiscountPaise) - discountPaise;
+      : (subtotalPaise ?? 0) - groupDiscountPaise) -
+    discountPaise +
+    deliveryChargePaise;
 
   // Nearest tier unlock across buckets — the one-line mobile nudge.
   const nudge = closestNextTier(billing);
@@ -543,6 +557,7 @@ export function CartView({
             priced={priced}
             subtotalPaise={subtotalPaise ?? initialSubtotalPaise}
             deliveryDisclosure={deliveryDisclosure}
+            deliveryChargePaise={deliveryChargePaise}
             itemCount={itemCount}
             note={note}
             onNote={setNote}
@@ -569,6 +584,7 @@ export function CartView({
             priced={priced}
             subtotalPaise={subtotalPaise ?? initialSubtotalPaise}
             deliveryDisclosure={deliveryDisclosure}
+            deliveryChargePaise={deliveryChargePaise}
             itemCount={itemCount}
             note={note}
             onNote={setNote}
@@ -618,6 +634,7 @@ export function CartView({
                   ? ` · ${formatPaise(groupDiscountPaise)} saved`
                   : ""}
                 {taxPreview ? " · incl. GST" : ""}
+                {deliveryChargePaise > 0 ? " · incl. delivery" : ""}
               </p>
             )}
           </div>
@@ -638,6 +655,8 @@ export function CartView({
 interface SummaryProps {
   priced: boolean;
   deliveryDisclosure?: DeliveryDisclosure | null;
+  /** Delivery charge added to the grand total (paise); 0 when off. */
+  deliveryChargePaise?: number;
   subtotalPaise: number | null;
   itemCount: number;
   note: string;
@@ -671,6 +690,7 @@ function Summary({
   movShortfallPaise = null,
   minOrderValuePaise = null,
   deliveryDisclosure = null,
+  deliveryChargePaise = 0,
   itemCount,
   note,
   onNote,
@@ -696,9 +716,15 @@ function Summary({
   const groupDiscount = priced ? (billing?.groupDiscountPaise ?? 0) : 0;
   // The GST grand total is already on the bucket-discounted base; without GST
   // the bucket discounts come straight off the subtotal. Coupon after either.
-  const grandTotalPaise =
+  // Delivery is added LAST — a charge, never discounted, never taxed here.
+  const goodsTotalPaise =
     (showTax ? tax.grandTotalPaise : (subtotalPaise ?? 0) - groupDiscount) - discount;
+  const grandTotalPaise = goodsTotalPaise + deliveryChargePaise;
   const discountedBuckets = billing?.buckets.filter((b) => b.discountPaise > 0) ?? [];
+  // With a delivery charge the bottom line is no longer just the goods, so it
+  // is always a "Grand total"; with neither GST nor delivery it stays the
+  // plain "Subtotal" it has always been.
+  const showDelivery = deliveryChargePaise > 0;
   return (
     <div className="flex flex-col gap-4">
       <h2 className="text-sm font-semibold text-foreground">Order summary</h2>
@@ -743,9 +769,17 @@ function Summary({
           <TaxLines tax={tax} />
         ) : null}
 
+        {/* Delivery — a real line in the money, added after every discount and
+            after GST. Its caveat travels with it: this is a MINIMUM. */}
+        <DeliveryChargeRow
+          chargePaise={deliveryChargePaise}
+          inDefinitionList
+          className="border-t border-border pt-2"
+        />
+
         <div className="mt-1 flex items-center justify-between border-t border-border pt-2">
           <dt className="font-semibold text-foreground">
-            {showTax ? "Grand total" : "Subtotal"}
+            {showTax || showDelivery ? "Grand total" : "Subtotal"}
           </dt>
           <dd className="text-base font-semibold text-foreground tabular-nums">
             {priced ? formatPaise(grandTotalPaise) : "Price on approval"}
@@ -910,8 +944,10 @@ function Summary({
         </p>
       </div>
 
-      {/* Delivery terms — every buyer sees this before placing. */}
-      <DeliveryNotice delivery={deliveryDisclosure} />
+      {/* Delivery terms — every buyer sees this before placing. When the
+          charge is in the total the copy says so, and still calls it a
+          minimum that can rise with weight, size and PIN code. */}
+      <DeliveryNotice delivery={deliveryDisclosure} charged={showDelivery} />
 
       {!hidePlaceButton ? (
         <Button onClick={onPlace} disabled={!canPlace} className="w-full">

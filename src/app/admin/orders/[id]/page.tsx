@@ -59,6 +59,7 @@ export default async function AdminOrderDetailPage({
     couponCode: detail.couponCode,
     discountPaise: detail.discountPaise,
     delivery: detail.delivery,
+    deliveryChargePaise: detail.deliveryChargePaise,
     accessExtension: detail.accessExtension,
     placedAt: detail.placedAt.toISOString(),
     updatedAt: detail.updatedAt.toISOString(),

@@ -10,16 +10,24 @@ import { cn } from "@/lib/utils";
  * order detail, admin order panel) — owner request: the minimum charge must be
  * impossible to miss, in simple English, with the weight/size/PIN-code caveat.
  * Server-safe (no hooks). Renders nothing when there is nothing to disclose.
+ *
+ * `charged` switches the wording: true when the amount is a real line in the
+ * total (today's carts and new orders), false for an order placed while the
+ * charge was only disclosed — those keep their original wording forever.
  */
 export function DeliveryNotice({
   delivery,
+  charged = false,
   className,
 }: {
   delivery: DeliveryDisclosure | null | undefined;
+  charged?: boolean;
   className?: string;
 }) {
   if (!delivery) return null;
-  const copy = deliveryDisclosureCopy(formatPaise(delivery.minChargePaise));
+  const copy = deliveryDisclosureCopy(formatPaise(delivery.minChargePaise), {
+    charged,
+  });
   return (
     <div
       className={cn(

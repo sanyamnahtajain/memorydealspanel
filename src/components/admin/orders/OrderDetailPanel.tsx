@@ -29,6 +29,7 @@ import { OrderTaxBreakup } from "@/components/storefront/orders/OrderTaxBreakup"
 import { OrderBucketSections } from "@/components/orders/billing/OrderBucketSections";
 import { AccessExtensionNotice } from "./AccessExtensionNotice";
 import { DeliveryNotice } from "@/components/storefront/orders/DeliveryNotice";
+import { DeliveryChargeRow } from "@/components/orders/DeliveryChargeRow";
 import { BillingTotalsRows } from "@/components/orders/billing/BillingTotalsRows";
 import type { OrderDetailDTO, OrderLineDTO } from "@/server/actions/admin-orders";
 
@@ -45,6 +46,13 @@ function formatDateTime(iso: string): string {
 export function OrderDetailPanel({ order }: { order: OrderDetailDTO }) {
   const groupDiscountPaise = order.billing?.groupDiscountPaise ?? 0;
   const totalDiscountPaise = groupDiscountPaise + order.discountPaise;
+  // Frozen delivery CHARGE: added after the discounts and after GST, never
+  // taxed here. 0 on an order placed before it was charged — every branch then
+  // collapses to the exact pre-delivery rendering. With GST on, the delivery
+  // line and the payable total live in the tax breakup below.
+  const deliveryChargePaise = order.deliveryChargePaise;
+  const showDeliveryHere = deliveryChargePaise > 0 && !order.tax;
+  const showTotalRow = showDeliveryHere || (totalDiscountPaise > 0 && !order.tax);
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -72,7 +80,10 @@ export function OrderDetailPanel({ order }: { order: OrderDetailDTO }) {
         <AccessExtensionNotice orderId={order.id} extension={order.accessExtension} />
       ) : null}
       {/* Frozen delivery terms the buyer saw at placement. */}
-      <DeliveryNotice delivery={order.delivery} />
+      <DeliveryNotice
+        delivery={order.delivery}
+        charged={deliveryChargePaise > 0}
+      />
 
       <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
         {/* Snapshot */}
@@ -117,19 +128,33 @@ export function OrderDetailPanel({ order }: { order: OrderDetailDTO }) {
                 </span>
               </div>
             ) : null}
-            {/* With GST the frozen grand total (tax breakup below) already nets the discounts. */}
-            {totalDiscountPaise > 0 && !order.tax ? (
+            {showDeliveryHere ? (
+              <DeliveryChargeRow
+                chargePaise={deliveryChargePaise}
+                className="border-t border-border pt-1.5"
+              />
+            ) : null}
+            {/* With GST the frozen grand total (tax breakup below) already nets the
+                discounts, and carries the delivery line + payable total. */}
+            {showTotalRow ? (
               <div className="flex items-center justify-between border-t border-border pt-1.5">
                 <span className="text-sm font-medium text-muted-foreground">Total</span>
                 <span className="text-base font-semibold tabular-nums text-foreground">
-                  {formatPaise(order.subtotalPaise - totalDiscountPaise)}
+                  {formatPaise(
+                    order.subtotalPaise - totalDiscountPaise + deliveryChargePaise,
+                  )}
                 </span>
               </div>
             ) : null}
           </div>
 
           {/* Frozen GST breakup (admins always see amounts). */}
-          {order.tax ? <OrderTaxBreakup tax={order.tax} /> : null}
+          {order.tax ? (
+            <OrderTaxBreakup
+              tax={order.tax}
+              deliveryChargePaise={deliveryChargePaise}
+            />
+          ) : null}
 
           {order.note ? (
             <div className="rounded-2xl border border-border bg-muted/40 p-4">

@@ -34,6 +34,7 @@ import {
 import { OrderStatusTimeline } from "./OrderStatusTimeline";
 import { OrderTaxBreakup } from "./OrderTaxBreakup";
 import { DeliveryNotice } from "./DeliveryNotice";
+import { DeliveryChargeRow } from "@/components/orders/DeliveryChargeRow";
 import { OrderBucketSections } from "@/components/orders/billing/OrderBucketSections";
 import { BillingTotalsRows } from "@/components/orders/billing/BillingTotalsRows";
 import type { OrderHistoryDetail, OrderHistoryLine } from "./types";
@@ -60,6 +61,13 @@ export function OrderDetailView({ detail }: { detail: OrderHistoryDetail }) {
   const cancellable = isCancellable(detail.status);
   const totalDiscountPaise =
     (detail.billing?.groupDiscountPaise ?? 0) + detail.discountPaise;
+  // Delivery: a frozen CHARGE, added after the discounts and after GST. 0 on an
+  // order placed before it was charged, which collapses every branch below back
+  // to the exact pre-delivery rendering. With GST on, the delivery line + the
+  // payable total live in the tax breakup instead (one total, one place).
+  const deliveryChargePaise = detail.deliveryChargePaise;
+  const showDeliveryHere = deliveryChargePaise > 0 && !detail.tax;
+  const showTotalRow = showDeliveryHere || (totalDiscountPaise > 0 && !detail.tax);
 
   const handleReorder = React.useCallback(async () => {
     setReordering(true);
@@ -202,12 +210,21 @@ export function OrderDetailView({ detail }: { detail: OrderHistoryDetail }) {
                     </span>
                   </div>
                 ) : null}
-                {/* With GST the frozen grand total (breakup below) already nets the discounts. */}
-                {totalDiscountPaise > 0 && !detail.tax ? (
+                {showDeliveryHere ? (
+                  <DeliveryChargeRow
+                    chargePaise={deliveryChargePaise}
+                    className="border-t border-border pt-1.5"
+                  />
+                ) : null}
+                {/* With GST the frozen grand total (breakup below) already nets the
+                    discounts, and carries the delivery line + payable total. */}
+                {showTotalRow ? (
                   <div className="flex items-center justify-between border-t border-border pt-1.5">
                     <span className="text-sm font-medium text-muted-foreground">Total</span>
                     <span className="text-base font-semibold tabular-nums text-foreground">
-                      {formatPaise(detail.subtotalPaise - totalDiscountPaise)}
+                      {formatPaise(
+                        detail.subtotalPaise - totalDiscountPaise + deliveryChargePaise,
+                      )}
                     </span>
                   </div>
                 ) : null}
@@ -226,11 +243,19 @@ export function OrderDetailView({ detail }: { detail: OrderHistoryDetail }) {
 
           {/* Frozen GST breakup (proforma) — only for a priced viewer. */}
           {detail.priced && detail.tax ? (
-            <OrderTaxBreakup tax={detail.tax} proforma />
+            <OrderTaxBreakup
+              tax={detail.tax}
+              proforma
+              deliveryChargePaise={deliveryChargePaise}
+            />
           ) : null}
 
           {/* Frozen delivery terms from placement (not a price — never gated). */}
-          <DeliveryNotice delivery={detail.delivery} className="mt-2" />
+          <DeliveryNotice
+            delivery={detail.delivery}
+            charged={deliveryChargePaise > 0}
+            className="mt-2"
+          />
 
           {detail.note ? (
             <div className="rounded-2xl border border-border bg-muted/40 p-4">

@@ -150,6 +150,8 @@ export interface OrderDetailDTO extends OrderRowDTO {
   billing: OrderBillingView | null;
   /** Frozen delivery disclosure shown to the buyer at placement, or null. */
   delivery: DeliveryDisclosure | null;
+  /** The delivery CHARGE frozen at placement (paise); 0 when none. */
+  deliveryChargePaise: number;
   /** The +N-days access grant this order triggered (anti-abuse view), or null. */
   accessExtension: OrderAccessExtension | null;
 }
@@ -236,6 +238,7 @@ function toDetailDTO(detail: OrderDetail): OrderDetailDTO {
       : null,
     billing: toOrderBillingView(detail.billing, detail.orderNumber),
     delivery: detail.delivery,
+    deliveryChargePaise: detail.deliveryChargePaise,
     accessExtension: detail.accessExtension,
   };
 }

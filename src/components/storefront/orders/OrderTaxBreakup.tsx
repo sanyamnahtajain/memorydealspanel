@@ -13,6 +13,7 @@
  */
 
 import { formatPaise } from "@/lib/money";
+import { DeliveryChargeRow } from "@/components/orders/DeliveryChargeRow";
 
 /** Serializable per-order tax snapshot both order views converge on. */
 export interface OrderTaxBreakupData {
@@ -54,12 +55,21 @@ export function OrderTaxBreakup({
   tax,
   /** When true, prepend the "Proforma / Quotation — not a tax invoice" banner. */
   proforma = false,
+  /**
+   * The frozen delivery charge (paise), 0 when the order carries none. It sits
+   * OUTSIDE the tax figures by design — it is not in the taxable base and no
+   * GST was charged on it — so it is appended AFTER "Grand total" as its own
+   * line, closing on the amount actually payable.
+   */
+  deliveryChargePaise = 0,
 }: {
   tax: OrderTaxBreakupData;
   proforma?: boolean;
+  deliveryChargePaise?: number;
 }) {
   const intra = tax.supplyType === "INTRA";
   const inter = tax.supplyType === "INTER";
+  const hasDelivery = deliveryChargePaise > 0;
   return (
     <section className="space-y-3 rounded-2xl border border-border bg-card p-4">
       {proforma ? (
@@ -155,11 +165,34 @@ export function OrderTaxBreakup({
           </div>
         ) : null}
         <div className="mt-1 flex items-center justify-between border-t border-border pt-2">
-          <dt className="font-semibold text-foreground">Grand total</dt>
-          <dd className="text-base font-semibold text-foreground tabular-nums">
+          <dt
+            className={
+              hasDelivery ? "text-muted-foreground" : "font-semibold text-foreground"
+            }
+          >
+            {hasDelivery ? "Goods total (incl. GST)" : "Grand total"}
+          </dt>
+          <dd
+            className={
+              hasDelivery
+                ? "tabular-nums"
+                : "text-base font-semibold text-foreground tabular-nums"
+            }
+          >
             {formatPaise(tax.grandTotalPaise)}
           </dd>
         </div>
+        {hasDelivery ? (
+          <>
+            <DeliveryChargeRow chargePaise={deliveryChargePaise} inDefinitionList />
+            <div className="mt-1 flex items-center justify-between border-t border-border pt-2">
+              <dt className="font-semibold text-foreground">Total to pay</dt>
+              <dd className="text-base font-semibold text-foreground tabular-nums">
+                {formatPaise(tax.grandTotalPaise + deliveryChargePaise)}
+              </dd>
+            </div>
+          </>
+        ) : null}
       </dl>
 
       {/* Supply context + both GSTINs */}

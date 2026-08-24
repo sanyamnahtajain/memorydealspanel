@@ -25,10 +25,14 @@ import {
 } from "@/lib/billing-groups/snapshot";
 import { publicBaseOrEmpty } from "@/server/storage/r2";
 import {
-  getDeliveryDisclosure,
+  getDeliveryTerms,
   getMinOrderValuePaise,
 } from "@/server/services/store-settings";
-import { parseStoredDeliveryDisclosure, type DeliveryDisclosure } from "@/lib/delivery";
+import {
+  frozenDeliveryChargePaise,
+  parseStoredDeliveryDisclosure,
+  type DeliveryDisclosure,
+} from "@/lib/delivery";
 import { AUTO_RENEW_ON_ORDER } from "@/lib/constants";
 import {
   previewCoupon,
@@ -1122,6 +1126,30 @@ export interface CustomerOrder {
   billing: OrderBillingSnapshot | null;
   /** Frozen delivery disclosure, or `null` when the feature was off. */
   delivery: DeliveryDisclosure | null;
+  /**
+   * The delivery CHARGE frozen at placement (integer paise). 0 for an order
+   * placed before delivery became a real money line, or with delivery off —
+   * such an order's totals are then identical to what they always were.
+   */
+  deliveryChargePaise: number;
+}
+
+/**
+ * The order's PAYABLE total: goods (incl. GST and net of every discount) plus
+ * the delivery charge. The single formula every surface uses — cart, order
+ * confirmation, order history, admin panel and the PDF — so they can never
+ * disagree by a paisa.
+ *
+ * `grandTotalPaise` is the frozen goods total; it is null on an order with no
+ * GST and no discount, where the goods total IS the subtotal.
+ */
+export function orderPayablePaise(order: {
+  subtotalPaise: number;
+  grandTotalPaise?: number | null;
+  deliveryChargePaise?: number | null;
+}): number {
+  const goods = order.grandTotalPaise ?? order.subtotalPaise;
+  return goods + frozenDeliveryChargePaise(order.deliveryChargePaise);
 }
 
 /** A random, non-enumerable public order reference, e.g. "MD-4F8K2Q7ZX1AB". */
@@ -1289,12 +1317,17 @@ async function placeOrderLocked(
   // SERVER-SIDE at placement — the cart UI shows the shortfall, but the
   // authoritative gate is here so a stale client can never place below it.
   // Runs on the DISCOUNTED goods subtotal (a coupon can't cheat the floor).
-  // Delivery disclosure (owner request): resolved from the CURRENT rules and
-  // frozen onto the order below, so historical orders keep the terms they were
-  // placed under even after the admin edits the rules.
-  const deliveryDisclosure = await getDeliveryDisclosure();
+  // Delivery (owner request): the disclosure AND the charge, resolved from the
+  // CURRENT rules in one read and frozen onto the order below, so historical
+  // orders keep the terms + amount they were placed under even after the admin
+  // edits the rules.
+  const { disclosure: deliveryDisclosure, chargePaise: deliveryChargePaise } =
+    await getDeliveryTerms();
 
   const minOrderValuePaise = await getMinOrderValuePaise();
+  // MINIMUM ORDER VALUE compares against GOODS (after both discounts), NOT the
+  // payable total — that is the pre-existing meaning and it is deliberately
+  // kept: the delivery charge must never help a small cart clear the floor.
   const gatedSubtotalPaise =
     cart.subtotalPaise - groupDiscountPaise - prospectiveDiscountPaise;
   if (minOrderValuePaise !== null && gatedSubtotalPaise < minOrderValuePaise) {
@@ -1377,6 +1410,14 @@ async function placeOrderLocked(
         lineTotalPaise: l.lineTotalPaise - discountAlloc[i],
       }))
     : groupedLines;
+  // GST × DELIVERY — DELIBERATE ASSUMPTION, DO NOT "FIX" WITHOUT THE OWNER.
+  // The delivery charge is NOT in `taxLines`: it stays OUT of the taxable base
+  // and is added AFTER the tax computation, untaxed. We do not invent a GST
+  // rate for freight — the correct treatment (composite supply at the goods
+  // rate, a separate 5%/18% freight rate, or out of scope) depends on the
+  // owner's business and his accountant's advice, and guessing it would put a
+  // wrong tax figure on a proforma. When he decides, the charge becomes a
+  // synthetic line here with its own frozen rate; until then it is untaxed.
   const computed = computeOrderTax(taxLines, ctx, placeOfSupply);
 
   const items = cart.orderableLines.map((line, i) =>
@@ -1408,6 +1449,7 @@ async function placeOrderLocked(
       groupDiscountPaise,
       billingSnapshot,
       deliveryDisclosure,
+      deliveryChargePaise,
     );
   } catch (error) {
     if (isWriteConflict(error)) {
@@ -1516,6 +1558,7 @@ function placeOrderTransaction(
   groupDiscountPaise = 0,
   billingSnapshot: OrderBillingSnapshot | null = null,
   deliveryDisclosure: DeliveryDisclosure | null = null,
+  deliveryChargePaise = 0,
 ): Promise<OrderRow> {
   const totalDiscountPaise = discountPaise + groupDiscountPaise;
   // The order-level GST columns. When `tax` is null (kill-switch off) they are
@@ -1559,10 +1602,17 @@ function placeOrderTransaction(
         ...(billingSnapshot
           ? { billingGroups: billingSnapshot as unknown as Prisma.InputJsonValue }
           : {}),
-        // Delivery disclosure frozen at placement (omitted when off).
+        // Delivery frozen at placement (both OMITTED — absent, not null — when
+        // off, so such an order stays byte-for-byte pre-feature). The CHARGE is
+        // stored on its own: `subtotalPaise` remains pure goods, and
+        // `grandTotalPaise` below remains the goods total (incl. GST), so the
+        // frozen GST breakup still reconciles as taxable + tax. The payable
+        // total is `(grandTotalPaise ?? subtotalPaise) + deliveryChargePaise`,
+        // computed identically by every read path.
         ...(deliveryDisclosure
           ? { deliveryDisclosure: deliveryDisclosure as unknown as Prisma.InputJsonValue }
           : {}),
+        ...(deliveryChargePaise > 0 ? { deliveryChargePaise } : {}),
         // Pre-GST orders have no tax grand total; with ANY discount the
         // effective total is no longer the subtotal, so freeze it here.
         ...(tax === null && totalDiscountPaise > 0
@@ -1700,6 +1750,7 @@ function toCustomerOrder(order: OrderRow): CustomerOrder {
     tax: toOrderTaxSnapshot(order),
     billing: parseOrderBillingSnapshot(order.billingGroups),
     delivery: parseStoredDeliveryDisclosure(order.deliveryDisclosure),
+    deliveryChargePaise: frozenDeliveryChargePaise(order.deliveryChargePaise),
   };
 }
 

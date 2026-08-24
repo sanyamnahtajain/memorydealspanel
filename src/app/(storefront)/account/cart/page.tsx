@@ -8,7 +8,7 @@ import { canSeePrices, isCustomer } from "@/server/types/viewer";
 import { getCart, cartCountForViewer } from "@/server/services/cart";
 import { listActiveBillingGroupConfigs } from "@/server/services/billing-groups";
 import type { GroupRules } from "@/components/storefront/billing/bucket-math";
-import { getDeliveryDisclosure, getMinOrderValuePaise } from "@/server/services/store-settings";
+import { getDeliveryTerms, getMinOrderValuePaise } from "@/server/services/store-settings";
 import { APP_NAME } from "@/lib/constants";
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -52,8 +52,10 @@ export default async function CartPage() {
   const minOrderValuePaise = cart.priced ? await getMinOrderValuePaise() : null;
   // Header cart badge — count only for an approved customer, else undefined.
   const cartCount = await cartCountForViewer(viewer);
-  // Delivery disclosure (owner request) — shown to every customer, priced or not.
-  const deliveryDisclosure = await getDeliveryDisclosure();
+  // Delivery (owner request) — the terms AND the charge, from one read of the
+  // rules. Shown to every customer, priced or not: it is a store-wide charge,
+  // not a catalog price, so it is never gated. It is ADDED to the cart total.
+  const delivery = await getDeliveryTerms();
 
   // Billing-group tiers (ids + tiers ONLY — no matcher/brand data) so the
   // client can re-run each bucket's tier math across optimistic quantity
@@ -153,7 +155,8 @@ export default async function CartPage() {
                 minOrderValuePaise={minOrderValuePaise}
                 initialBilling={cart.billing}
                 groupRules={groupRules}
-                deliveryDisclosure={deliveryDisclosure}
+                deliveryDisclosure={delivery.disclosure}
+                deliveryChargePaise={delivery.chargePaise}
               />
             </FadeUp>
           )}
