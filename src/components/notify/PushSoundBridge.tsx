@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { playTune, unlockAudio } from "@/lib/notify/tune";
+import { playVoice, stopVoice } from "@/lib/notify/voice";
 
 /**
  * Plays the Memory Deals tune when a push arrives while the app is OPEN.
@@ -64,6 +65,10 @@ export function PushSoundBridge() {
   // The SSE side owns staff sound; this bridge owns the storefront.
   const onAdminSurface = pathname.startsWith("/admin");
 
+  // Pending voice-line timers, cleared on unmount so a line cannot start
+  // speaking after the user has navigated away.
+  const voiceTimers = React.useRef<number[]>([]);
+
   React.useEffect(() => {
     if (onAdminSurface) return;
     if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
@@ -81,6 +86,14 @@ export function PushSoundBridge() {
 
       if (sound !== "none" && !isMuted()) {
         playTune(sound === "long" ? "long" : "short");
+        // …then speak the line for this event, if one has been generated.
+        // Delayed so the tune lands first and the two do not talk over each
+        // other. Silent no-op when the audio file isn't there.
+        const voiceTimer = window.setTimeout(
+          () => playVoice(event.data.payload.type),
+          sound === "long" ? 1400 : 900,
+        );
+        voiceTimers.current.push(voiceTimer);
       }
 
       // An in-app toast, because a notification card is easy to miss when the
@@ -94,9 +107,13 @@ export function PushSoundBridge() {
     };
 
     navigator.serviceWorker.addEventListener("message", onMessage);
+    const timers = voiceTimers.current;
     return () => {
       window.removeEventListener("pointerdown", unlock);
       navigator.serviceWorker.removeEventListener("message", onMessage);
+      for (const id of timers) window.clearTimeout(id);
+      timers.length = 0;
+      stopVoice();
     };
   }, [onAdminSurface, router]);
 

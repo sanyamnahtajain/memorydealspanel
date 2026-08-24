@@ -1,3 +1,5 @@
+import { cartReminderText } from "./copy";
+
 /**
  * When is an idle cart worth a nudge?
  *
@@ -68,9 +70,7 @@ export function cartReminderMessage(itemCount: number): {
   title: string;
   body: string;
 } {
-  const items = `${itemCount} item${itemCount === 1 ? "" : "s"}`;
-  return {
-    title: "Your cart is waiting",
-    body: `You have ${items} in your cart. Place the order when you are ready — prices can change.`,
-  };
+  // Bilingual: this lands on a locked phone, where the words are the only
+  // thing that reaches the customer. See src/lib/notify/copy.ts.
+  return cartReminderText(itemCount);
 }

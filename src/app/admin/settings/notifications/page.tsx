@@ -8,6 +8,7 @@ import { countSubscriptions } from "@/server/notify/push";
 import { AdminShell } from "@/components/shell/AdminShell";
 import { PageHeader } from "@/components/common";
 import { NotificationSettingsPanel } from "@/components/notify/NotificationSettingsPanel";
+import { SoundLibrary } from "@/components/notify/SoundLibrary";
 
 export const metadata: Metadata = {
   title: "Notifications — MemoryDeals Admin",
@@ -72,6 +73,20 @@ export default async function AdminNotificationSettingsPage() {
           <div className="rounded-2xl border border-border bg-card p-5 text-card-foreground sm:p-6">
             <NotificationSettingsPanel topics={topics} variant="admin" />
           </div>
+
+          {/* Every sound, with a button to hear it. Staff cannot judge whether
+              the alert carries across a noisy shop until they have heard it. */}
+          <section className="space-y-3 rounded-2xl border border-border bg-card p-5 text-card-foreground sm:p-6">
+            <div className="space-y-1">
+              <h2 className="font-heading text-lg font-semibold tracking-tight">
+                Alert sounds
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Tap play to hear each one. Turn your volume up first.
+              </p>
+            </div>
+            <SoundLibrary audience="admin" />
+          </section>
 
           <div className="flex flex-wrap gap-3">
             <DeviceCount

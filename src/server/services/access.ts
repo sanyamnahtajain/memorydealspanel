@@ -4,6 +4,7 @@ import { hashPassword } from "@/server/auth/password";
 import { revokeAllForCustomer } from "@/server/auth/session";
 import { prisma } from "@/server/db";
 import { notifyAdmins, notifyCustomer } from "@/server/notify/push";
+import { accessApprovedText } from "@/lib/notify/copy";
 import {
   requestAccessLimiter,
   requestAccessFloodLimiter,
@@ -282,8 +283,7 @@ export async function approveRequest(
   // approval is already committed, and `notifyCustomer` (which owns the
   // preference check) must never be able to fail or delay it.
   void notifyCustomer(customerId, "access.approved", {
-    title: "Prices are open for you",
-    body: "You can now see prices and place orders.",
+    ...accessApprovedText(),
     url: "/",
   }).catch((error) => {
     console.error("[access] approval push failed:", error);

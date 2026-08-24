@@ -41,7 +41,8 @@ import {
 } from "@/lib/allocation";
 import { limit } from "@/server/security/ratelimit";
 import { writeAudit } from "@/server/security/audit";
-import { notifyAdmins, notifyCustomer} from "@/server/notify/push";
+import { notifyAdmins, notifyCustomer } from "@/server/notify/push";
+import { orderPlacedText } from "@/lib/notify/copy";
 import { withPlacementLock } from "@/server/services/placement-lock";
 import type { StockStatus } from "@/lib/schemas/shared";
 import {
@@ -1434,8 +1435,7 @@ async function placeOrderLocked(
   // nothing and been redirected, so an alert on their own phone is the only
   // proof the request landed. Locked-on topic; fire-and-forget like the above.
   void notifyCustomer(customerId, "order.placed", {
-    title: "We got your order",
-    body: `Order ${order.orderNumber} — ${cart.itemCount} item${cart.itemCount === 1 ? "" : "s"}. We will confirm it shortly.`,
+    ...orderPlacedText(order.orderNumber, cart.itemCount),
     url: `/account/orders/${order.orderNumber}`,
     tag: `order.placed:${order.orderNumber}`,
   }).catch((err) => {

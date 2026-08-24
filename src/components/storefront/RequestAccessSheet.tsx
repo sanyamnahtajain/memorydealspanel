@@ -42,6 +42,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { StatusChip } from "@/components/common/StatusChip";
+import { RequestApprovedNudge } from "@/components/notify/RequestApprovedNudge";
 import { CelebrationOverlay } from "@/components/common/CelebrationOverlay";
 import { CityField } from "@/components/storefront/CityField";
 import { useIsMobile } from "@/components/common/use-is-mobile";
@@ -503,6 +504,10 @@ function SuccessState({
       </div>
 
       <StatusChip variant="pending" label="Awaiting approval" />
+
+      {/* The highest-intent moment in the app: they have just asked for
+          something and want the answer. Offer to bring it to them. */}
+      <RequestApprovedNudge className="mt-1" />
 
       <Button variant="outline" onClick={onClose} className="mt-2 w-full">
         Done
