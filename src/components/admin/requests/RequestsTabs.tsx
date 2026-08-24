@@ -116,40 +116,88 @@ export function RequestsTabs({
   decidedStatus,
   renewals,
 }: RequestsTabsProps) {
+  const searching = query.trim().length > 0;
+
+  /**
+   * Which tab to open.
+   *
+   * THE BUG THIS FIXES: the search filters all four queues, but an admin only
+   * ever sees the active one — which defaults to Pending. Searching for a
+   * customer sitting in Later, Renewals or Decided showed an empty Pending
+   * tab, so staff reported "search doesn't find people". It was finding them;
+   * it was showing the wrong tab.
+   *
+   * While a search is running we therefore open the first queue that actually
+   * has a match. `key={query}` below re-applies this whenever the query
+   * changes, while still letting the admin switch tabs by hand afterwards.
+   */
+  const decidedCount = query ? decidedTotal : 0;
+  const searchTab =
+    pending.length > 0
+      ? "pending"
+      : snoozed.length > 0
+        ? "later"
+        : renewals.length > 0
+          ? "renewals"
+          : decidedTotal > 0
+            ? "decided"
+            : "pending";
   // When the URL carries a decided-tab page (>1), the admin was browsing the
   // history — open that tab so navigation lands where they expect.
-  const initialTab = decidedPage > 1 ? "decided" : "pending";
-  const searching = query.trim().length > 0;
+  const initialTab = searching
+    ? searchTab
+    : decidedPage > 1
+      ? "decided"
+      : "pending";
+
   return (
     <div className="space-y-5">
       <RequestsSearch initial={query} decidedPageParam={decidedPageParam} />
-      <Tabs defaultValue={initialTab} className="w-full">
-      <TabsList>
-        <TabsTrigger value="pending">
+      {searching ? (
+        <p className="text-xs text-muted-foreground">
+          Showing matches in every list. The number on each tab is how many
+          were found there.
+        </p>
+      ) : null}
+      <Tabs key={query} defaultValue={initialTab} className="w-full">
+      {/* Full width with equal-width tabs, and the label/padding scaled down
+          on small screens: all four names must stay readable on a phone
+          rather than overflowing off the right edge. */}
+      <TabsList className="h-auto w-full">
+        <TabsTrigger value="pending" className="min-w-0 flex-1 px-1 py-1 text-xs sm:px-1.5 sm:text-sm">
           Pending
-          {pending.length > 0 && (
-            <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] leading-none font-semibold tabular-nums text-primary-foreground">
-              {pending.length}
-            </span>
-          )}
+          <TabCount
+            count={pending.length}
+            show={searching || pending.length > 0}
+            className="bg-primary text-primary-foreground"
+          />
         </TabsTrigger>
-        <TabsTrigger value="later">
+        <TabsTrigger value="later" className="min-w-0 flex-1 px-1 py-1 text-xs sm:px-1.5 sm:text-sm">
           Later
-          {snoozed.length > 0 && (
-            <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-[11px] leading-none font-semibold tabular-nums text-muted-foreground">
-              {snoozed.length}
-            </span>
-          )}
+          <TabCount
+            count={snoozed.length}
+            show={searching || snoozed.length > 0}
+            className="bg-muted text-muted-foreground"
+          />
         </TabsTrigger>
-        <TabsTrigger value="renewals">
+        <TabsTrigger value="renewals" className="min-w-0 flex-1 px-1 py-1 text-xs sm:px-1.5 sm:text-sm">
           Renewals
-          {renewals.length > 0 && (
-            <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500/15 px-1.5 text-[11px] leading-none font-semibold tabular-nums text-amber-700 dark:text-amber-300">
-              {renewals.length}
-            </span>
-          )}
+          <TabCount
+            count={renewals.length}
+            show={searching || renewals.length > 0}
+            className="bg-amber-500/15 text-amber-700 dark:text-amber-300"
+          />
         </TabsTrigger>
-        <TabsTrigger value="decided">Decided</TabsTrigger>
+        <TabsTrigger value="decided" className="min-w-0 flex-1 px-1 py-1 text-xs sm:px-1.5 sm:text-sm">
+          Decided
+          {/* Decided carried NO badge at all before, so a customer found only
+              in the history was invisible from every other tab. */}
+          <TabCount
+            count={decidedCount}
+            show={searching}
+            className="bg-muted text-muted-foreground"
+          />
+        </TabsTrigger>
       </TabsList>
 
       <TabsContent value="pending" className="mt-6">
@@ -182,6 +230,34 @@ export function RequestsTabs({
       </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+
+/**
+ * The number beside a tab label. While a search is running every tab shows
+ * its count — including a zero — because "0 here, 3 there" is exactly the
+ * information an admin needs to find the person they searched for.
+ */
+function TabCount({
+  count,
+  show,
+  className,
+}: {
+  count: number;
+  show: boolean;
+  className?: string;
+}) {
+  if (!show) return null;
+  return (
+    <span
+      className={cn(
+        "ml-1 inline-flex h-4.5 min-w-4.5 shrink-0 items-center justify-center rounded-full px-1 text-[10px] leading-none font-semibold tabular-nums sm:h-5 sm:min-w-5 sm:px-1.5 sm:text-[11px]",
+        className,
+      )}
+    >
+      {count}
+    </span>
   );
 }
 
