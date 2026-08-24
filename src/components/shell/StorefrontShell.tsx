@@ -14,6 +14,7 @@ import { TabBadge } from "@/components/shell/TabBadge"
 import { Logo } from "@/components/brand/Logo"
 import { IndependenceBadge } from "@/components/brand/IndependenceBadge"
 import { StorefrontFooter } from "@/components/shell/StorefrontFooter"
+import { SlabyPromoCard } from "@/components/slaby/SlabyPromoCard"
 import { WishlistBadge } from "@/components/storefront/wishlist/WishlistBadge"
 import { CartBadge } from "@/components/storefront/cart/CartBadge"
 import { SearchOverlay } from "@/components/storefront/SearchOverlay"
@@ -261,6 +262,9 @@ export function StorefrontShell({
           bottom tab bar (owner request: no footer on mobile). ——— */}
       <div className="hidden md:block">
         <StorefrontFooter />
+        {/* Occasional "runs on Slaby" promo (owner-toggleable, self-gating,
+            frequency-capped; never on cart/checkout paths). */}
+        <SlabyPromoCard />
       </div>
 
       {/* ——— Mobile bottom tab bar ——— */}

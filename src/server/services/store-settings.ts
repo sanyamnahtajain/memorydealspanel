@@ -2,6 +2,11 @@ import { cache } from "react";
 
 import { prisma } from "@/server/db";
 import { MAX_ORDER_VALUE_PAISE } from "@/server/services/orders";
+import {
+  parseSlabyBranding,
+  type SlabyBrandingConfig,
+  type SlabyBrandingInput,
+} from "@/lib/slaby/branding";
 
 /**
  * Store settings service — reads and mutates the singleton `StoreSettings`
@@ -22,6 +27,7 @@ const SETTINGS_SELECT = {
   id: true,
   key: true,
   minOrderValuePaise: true,
+  slabyBranding: true,
   updatedAt: true,
 } as const;
 
@@ -29,6 +35,8 @@ export interface StoreSettings {
   id: string;
   key: string;
   minOrderValuePaise: number | null;
+  /** Raw JSON — parse with `parseSlabyBranding` (defensive, all-off default). */
+  slabyBranding: unknown;
   updatedAt: Date;
 }
 
@@ -98,6 +106,31 @@ export async function updateMinOrderValue(
     where: { key: SETTINGS_KEY },
     create: { key: SETTINGS_KEY, minOrderValuePaise: value },
     update: { minOrderValuePaise: value },
+    select: SETTINGS_SELECT,
+  });
+}
+
+/**
+ * The resolved "Built with Slaby" branding config. Direct read (not the
+ * request-cached getter) so an admin toggle reflects on the very next render;
+ * absent/malformed JSON resolves to everything-off.
+ */
+export async function getSlabyBranding(): Promise<SlabyBrandingConfig> {
+  const row = await prisma.storeSettings.findUnique({
+    where: { key: SETTINGS_KEY },
+    select: { slabyBranding: true },
+  });
+  return parseSlabyBranding(row?.slabyBranding);
+}
+
+/** Replace the Slaby branding config (validated by the action's zod schema). */
+export async function updateSlabyBranding(
+  input: SlabyBrandingInput,
+): Promise<StoreSettings> {
+  return prisma.storeSettings.upsert({
+    where: { key: SETTINGS_KEY },
+    create: { key: SETTINGS_KEY, slabyBranding: input },
+    update: { slabyBranding: input },
     select: SETTINGS_SELECT,
   });
 }

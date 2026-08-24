@@ -19,6 +19,9 @@ import { motion, useReducedMotion } from "motion/react";
 import { Loader2Icon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { SlabyBadge } from "@/components/slaby/SlabyMark";
+import { useSlabyBranding } from "@/components/slaby/useSlabyBranding";
+import { slabyPlacementOn } from "@/lib/slaby/branding";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -562,6 +565,7 @@ export function RequestAccessSheet({
             ) : (
               <RequestAccessForm key={formKey} onClose={close} />
             )}
+            <RequestAccessSlabyBadge />
           </div>
         </SheetContent>
       </Sheet>
@@ -580,7 +584,24 @@ export function RequestAccessSheet({
         ) : (
           <RequestAccessForm key={formKey} onClose={close} />
         )}
+        <RequestAccessSlabyBadge />
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * "Built with Slaby" under the request-access form — owner-toggleable
+ * (requestAccess placement). Reads the config client-side so the sheet's many
+ * mount sites need no prop threading; renders nothing until (and unless) the
+ * toggle is on.
+ */
+function RequestAccessSlabyBadge() {
+  const config = useSlabyBranding();
+  if (!slabyPlacementOn(config, "requestAccess")) return null;
+  return (
+    <div className="mt-3 flex justify-center">
+      <SlabyBadge placement="requestAccess" />
+    </div>
   );
 }

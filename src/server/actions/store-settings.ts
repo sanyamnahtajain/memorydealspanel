@@ -11,7 +11,9 @@ import { writeAudit } from "@/server/security/audit";
 import {
   InvalidMinOrderValueError,
   updateMinOrderValue,
+  updateSlabyBranding,
 } from "@/server/services/store-settings";
+import { slabyBrandingSchema } from "@/lib/slaby/branding";
 
 /**
  * Store-settings server actions (order-flow configuration).
@@ -81,6 +83,55 @@ export async function saveStoreSettingsAction(
     }
     if (error instanceof InvalidMinOrderValueError) {
       return { ok: false, error: error.message };
+    }
+    console.error("[actions/store-settings] unexpected error:", error);
+    return { ok: false, error: "Something went wrong. Please try again." };
+  }
+}
+
+/**
+ * Save the "Built with Slaby" branding placements (same guard pipeline as
+ * the store settings above). The public /api/slaby-branding read is fresh on
+ * the next request; storefront pages that render the badge server-side are
+ * revalidated explicitly.
+ */
+export async function saveSlabyBrandingAction(
+  input: unknown,
+): Promise<StoreSettingsResult> {
+  try {
+    const viewer = await resolveViewer();
+    assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.SETTINGS_MANAGE);
+
+    const parsed = slabyBrandingSchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        error: parsed.error.issues[0]?.message ?? "Invalid input.",
+      };
+    }
+
+    const settings = await updateSlabyBranding(parsed.data);
+
+    await writeAudit({
+      actorType: "admin",
+      actorId: viewer.adminId,
+      action: "store_settings.slabyBranding",
+      entity: "StoreSettings",
+      entityId: settings.id,
+      diff: parsed.data,
+    });
+
+    revalidatePath(SETTINGS_PATH);
+    revalidatePath("/account/login");
+    revalidatePath("/account/orders/confirmation");
+    return { ok: true };
+  } catch (error) {
+    if (isForbiddenError(error)) {
+      return {
+        ok: false,
+        error: "You don't have permission to manage store settings.",
+      };
     }
     console.error("[actions/store-settings] unexpected error:", error);
     return { ok: false, error: "Something went wrong. Please try again." };

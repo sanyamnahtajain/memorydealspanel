@@ -550,6 +550,9 @@ model StoreSettings {
   key String @unique @default("default")
   // Minimum order value in integer paise. null/0 = no minimum (feature off).
   minOrderValuePaise Int?
+  // "Built with Slaby" branding placements (owner-toggleable). Tagged JSON
+  // parsed defensively in src/lib/slaby/branding.ts; absent => everything OFF.
+  slabyBranding      Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

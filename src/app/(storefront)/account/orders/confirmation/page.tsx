@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
 import { redirect } from "next/navigation";
-import { CheckCircle2, ImageOff, Package } from "lucide-react";
+import { ImageOff } from "lucide-react";
 
 import { resolveViewer } from "@/server/auth/viewer";
 import { canSeePrices, isCustomer } from "@/server/types/viewer";
@@ -19,6 +19,9 @@ import { OrderTaxBreakup } from "@/components/storefront/orders/OrderTaxBreakup"
 import { OrderBucketSections } from "@/components/orders/billing/OrderBucketSections";
 import { BillingTotalsRows } from "@/components/orders/billing/BillingTotalsRows";
 import { toOrderBillingView } from "@/components/orders/billing/types";
+import { OrderCelebration } from "@/components/slaby/OrderCelebration";
+import { getSlabyBranding } from "@/server/services/store-settings";
+import { slabyPlacementOn } from "@/lib/slaby/branding";
 import type { OrderItemSnapshot } from "@/server/services/orders";
 
 /**
@@ -135,28 +138,13 @@ export default async function OrderConfirmationPage({
   return (
     <StorefrontShell cartCount={cartCount}>
       <div className="mx-auto w-full max-w-2xl py-8 sm:py-10">
-        <FadeUp>
-          <div className="flex flex-col items-center text-center">
-            <span className="flex size-14 items-center justify-center rounded-full bg-green-500/10 text-green-600 dark:text-green-400">
-              <CheckCircle2 className="size-8" />
-            </span>
-            <h1 className="mt-4 text-xl font-semibold text-foreground">
-              Order request placed
-            </h1>
-            <p className="mt-1 max-w-md text-sm text-pretty text-muted-foreground">
-              Thanks — your purchase request is in. Our team will confirm
-              availability and pricing with you shortly. No payment is taken now.
-            </p>
-            <p className="mt-4 inline-flex items-center gap-2 rounded-lg border border-border bg-muted px-3 py-1.5 text-sm">
-              <Package className="size-4 text-muted-foreground" />
-              <span className="text-muted-foreground">Order</span>
-              <span className="font-semibold tracking-wide text-foreground tabular-nums">
-                {order.orderNumber}
-              </span>
-            </p>
-            <p className="mt-2 text-xs text-muted-foreground">Placed {placed}</p>
-          </div>
-        </FadeUp>
+        {/* Animated "order placed" celebration (plays once per order); credits
+            Slaby only when the admin toggle is on. */}
+        <OrderCelebration
+          orderNumber={order.orderNumber}
+          placedLabel={placed}
+          showSlaby={slabyPlacementOn(await getSlabyBranding(), "orderSuccess")}
+        />
 
         <FadeUp delay={0.05}>
           <div className="mt-8 space-y-3">

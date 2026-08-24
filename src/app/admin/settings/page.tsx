@@ -5,6 +5,7 @@ import {
   Building2,
   Database,
   Layers,
+  Sparkles,
   Palette,
   ShoppingCart,
   UserCog,
@@ -86,6 +87,21 @@ export default async function AdminSettingsPage() {
             className="inline-flex items-center gap-1.5 text-sm font-medium text-primary underline-offset-4 hover:underline"
           >
             Manage billing groups
+            <ArrowRight className="size-4" aria-hidden />
+          </Link>
+        </SettingsSection>
+
+        {/* Slaby branding — "Built with Slaby" badges, all owner-toggleable. */}
+        <SettingsSection
+          icon={Sparkles}
+          title="Slaby branding"
+          description="Show “Built with Slaby” on the storefront — badges, the order-success credit, and the occasional promo card, each toggleable."
+        >
+          <Link
+            href="/admin/settings/branding"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-primary underline-offset-4 hover:underline"
+          >
+            Manage Slaby branding
             <ArrowRight className="size-4" aria-hidden />
           </Link>
         </SettingsSection>

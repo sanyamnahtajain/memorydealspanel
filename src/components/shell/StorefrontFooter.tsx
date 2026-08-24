@@ -3,6 +3,9 @@ import { MapPin, MessageCircle } from "lucide-react";
 
 import { APP_NAME, APP_TAGLINE, CONTACT } from "@/lib/constants";
 import { Logo } from "@/components/brand/Logo";
+import { SlabyBadge } from "@/components/slaby/SlabyMark";
+import { useSlabyBranding } from "@/components/slaby/useSlabyBranding";
+import { slabyPlacementOn } from "@/lib/slaby/branding";
 
 const COLUMNS: { title: string; links: { label: string; href: string }[] }[] = [
   {
@@ -41,6 +44,9 @@ const COLUMNS: { title: string; links: { label: string; href: string }[] }[] = [
  */
 export function StorefrontFooter() {
   const year = new Date().getFullYear();
+  // "Built with Slaby" (owner-toggleable). Client read — this footer renders
+  // inside the client shell on every page, so no server config can reach it.
+  const slaby = slabyPlacementOn(useSlabyBranding(), "footer");
 
   return (
     <footer className="mt-12 border-t border-border bg-muted/30">
@@ -102,7 +108,10 @@ export function StorefrontFooter() {
           <p>
             © {year} {APP_NAME}. All rights reserved.
           </p>
-          <p>Wholesale prices are visible to approved buyers only.</p>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <p>Wholesale prices are visible to approved buyers only.</p>
+            {slaby ? <SlabyBadge placement="footer" className="-mx-2.5" /> : null}
+          </div>
         </div>
       </div>
     </footer>
