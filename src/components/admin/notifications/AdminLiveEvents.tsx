@@ -1,10 +1,18 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { PackagePlus, UserPlus, Bell, Volume2, VolumeX } from "lucide-react";
+import {
+  PackagePlus,
+  UserPlus,
+  Bell,
+  Volume2,
+  VolumeX,
+  BellRing,
+} from "lucide-react";
 
 import { formatPaise } from "@/components/common/PricePill";
 import { ADMIN_EVENT_NAME, type AdminEventDTO } from "@/lib/admin-events";
@@ -19,7 +27,15 @@ import { Button } from "@/components/ui/button";
  * the WHOLE SCREEN — no backdrop, no auto-dismiss — and a LOUD ring loops the
  * entire time until the admin acts (View / Dismiss). Bursts queue up behind
  * the takeover ("+N more"). Unknown event types fall back to a quiet toast.
- * Extensible via EVENT_META — one entry per event type, nothing else.
+ *
+ * RENDERING: the takeover goes through a PORTAL to <body>. It is mounted from
+ * the shell header, whose `backdrop-blur` makes it a CONTAINING BLOCK for
+ * fixed-position descendants — rendered in place, "fixed inset-0" would
+ * collapse into the 56px header strip (the exact breakage this fixes).
+ *
+ * SOUND: browsers refuse audio before a user gesture. The ringer therefore
+ * (re)tries to create + resume the AudioContext on EVERY bar, any tap on the
+ * takeover unlocks it, and a "tap to enable sound" hint shows while locked.
  */
 
 /* ------------------------------------------------------------------ */
@@ -93,20 +109,28 @@ const metaFor = (type: string): EventMeta => EVENT_META[type] ?? FALLBACK_META;
 const MUTE_KEY = "md-admin-sound-muted";
 
 let audioCtx: AudioContext | null = null;
-let unlocked = false;
+let unlockArmed = false;
 
-/** Browsers require a user gesture before audio — arm once, globally. */
+/**
+ * Best-effort audio bring-up. Safe to call anytime; only truly unlocks during
+ * or after a user gesture (browser policy). Returns whether audio can play NOW.
+ */
+function ensureAudio(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    audioCtx = audioCtx ?? new AudioContext();
+    if (audioCtx.state === "suspended") void audioCtx.resume();
+    return audioCtx.state === "running";
+  } catch {
+    return false;
+  }
+}
+
+/** Arm ONE global first-gesture unlock (idempotent across mounts). */
 function armAudioUnlock() {
-  if (typeof window === "undefined") return;
-  const unlock = () => {
-    try {
-      audioCtx = audioCtx ?? new AudioContext();
-      void audioCtx.resume();
-      unlocked = true;
-    } catch {
-      /* no audio available */
-    }
-  };
+  if (typeof window === "undefined" || unlockArmed) return;
+  unlockArmed = true;
+  const unlock = () => ensureAudio();
   window.addEventListener("pointerdown", unlock, { passive: true });
   window.addEventListener("keydown", unlock);
 }
@@ -131,8 +155,8 @@ function note(ctx: AudioContext, freq: number, at: number, dur: number, peak: nu
 }
 
 /** One bar (~1.6s) of the ring — the loop replays it while unacknowledged. */
-function playBar(tune: Tune) {
-  if (!unlocked || !audioCtx) return;
+function playBar(tune: Tune): boolean {
+  if (!ensureAudio() || !audioCtx) return false;
   try {
     const t = audioCtx.currentTime;
     const LOUD = 0.32;
@@ -152,8 +176,9 @@ function playBar(tune: Tune) {
     } else {
       note(audioCtx, 1046.5, t, 0.4, 0.18);
     }
+    return true;
   } catch {
-    /* audio device gone — stay silent */
+    return false;
   }
 }
 
@@ -168,8 +193,12 @@ function isMuted(): boolean {
 }
 
 /** Loops the ring bar (+ phone vibration) until stopped. */
-function useRinger() {
+function useRinger(onAudibleChange: (audible: boolean) => void) {
   const timer = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  const cb = React.useRef(onAudibleChange);
+  React.useEffect(() => {
+    cb.current = onAudibleChange;
+  }, [onAudibleChange]);
 
   const stop = React.useCallback(() => {
     if (timer.current) clearInterval(timer.current);
@@ -185,7 +214,10 @@ function useRinger() {
     (tune: Tune) => {
       stop();
       const bar = () => {
-        if (!isMuted()) playBar(tune);
+        // Re-attempt every bar: the moment the admin's first tap unlocks
+        // audio, the NEXT bar rings — no reload, no lost alert.
+        const audible = !isMuted() && playBar(tune);
+        cb.current(audible || isMuted());
         try {
           navigator.vibrate?.([320, 160, 320]);
         } catch {
@@ -203,13 +235,22 @@ function useRinger() {
 }
 
 /* ------------------------------------------------------------------ */
-/* The listener + full-screen takeover                                 */
+/* The listener + full-screen takeover (PORTALED to <body>)            */
 /* ------------------------------------------------------------------ */
 
 export function AdminLiveEvents() {
   const router = useRouter();
   const reduced = useReducedMotion();
-  const { start, stop } = useRinger();
+  // False while the ring WANTS to sound but audio is still gesture-locked —
+  // drives the "tap to enable sound" hint on the takeover.
+  const [audible, setAudible] = React.useState(true);
+  const { start, stop } = useRinger(setAudible);
+  // Portal target exists only in the browser.
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => {
+    const t = setTimeout(() => setMounted(true), 0);
+    return () => clearTimeout(t);
+  }, []);
 
   // Takeover queue: newest events wait behind the one on screen. NOTHING here
   // auto-dismisses — only View / Dismiss advance the queue.
@@ -276,10 +317,14 @@ export function AdminLiveEvents() {
     router.push(href);
   }, [current, router]);
 
+  if (!mounted) return null;
+
   const meta = current ? metaFor(current.type) : null;
   const Icon = meta?.icon ?? Bell;
+  const showSoundHint = !audible && !isMuted();
 
-  return (
+  // PORTAL: escape the header's backdrop-filter containing block, always.
+  return createPortal(
     <AnimatePresence>
       {current && meta && (
         <motion.div
@@ -290,14 +335,18 @@ export function AdminLiveEvents() {
           initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 1.04 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, transition: { duration: 0.18 } }}
-          className="fixed inset-0 z-[95] flex flex-col items-center justify-center bg-background px-6 text-center"
+          onPointerDown={() => {
+            // Any tap on the takeover is the unlocking gesture.
+            ensureAudio();
+          }}
+          className="fixed inset-0 z-[95] flex flex-col items-center justify-center overflow-y-auto bg-background px-6 py-10 text-center"
           style={{
-            paddingTop: "env(safe-area-inset-top)",
-            paddingBottom: "env(safe-area-inset-bottom)",
+            paddingTop: "calc(env(safe-area-inset-top) + 2.5rem)",
+            paddingBottom: "calc(env(safe-area-inset-bottom) + 2.5rem)",
           }}
         >
           {/* Urgency pulse rings behind the icon. */}
-          <div className="relative mb-8">
+          <div className="relative mb-8 shrink-0">
             {!reduced &&
               [0, 1].map((i) => (
                 <motion.span
@@ -340,7 +389,7 @@ export function AdminLiveEvents() {
             </p>
           ) : null}
 
-          <div className="mt-10 flex w-full max-w-xs flex-col gap-3">
+          <div className="mt-10 flex w-full max-w-xs shrink-0 flex-col gap-3">
             <Button size="lg" className="h-13 w-full text-base" onClick={viewCurrent}>
               {meta.actionLabel}
             </Button>
@@ -354,12 +403,20 @@ export function AdminLiveEvents() {
             </Button>
           </div>
 
-          <p className="mt-6 text-xs text-muted-foreground">
-            This alert stays (and keeps ringing) until you act.
-          </p>
+          {showSoundHint ? (
+            <p className="mt-6 inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300">
+              <BellRing className="size-3.5" aria-hidden />
+              Tap anywhere once to enable the ring
+            </p>
+          ) : (
+            <p className="mt-6 text-xs text-muted-foreground">
+              This alert stays (and keeps ringing) until you act.
+            </p>
+          )}
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }
 
@@ -382,7 +439,10 @@ export function AdminSoundToggle() {
     } catch {
       /* private mode */
     }
-    if (!next) playBar("ping"); // audible confirmation on unmute
+    if (!next) {
+      ensureAudio(); // the click IS a gesture — unlock right here
+      playBar("ping"); // audible confirmation on unmute
+    }
   }
 
   const IconEl = muted ? VolumeX : Volume2;
