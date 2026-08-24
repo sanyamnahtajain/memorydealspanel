@@ -122,14 +122,41 @@ export function ApprovalSwipeDeck({ requests, searching = false }: ApprovalSwipe
   // Approve flow: which request is awaiting an expiry choice.
   const [approving, setApproving] = React.useState<PendingRequest | null>(null);
 
-  /** Timers that commit a decision after the Undo window closes. */
-  const pendingCommits = React.useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  /**
+   * Decisions in flight: each waits out the Undo window, then commits.
+   *
+   * The commit function is kept alongside the timer so that unmounting can
+   * FLUSH it rather than drop it — see the cleanup below.
+   */
+  const pendingCommits = React.useRef(
+    new Map<
+      string,
+      {
+        timer: ReturnType<typeof setTimeout>;
+        commit: () => Promise<void>;
+        undone: boolean;
+      }
+    >(),
+  );
 
   React.useEffect(() => {
-    const timers = pendingCommits.current;
+    const inFlight = pendingCommits.current;
     return () => {
-      for (const timer of timers.values()) clearTimeout(timer);
-      timers.clear();
+      // BUG THIS FIXES: this used to clearTimeout() and walk away, which
+      // silently DISCARDED the decision. The admin saw "moved to Later", the
+      // row left the queue, and nothing was ever written — so the request
+      // reappeared in Pending on the next load. Any unmount inside the 4.5s
+      // window did it, and with the live-events feed refreshing this page all
+      // day, that happened often enough for staff to report Later as flaky.
+      //
+      // Leaving the page ends the chance to undo, so the honest behaviour is
+      // to commit immediately. Fire-and-forget: each commit already reports
+      // its own failure via a toast.
+      for (const entry of inFlight.values()) {
+        clearTimeout(entry.timer);
+        if (!entry.undone) void entry.commit();
+      }
+      inFlight.clear();
     };
   }, []);
 
@@ -139,9 +166,12 @@ export function ApprovalSwipeDeck({ requests, searching = false }: ApprovalSwipe
 
   const restoreToQueue = React.useCallback(
     (request: PendingRequest) => {
-      const timer = pendingCommits.current.get(request.id);
-      if (timer) {
-        clearTimeout(timer);
+      const entry = pendingCommits.current.get(request.id);
+      if (entry) {
+        // Mark it undone BEFORE deleting: the unmount flush and the timer
+        // both consult this flag, so an undo can never be re-committed.
+        entry.undone = true;
+        clearTimeout(entry.timer);
         pendingCommits.current.delete(request.id);
       }
       setQueue((prev) =>
@@ -206,12 +236,16 @@ export function ApprovalSwipeDeck({ requests, searching = false }: ApprovalSwipe
     (request: PendingRequest, decision: Decision, commit: () => Promise<void>) => {
       removeFromQueue(request.id);
 
-      let undone = false;
-      const timer = setTimeout(() => {
+      const entry = {
+        timer: undefined as unknown as ReturnType<typeof setTimeout>,
+        commit,
+        undone: false,
+      };
+      entry.timer = setTimeout(() => {
         pendingCommits.current.delete(request.id);
-        if (!undone) void commit();
+        if (!entry.undone) void entry.commit();
       }, 4500);
-      pendingCommits.current.set(request.id, timer);
+      pendingCommits.current.set(request.id, entry);
 
       toast(
         decision === "approve"
@@ -231,7 +265,7 @@ export function ApprovalSwipeDeck({ requests, searching = false }: ApprovalSwipe
           action: {
             label: "Undo",
             onClick: () => {
-              undone = true;
+              // restoreToQueue marks the entry undone and cancels its timer.
               restoreToQueue(request);
             },
           },
