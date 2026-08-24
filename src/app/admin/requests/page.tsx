@@ -17,6 +17,7 @@ import {
 import {
   RequestsTabs,
   type DecidedRequest,
+  type RenewalItem,
 } from "@/components/admin/requests/RequestsTabs";
 import type { PendingRequest } from "@/components/admin/requests/ApprovalSwipeDeck";
 
@@ -169,6 +170,80 @@ export default async function AdminRequestsPage({
 
   const decidedPageCount = Math.max(1, Math.ceil(decidedTotal / DECIDED_PAGE_SIZE));
 
+  // ---- Renewals (owner request): who needs access renewed? -----------------
+  // Two states in one queue: APPROVED customers whose EFFECTIVE live access
+  // lapses within the window ("expiring"), and customers already EXPIRED.
+  // Effective expiry = never, if ANY live grant is unlimited; else the LATEST
+  // live expiry — so a customer with a fresh long grant never shows here.
+  const RENEWAL_WINDOW_DAYS = 14;
+  const now = new Date();
+  const renewalWindowEnd = new Date(now.getTime() + RENEWAL_WINDOW_DAYS * 86_400_000);
+  const renewalCustomerSelect = {
+    businessName: true,
+    contactName: true,
+    phone: true,
+    city: true,
+  } as const;
+
+  const [liveGrants, expiredGrants] = await Promise.all([
+    prisma.accessGrant.findMany({
+      where: {
+        revokedAt: null,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+        customer: { status: "APPROVED", ...(customerWhere ?? {}) },
+      },
+      select: { customerId: true, expiresAt: true, customer: { select: renewalCustomerSelect } },
+    }),
+    // Latest lapsed grant per EXPIRED customer (distinct on the sorted rows).
+    prisma.accessGrant.findMany({
+      where: { customer: { status: "EXPIRED", ...(customerWhere ?? {}) } },
+      orderBy: { expiresAt: "desc" },
+      distinct: ["customerId"],
+      take: 200,
+      select: { customerId: true, expiresAt: true, customer: { select: renewalCustomerSelect } },
+    }),
+  ]);
+
+  type EffectiveRow = { expiresAt: Date | null; customer: (typeof liveGrants)[number]["customer"] };
+  const effectiveByCustomer = new Map<string, EffectiveRow>();
+  for (const g of liveGrants) {
+    const prev = effectiveByCustomer.get(g.customerId);
+    if (!prev) {
+      effectiveByCustomer.set(g.customerId, { expiresAt: g.expiresAt, customer: g.customer });
+    } else if (prev.expiresAt !== null) {
+      // Unlimited (null) wins; otherwise keep the LATEST expiry.
+      prev.expiresAt =
+        g.expiresAt === null || g.expiresAt > prev.expiresAt ? g.expiresAt : prev.expiresAt;
+    }
+  }
+
+  const renewals: RenewalItem[] = [
+    ...[...effectiveByCustomer.entries()]
+      .filter(
+        (e): e is [string, EffectiveRow & { expiresAt: Date }] =>
+          e[1].expiresAt !== null && e[1].expiresAt <= renewalWindowEnd,
+      )
+      .sort((a, b) => a[1].expiresAt.getTime() - b[1].expiresAt.getTime())
+      .map(([customerId, row]) => ({
+        customerId,
+        businessName: row.customer.businessName,
+        contactName: row.customer.contactName,
+        phone: row.customer.phone,
+        city: row.customer.city ?? null,
+        expiresAt: row.expiresAt.toISOString(),
+        state: "expiring" as const,
+      })),
+    ...expiredGrants.map((g) => ({
+      customerId: g.customerId,
+      businessName: g.customer.businessName,
+      contactName: g.customer.contactName,
+      phone: g.customer.phone,
+      city: g.customer.city ?? null,
+      expiresAt: g.expiresAt ? g.expiresAt.toISOString() : null,
+      state: "expired" as const,
+    })),
+  ];
+
   const pending: PendingRequest[] = pendingRows.map((row) => ({
     id: row.id,
     customerId: row.customerId,
@@ -236,6 +311,7 @@ export default async function AdminRequestsPage({
           decidedPageParam={DECIDED_PAGE_PARAM}
           query={query}
           decidedStatus={decidedStatus}
+          renewals={renewals}
         />
 
         {/* Recent access decisions & grants — audited under the Customer

@@ -135,9 +135,10 @@ export interface OrderPdfData {
   /** Customer requirements (notes + photos) — rendered after the bill. */
   requirements?: OrderPdfRequirement[];
   /**
-   * Frozen billing buckets. When present the bill becomes an ORDER SUMMARY
-   * page followed by one bill page per separately-billed bucket (plus General);
-   * when absent the single-bill layout renders exactly as before.
+   * Frozen billing buckets. When present the document is a run of sequential
+   * bills — "BILL 1 OF n", "BILL 2 OF n", … each with its own goods table and
+   * bill total, separated by dashed cut lines — closed by ONE "ORDER TOTAL"
+   * block. When absent the single-bill layout renders exactly as before.
    */
   billing?: {
     groupDiscountPaise: number;
@@ -245,6 +246,24 @@ export async function renderOrderPdf(
   };
   const hline = (yy: number) =>
     page.drawLine({ start: { x: M, y: yy }, end: { x: dim.w - M, y: yy }, thickness: 0.8, color: INK });
+  /** Full-width dotted rule (totals separators). */
+  const dotted = (yy: number) =>
+    page.drawLine({
+      start: { x: M, y: yy },
+      end: { x: dim.w - M, y: yy },
+      thickness: 1,
+      color: MUTED,
+      dashArray: [1, 3],
+    });
+  /** Full-width dashed "cut here" rule (between bills). */
+  const dashed = (yy: number) =>
+    page.drawLine({
+      start: { x: M, y: yy },
+      end: { x: dim.w - M, y: yy },
+      thickness: 1.1,
+      color: INK,
+      dashArray: [6, 4],
+    });
   /** Start a fresh sheet (no masthead) with the cursor at the top margin. */
   const newPage = () => {
     page = doc.addPage([dim.w, dim.h]);
@@ -317,6 +336,7 @@ export async function renderOrderPdf(
     heading = "ESTIMATE",
     group: string | null = null,
     withTable = true,
+    metaLabel = "Bill No.",
   ) => {
     y = dim.h - M;
     if (first) {
@@ -332,7 +352,7 @@ export async function renderOrderPdf(
       y -= 15;
       // Party / bill meta block.
       text("Party Details :", M + 2, 9.5, bold);
-      text(`Bill No.  :  ${billNumber}`, M + W / 2, 9.5, bold, INK, "left", 0);
+      text(`${metaLabel}  :  ${billNumber}`, M + W / 2, 9.5, bold, INK, "left", 0);
       y -= 13;
       text(data.partyName, M + 2, 10, helv);
       text(`Date      :  ${ddmmyyyy(data.placedAt)}`, M + W / 2, 9.5, helv, INK, "left", 0);
@@ -463,111 +483,111 @@ export async function renderOrderPdf(
     }
   };
 
-  /**
-   * ORDER SUMMARY (page 1 when buckets are present): masthead + party/bill
-   * meta, a compact bucket table (Bucket + bill no | Items | Subtotal |
-   * Discount | Net), then the order totals.
-   */
-  const renderBucketSummary = (billing: NonNullable<OrderPdfData["billing"]>) => {
-    masthead(true, "ORDER SUMMARY", null, false);
-    const sCols = [
-      { label: "Bucket", w: W - qty - rate * 3, align: "left" as const },
-      { label: "Items", w: qty, align: "right" as const },
-      { label: "Subtotal", w: rate, align: "right" as const },
-      { label: "Discount", w: rate, align: "right" as const },
-      { label: "Net (Rs.)", w: rate, align: "right" as const },
-    ];
-    let x = M;
-    for (const c of sCols) {
-      text(c.label, x + 4, 9, bold, INK, c.align, c.w - 8);
-      x += c.w;
-    }
-    y -= 5;
-    hline(y);
-    y -= 14;
-    for (const b of billing.buckets) {
-      if (y < M + 120) newPage();
-      const rowTop = y;
-      const cells = [
-        null,
-        String(b.lineIndexes.length),
-        money(b.subtotalPaise),
-        b.discountPaise > 0 ? `- ${money(b.discountPaise)}` : "-",
-        money(b.netPaise),
-      ];
-      x = M;
-      sCols.forEach((c, ci) => {
-        const val = cells[ci];
-        if (val != null) {
-          y = rowTop;
-          text(val, x + 4, 8.5, helv, INK, c.align, c.w - 8);
-        }
-        x += c.w;
-      });
-      // Bucket column: name (with "separate bill" marker), bill number beneath.
-      y = rowTop;
-      const name = wrapToWidth(
-        `${b.name} (${b.code})${b.separateBill ? " - separate bill" : ""}`,
-        bold, 9, sCols[0].w - 8,
-      );
-      for (const nl of name) {
-        text(nl, M + 4, 9, bold, INK, "left", sCols[0].w - 8);
-        y -= 12;
-      }
-      text(`Bill No. ${b.billNumber}`, M + 4, 8, helv, MUTED, "left", sCols[0].w - 8);
-      y -= 14;
-    }
-    totalsBlock({
-      subtotalPaise: billing.buckets.reduce((s, b) => s + b.subtotalPaise, 0),
-      discounts: [
-        ...(billing.groupDiscountPaise > 0
-          ? [{ label: "Bucket discounts", paise: billing.groupDiscountPaise }]
-          : []),
-        ...couponRows,
-      ],
-      totalQty: data.totalQty,
-      grandTotalPaise: data.grandTotalPaise,
-      taxPaise: data.totalTaxPaise,
-    });
-  };
-
   const couponRows: DiscountRow[] =
     (data.discountPaise ?? 0) > 0
       ? [{ label: `Discount${data.couponCode ? ` (${data.couponCode})` : ""}`, paise: data.discountPaise ?? 0 }]
       : [];
 
   /**
-   * Begin a bucket's bill as a FLOWING section (paper saver): when enough of
-   * the current sheet remains, draw a bold divider + a compact bill header
-   * (Bill No. / Group + table header) and continue right here; only when the
-   * sheet is nearly full does the bill start a fresh page with the full
-   * masthead. A small order prints on ONE sheet instead of one per bucket —
-   * the sections stay separately numbered, so each can still be cut apart.
+   * BILL i OF n — a bill's section header. The first bill sits right under the
+   * shared masthead; every later bill is preceded by a dashed "cut here" rule
+   * (or a fresh sheet when the current one is nearly full — paper saver).
    */
-  const MIN_BILL_SECTION = 170; // compact header + a couple of rows + totals
-  const startBillSection = (bill: BillPage) => {
+  const MIN_BILL_SECTION = 170; // header + a couple of rows + bill totals
+  const startBillSection = (bill: BillPage, index: number, count: number) => {
     billNumber = bill.billNumber;
     if (y < M + MIN_BILL_SECTION) {
       newPage();
-      masthead(true, "ESTIMATE", bill.label);
-      return;
+      text(`${APP_NAME.toUpperCase()} — Order No. ${data.orderNumber}`, M, 8.5, helv, MUTED);
+      y -= 18;
+    } else if (index > 0) {
+      // The beautiful part: a dashed cut line between consecutive bills.
+      y -= 10;
+      dashed(y);
+      y -= 22;
+    } else {
+      y -= 2;
     }
-    // Same-sheet section: heavy rule, then the bill meta the full masthead
-    // would carry (store block + party already printed above on this sheet).
-    y -= 8;
-    page.drawLine({
-      start: { x: M, y }, end: { x: dim.w - M, y }, thickness: 1.6, color: INK,
-    });
-    y -= 18;
-    text("ESTIMATE", M, 8, helv, MUTED, "left", 0);
-    text(`Bill No.  :  ${bill.billNumber}`, M + W / 2, 9.5, bold, INK, "left", 0);
+    text(`BILL ${index + 1} OF ${count}`, M, 8, bold, MUTED, "left", 0);
+    text(`No. ${bill.billNumber}`, M, 8.5, helv, MUTED, "right", W);
     y -= 13;
-    text(bill.label, M, 9.5, bold);
-    text(`Date      :  ${ddmmyyyy(data.placedAt)}`, M + W / 2, 9.5, helv, INK, "left", 0);
-    y -= 10;
+    text(bill.label, M, 11, bold);
+    y -= 8;
     hline(y);
     y -= 14;
     tableHeader();
+  };
+
+  /** A bill's own totals: dotted rule → subtotal / discount → BILL TOTAL. */
+  const billTotals = (bill: BillPage) => {
+    const t = bill.totals;
+    if (y < M + 80) newPage();
+    y -= 2;
+    dotted(y);
+    y -= 15;
+    if (t.subtotalPaise != null && t.discounts.length > 0) {
+      totalsRow("Subtotal", money(t.subtotalPaise), helv, 9.5);
+    }
+    for (const d of t.discounts) totalsRow(d.label, `- ${money(d.paise)}`, helv, 9.5);
+    text("Bill Total", M + W * 0.35, 10, bold, INK, "right", W * 0.2);
+    text(`${t.totalQty.toFixed(2)} pcs`, M + W * 0.56, 10, bold, INK, "left", 0);
+    text(money(t.grandTotalPaise), M, 10.5, bold, INK, "right", W);
+    y -= 10;
+    if (t.notes) {
+      for (const nl of wrapToWidth(t.notes, helv, 8, W - 8)) {
+        if (y < M + 24) newPage();
+        text(nl, M + 2, 8, helv, MUTED);
+        y -= 10;
+      }
+    }
+    y -= 4;
+  };
+
+  /**
+   * The closing ORDER TOTAL: a double rule, one line per bill's total, a
+   * dotted rule, the coupon (order-level), then the grand total + words.
+   */
+  const orderTotalBlock = (bills: BillPage[]) => {
+    const needed = 130 + bills.length * 13 + couponRows.length * 13;
+    if (y < M + needed) newPage();
+    y -= 4;
+    hline(y);
+    page.drawLine({
+      start: { x: M, y: y - 2.5 },
+      end: { x: dim.w - M, y: y - 2.5 },
+      thickness: 0.8,
+      color: INK,
+    });
+    y -= 22;
+    text("ORDER TOTAL", M, 11, bold, INK, "center", W);
+    y -= 18;
+    bills.forEach((b, i) => {
+      text(`Bill ${i + 1}  ·  ${b.label}  ·  ${b.billNumber}`, M + 2, 9, helv);
+      text(money(b.totals.grandTotalPaise), M, 9.5, helv, INK, "right", W);
+      y -= 13;
+    });
+    y -= 2;
+    dotted(y);
+    y -= 15;
+    for (const d of couponRows) {
+      text(d.label, M + 2, 9.5, helv);
+      text(`- ${money(d.paise)}`, M, 9.5, helv, INK, "right", W);
+      y -= 13;
+    }
+    text("Grand Total", M + 2, 10.5, bold);
+    text(`${data.totalQty.toFixed(2)} pcs`, M + W * 0.5, 10, bold, INK, "left", 0);
+    text(money(data.grandTotalPaise), M, 11, bold, INK, "right", W);
+    y -= 8;
+    hline(y);
+    y -= 16;
+    text("Amount chargeable (in words)", M + 2, 8.5, helv, MUTED);
+    y -= 12;
+    text(amountInWords(data.grandTotalPaise), M + 2, 9.5, bold);
+    if (data.totalTaxPaise != null) {
+      y -= 14;
+      text(`Includes GST: Rs. ${money(data.totalTaxPaise)}`, M + 2, 8.5, helv, MUTED);
+    }
+    y -= 6;
   };
 
   if (!data.billing) {
@@ -581,13 +601,18 @@ export async function renderOrderPdf(
       taxPaise: data.totalTaxPaise,
     });
   } else {
-    renderBucketSummary(data.billing);
-    for (const bill of billPages(data)) {
-      startBillSection(bill);
-      goodsRows(bill.lineIndexes.map((i) => data.lines[i]));
-      totalsBlock(bill.totals);
-    }
+    // Bucketed order: ONE shared masthead (store + party + ORDER number),
+    // then the bills in sequence — no summary table (owner request) — closed
+    // by the single ORDER TOTAL block.
+    masthead(true, "ESTIMATE", null, false, "Order No.");
+    const bills = billPages(data);
+    bills.forEach((bill, index) => {
+      startBillSection(bill, index, bills.length);
+      goodsRows(bill.lineIndexes.map((li) => data.lines[li]));
+      billTotals(bill);
+    });
     billNumber = data.orderNumber;
+    orderTotalBlock(bills);
   }
 
   // ---- Customer requirement PHOTOS, after the bill ---------------------
@@ -695,6 +720,7 @@ function billPages(data: OrderPdfData): BillPage[] {
       label: `${b.name} (${b.code})`,
       lineIndexes: b.lineIndexes,
       totals: {
+        subtotalPaise: b.subtotalPaise,
         discounts: discountRow(b),
         totalQty: lineQty(b.lineIndexes),
         grandTotalPaise: b.netPaise,
@@ -716,6 +742,7 @@ function billPages(data: OrderPdfData): BillPage[] {
       label: `${GENERAL_GROUP_NAME} (${GENERAL_GROUP_CODE})`,
       lineIndexes: generalIdx,
       totals: {
+        subtotalPaise: subtotal,
         discounts: merged.flatMap(discountRow),
         totalQty: lineQty(generalIdx),
         grandTotalPaise: subtotal - discount,

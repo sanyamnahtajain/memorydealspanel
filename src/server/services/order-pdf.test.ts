@@ -158,18 +158,19 @@ describe("renderOrderPdf", () => {
       },
     };
 
-    it("prints the ORDER SUMMARY then each bucket bill as flowing sections", async () => {
+    it("prints sequential bills (BILL 1 OF n …) closed by ONE ORDER TOTAL — no summary table", async () => {
       const text = pdfText(await renderOrderPdf(BILLED));
-      expect(text).toContain("ORDER SUMMARY");
+      // No summary table (owner request) — the document IS the bills.
+      expect(text).not.toContain("ORDER SUMMARY");
+      expect(text).toContain("BILL 1 OF 2");
+      expect(text).toContain("BILL 2 OF 2");
       expect(text).toContain("5108/DLR");
       expect(text).toContain("5108/GEN");
-      expect(text).toContain("Bucket discounts");
+      expect(text).toContain("Bill Total");
       expect(text).toContain("Dealer discount 6%");
-      // Bucket totals + words, and the bucket notes under the total.
-      expect(text).toContain("Four Hundred Seventy Only");
-      expect(text).toContain("Two Hundred Fifty Only");
       expect(text).toContain("dealer counter");
-      // Order grand total on the summary.
+      // The closing block: per-bill lines + grand total in words.
+      expect(text).toContain("ORDER TOTAL");
       expect(text).toContain("Seven Hundred Twenty Only");
     });
 
@@ -184,7 +185,7 @@ describe("renderOrderPdf", () => {
 
     it("renders the bucketed bill on A5 too", async () => {
       const text = pdfText(await renderOrderPdf(BILLED, "A5"));
-      expect(text).toContain("ORDER SUMMARY");
+      expect(text).toContain("BILL 1 OF 2");
       expect(text).toContain("5108/DLR");
       expect(text).toContain("Dealer discount 6%");
       expect(text).toContain("Seven Hundred Twenty Only");
@@ -192,8 +193,8 @@ describe("renderOrderPdf", () => {
 
     it("leaves the single-bill layout untouched when no billing is present", async () => {
       const text = pdfText(await renderOrderPdf(DATA));
-      expect(text).not.toContain("ORDER SUMMARY");
-      expect(text).not.toContain("Bucket discounts");
+      expect(text).not.toContain("ORDER TOTAL");
+      expect(text).not.toContain("BILL 1 OF");
       expect(text).not.toContain("Page 1 of");
       expect(text).toContain("Seven Hundred Fifty Only");
     });

@@ -13,9 +13,24 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { Undo2 } from "lucide-react";
+import { Undo2, RefreshCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  ExpiryDial,
+  expiryValueToInput,
+  type ExpiryValue,
+} from "@/components/admin/ExpiryDial";
+import { DEFAULT_ACCESS_EXPIRY_DAYS } from "@/lib/constants";
+import { extendAccessAction } from "@/server/actions/access";
 import { unsnoozeAccessAction } from "@/server/actions/access";
 import { EmptyState, StatusChip, Pager } from "@/components/common";
 import {
@@ -41,6 +56,18 @@ export interface DecidedRequest {
   createdAt: string;
 }
 
+/** A customer in the Renewals queue: access expired, or expiring soon. */
+export interface RenewalItem {
+  customerId: string;
+  businessName: string;
+  contactName: string;
+  phone: string;
+  city: string | null;
+  /** ISO effective/last expiry (null for a legacy grant with no date). */
+  expiresAt: string | null;
+  state: "expiring" | "expired";
+}
+
 export interface RequestsTabsProps {
   pending: PendingRequest[];
   /** Skipped requests parked for later review (T: snooze). */
@@ -60,6 +87,8 @@ export interface RequestsTabsProps {
   query: string;
   /** Approved/Rejected sub-filter for the decided history. */
   decidedStatus: "all" | "approved" | "rejected";
+  /** Expired / expiring-soon customers for the Renewals tab. */
+  renewals: RenewalItem[];
 }
 
 const dateFormatter = new Intl.DateTimeFormat("en-IN", {
@@ -85,6 +114,7 @@ export function RequestsTabs({
   decidedPageParam,
   query,
   decidedStatus,
+  renewals,
 }: RequestsTabsProps) {
   // When the URL carries a decided-tab page (>1), the admin was browsing the
   // history — open that tab so navigation lands where they expect.
@@ -111,6 +141,14 @@ export function RequestsTabs({
             </span>
           )}
         </TabsTrigger>
+        <TabsTrigger value="renewals">
+          Renewals
+          {renewals.length > 0 && (
+            <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500/15 px-1.5 text-[11px] leading-none font-semibold tabular-nums text-amber-700 dark:text-amber-300">
+              {renewals.length}
+            </span>
+          )}
+        </TabsTrigger>
         <TabsTrigger value="decided">Decided</TabsTrigger>
       </TabsList>
 
@@ -120,6 +158,10 @@ export function RequestsTabs({
 
       <TabsContent value="later" className="mt-6">
         <SnoozedList requests={snoozed} searching={searching} />
+      </TabsContent>
+
+      <TabsContent value="renewals" className="mt-6">
+        <RenewalsList items={renewals} searching={searching} />
       </TabsContent>
 
       <TabsContent value="decided" className="mt-6 space-y-4">
@@ -448,5 +490,160 @@ function SnoozedList({
         </li>
       ))}
     </ul>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Renewals (expired / expiring-soon access)                           */
+/* ------------------------------------------------------------------ */
+
+/** "in 3 days" / "today" / "5 days ago" for the expiry chip. */
+function relativeDays(iso: string): { label: string; days: number } {
+  const days = Math.round((new Date(iso).getTime() - Date.now()) / 86_400_000);
+  if (days > 0) return { label: `in ${days} day${days === 1 ? "" : "s"}`, days };
+  if (days === 0) return { label: "today", days };
+  return { label: `${-days} day${days === -1 ? "" : "s"} ago`, days };
+}
+
+/**
+ * The Renewals queue: customers whose access is EXPIRED or lapses within the
+ * window, each with a one-tap Renew (ExpiryDial → extendAccessAction — the
+ * same audited path the customers table uses).
+ */
+function RenewalsList({
+  items,
+  searching,
+}: {
+  items: RenewalItem[];
+  searching: boolean;
+}) {
+  const router = useRouter();
+  const [renewing, setRenewing] = React.useState<RenewalItem | null>(null);
+  const [expiry, setExpiry] = React.useState<ExpiryValue>({
+    kind: "days",
+    days: DEFAULT_ACCESS_EXPIRY_DAYS,
+  });
+  const [busy, startTransition] = React.useTransition();
+
+  // Reset the dial per customer (render-phase, keyed on identity).
+  const [dialogFor, setDialogFor] = React.useState<string | null>(null);
+  if ((renewing?.customerId ?? null) !== dialogFor) {
+    setDialogFor(renewing?.customerId ?? null);
+    if (renewing) setExpiry({ kind: "days", days: DEFAULT_ACCESS_EXPIRY_DAYS });
+  }
+
+  function confirmRenew() {
+    const item = renewing;
+    if (!item) return;
+    startTransition(async () => {
+      const res = await extendAccessAction({
+        customerId: item.customerId,
+        expiry: expiryValueToInput(expiry),
+      });
+      if (!res.ok) {
+        toast.error(`Couldn't renew ${item.businessName}`, { description: res.error });
+        return;
+      }
+      toast.success(`Renewed access for ${item.businessName}.`);
+      setRenewing(null);
+      router.refresh();
+    });
+  }
+
+  if (items.length === 0) {
+    return (
+      <EmptyState
+        illustration="empty-box"
+        title={searching ? "No matches" : "No renewals due"}
+        description={
+          searching
+            ? "No expiring or expired customers match your search."
+            : "Nobody's access is expiring soon — customers land here 14 days before they lapse, and stay until renewed."
+        }
+      />
+    );
+  }
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-border bg-card">
+      <ul className="divide-y divide-border">
+        {items.map((item) => {
+          const rel = item.expiresAt ? relativeDays(item.expiresAt) : null;
+          return (
+            <li
+              key={item.customerId}
+              className="flex flex-wrap items-center gap-x-4 gap-y-3 p-4"
+            >
+              <div className="min-w-0 flex-1 basis-64">
+                <div className="flex items-center gap-2">
+                  <h3 className="truncate font-medium text-foreground">
+                    {item.businessName}
+                  </h3>
+                  {item.state === "expired" ? (
+                    <StatusChip variant="expired" />
+                  ) : (
+                    <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
+                      Expires {rel?.label ?? "soon"}
+                    </span>
+                  )}
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                  <span className="inline-flex items-center gap-1.5">
+                    <UserIcon className="size-3.5" aria-hidden />
+                    {item.contactName}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <PhoneIcon className="size-3.5" aria-hidden />
+                    {item.phone}
+                  </span>
+                  {item.city && (
+                    <span className="inline-flex items-center gap-1.5">
+                      <MapPinIcon className="size-3.5" aria-hidden />
+                      {item.city}
+                    </span>
+                  )}
+                  {item.state === "expired" && rel ? (
+                    <span>Expired {rel.label}</span>
+                  ) : null}
+                </div>
+              </div>
+              <Button
+                size="sm"
+                className="shrink-0"
+                onClick={() => setRenewing(item)}
+              >
+                <RefreshCcw aria-hidden className="size-3.5" />
+                Renew
+              </Button>
+            </li>
+          );
+        })}
+      </ul>
+
+      <Dialog open={renewing !== null} onOpenChange={(open) => { if (!open) setRenewing(null); }}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Renew access</DialogTitle>
+            <DialogDescription>
+              {renewing
+                ? `Choose how long ${renewing.businessName} keeps seeing prices. Time stacks onto any remaining validity.`
+                : null}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <ExpiryDial value={expiry} onChange={setExpiry} />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenewing(null)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button onClick={confirmRenew} disabled={busy}>
+              <RefreshCcw aria-hidden className="size-3.5" />
+              {busy ? "Renewing…" : "Renew access"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
