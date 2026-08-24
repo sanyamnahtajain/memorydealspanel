@@ -14,7 +14,7 @@
  * per-retailer data can't leak across sessions or go stale.
  */
 
-const CACHE_VERSION = "v2";
+const CACHE_VERSION = "v3";
 const CACHE_NAME = `memorydeals-${CACHE_VERSION}`;
 const OFFLINE_URL = "/offline";
 

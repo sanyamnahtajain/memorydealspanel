@@ -536,6 +536,40 @@ export async function renderOrderPdf(
       ? [{ label: `Discount${data.couponCode ? ` (${data.couponCode})` : ""}`, paise: data.discountPaise ?? 0 }]
       : [];
 
+  /**
+   * Begin a bucket's bill as a FLOWING section (paper saver): when enough of
+   * the current sheet remains, draw a bold divider + a compact bill header
+   * (Bill No. / Group + table header) and continue right here; only when the
+   * sheet is nearly full does the bill start a fresh page with the full
+   * masthead. A small order prints on ONE sheet instead of one per bucket —
+   * the sections stay separately numbered, so each can still be cut apart.
+   */
+  const MIN_BILL_SECTION = 170; // compact header + a couple of rows + totals
+  const startBillSection = (bill: BillPage) => {
+    billNumber = bill.billNumber;
+    if (y < M + MIN_BILL_SECTION) {
+      newPage();
+      masthead(true, "ESTIMATE", bill.label);
+      return;
+    }
+    // Same-sheet section: heavy rule, then the bill meta the full masthead
+    // would carry (store block + party already printed above on this sheet).
+    y -= 8;
+    page.drawLine({
+      start: { x: M, y }, end: { x: dim.w - M, y }, thickness: 1.6, color: INK,
+    });
+    y -= 18;
+    text("ESTIMATE", M, 8, helv, MUTED, "left", 0);
+    text(`Bill No.  :  ${bill.billNumber}`, M + W / 2, 9.5, bold, INK, "left", 0);
+    y -= 13;
+    text(bill.label, M, 9.5, bold);
+    text(`Date      :  ${ddmmyyyy(data.placedAt)}`, M + W / 2, 9.5, helv, INK, "left", 0);
+    y -= 10;
+    hline(y);
+    y -= 14;
+    tableHeader();
+  };
+
   if (!data.billing) {
     // Single bill — the pre-billing-groups layout, unchanged.
     masthead(true);
@@ -549,9 +583,7 @@ export async function renderOrderPdf(
   } else {
     renderBucketSummary(data.billing);
     for (const bill of billPages(data)) {
-      newPage();
-      billNumber = bill.billNumber;
-      masthead(true, "ESTIMATE", bill.label);
+      startBillSection(bill);
       goodsRows(bill.lineIndexes.map((i) => data.lines[i]));
       totalsBlock(bill.totals);
     }
@@ -564,7 +596,17 @@ export async function renderOrderPdf(
   // note is repeated (muted) under each photo group as a caption for staff.
   const requirements = (data.requirements ?? []).filter((r) => r.images.length > 0);
   if (requirements.length > 0) {
-    newPage();
+    // Flow onto the current sheet when there's meaningful room for at least a
+    // heading + one photo; only a nearly-full sheet forces a page break.
+    if (y < M + 150) {
+      newPage();
+    } else {
+      y -= 8;
+      page.drawLine({
+        start: { x: M, y }, end: { x: dim.w - M, y }, thickness: 1.6, color: INK,
+      });
+      y -= 20;
+    }
     text("CUSTOMER REQUIREMENT PHOTOS", M, 12, bold, INK, "center", W);
     y -= 10;
     hline(y);

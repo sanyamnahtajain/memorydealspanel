@@ -17,7 +17,11 @@ import { useSlabyBranding } from "./useSlabyBranding";
  */
 
 const SHOWN_AT_KEY = "md-slaby-promo-at";
+/** Set on an explicit dismiss/click — the full-frequency snooze. */
+const ACK_AT_KEY = "md-slaby-promo-ack-at";
 const APPEAR_DELAY_MS = 6_000;
+/** A mere appearance (no interaction) only pauses the card for a day. */
+const SEEN_SNOOZE_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Paths where a marketing card would get in the way of the job at hand.
@@ -36,13 +40,31 @@ function isQuietPath(pathname: string): boolean {
   );
 }
 
+/**
+ * Due when BOTH gates pass: an explicit dismiss/click snoozes for the admin's
+ * full frequency; a mere appearance only pauses a day (so glancing at it in
+ * the browser doesn't hide it for a week in the installed app — on Android
+ * the PWA shares this storage with the browser).
+ */
 function dueNow(frequencyDays: number): boolean {
   try {
-    const raw = window.localStorage.getItem(SHOWN_AT_KEY);
-    const at = raw ? parseInt(raw, 10) : 0;
-    return !at || Date.now() - at > frequencyDays * 24 * 60 * 60 * 1000;
+    const seen = parseInt(window.localStorage.getItem(SHOWN_AT_KEY) ?? "0", 10) || 0;
+    const acked = parseInt(window.localStorage.getItem(ACK_AT_KEY) ?? "0", 10) || 0;
+    const now = Date.now();
+    if (acked && now - acked < frequencyDays * 24 * 60 * 60 * 1000) return false;
+    if (seen && now - seen < SEEN_SNOOZE_MS) return false;
+    return true;
   } catch {
     return false;
+  }
+}
+
+/** Record an explicit interaction (dismiss or click) — full-frequency snooze. */
+function acknowledge() {
+  try {
+    window.localStorage.setItem(ACK_AT_KEY, String(Date.now()));
+  } catch {
+    /* private mode */
   }
 }
 
@@ -89,7 +111,10 @@ export function SlabyPromoCard() {
         >
           <button
             type="button"
-            onClick={() => setOpen(false)}
+            onClick={() => {
+              acknowledge();
+              setOpen(false);
+            }}
             aria-label="Dismiss"
             className="absolute top-2 right-2 grid size-7 place-items-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
           >
@@ -109,6 +134,7 @@ export function SlabyPromoCard() {
             href={slabyHref("promo")}
             target="_blank"
             rel="noopener noreferrer"
+            onClick={acknowledge}
             className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-[#2563EB] outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 dark:text-[#60A5FA]"
           >
             Explore Slaby

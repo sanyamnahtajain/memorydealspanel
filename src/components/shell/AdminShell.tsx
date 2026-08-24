@@ -18,6 +18,10 @@ import {
 import { Tooltip } from "@/components/ui/tooltip"
 import { ThemeToggle } from "@/components/theme/ThemeToggle"
 import { SignOutButton } from "@/components/admin/SignOutButton"
+import {
+  AdminLiveEvents,
+  AdminSoundToggle,
+} from "@/components/admin/notifications/AdminLiveEvents"
 import { TabBadge } from "@/components/shell/TabBadge"
 import { Logo } from "@/components/brand/Logo"
 import {
@@ -191,7 +195,11 @@ export function AdminShell({
             <h1 className="min-w-0 truncate font-heading text-base font-semibold">
               {title}
             </h1>
+            {/* Live event stream (SSE) — one connection per open panel:
+                toast + ring + badge refresh on orders/requests. */}
+            <AdminLiveEvents />
             <ThemeToggle variant="compact" className="ml-auto" />
+            <AdminSoundToggle />
             <Tooltip
               content={
                 notificationCount && notificationCount > 0

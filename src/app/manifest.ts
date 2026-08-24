@@ -20,8 +20,10 @@ export default function manifest(): MetadataRoute.Manifest {
     scope: "/",
     display: "standalone",
     orientation: "portrait",
-    background_color: "#ffffff",
-    theme_color: "#1e2a9c",
+    // Near-black boot canvas: the OS-generated splash, the pre-paint #md-boot
+    // cover, and the animated SplashScreen all share it — one seamless launch.
+    background_color: "#0A0A0B",
+    theme_color: "#0A0A0B",
     categories: ["business", "shopping"],
     icons: [
       {

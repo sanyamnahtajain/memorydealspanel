@@ -11,6 +11,7 @@ import {
 } from "@/components/preferences/prefs-script";
 import { PWARegister } from "@/components/pwa/PWARegister";
 import { InstallPrompt } from "@/components/pwa/InstallPrompt";
+import { SplashScreen } from "@/components/pwa/SplashScreen";
 import { ScrollToTop } from "@/components/common/ScrollToTop";
 import { siteBaseUrl } from "./seo-site-url";
 import "./globals.css";
@@ -89,14 +90,39 @@ export default async function RootLayout({
         {/* Render-blocking UI-preferences bootstrap — sets `data-density`
             (and `data-reduce-motion`) before the first paint. */}
         <script dangerouslySetInnerHTML={{ __html: prefsScript }} />
+        {/* Render-blocking PWA boot cover — in the INSTALLED app's first
+            launch of a session, flag <html> before paint so the dark #md-boot
+            cover shows instantly (no flash of app content) until the animated
+            SplashScreen takes over and removes the flag. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){try{var s=(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true;if(s&&!sessionStorage.getItem('md-splash-played')&&location.pathname.indexOf('/admin')!==0){document.documentElement.dataset.mdBoot='1'}}catch(e){}})();",
+          }}
+        />
+        <style
+          dangerouslySetInnerHTML={{
+            __html:
+              '#md-boot{display:none}html[data-md-boot="1"] #md-boot{display:flex;position:fixed;inset:0;z-index:90;background:#0A0A0B;align-items:center;justify-content:center}#md-boot span{display:flex;width:5rem;height:5rem;align-items:center;justify-content:center;border-radius:1rem;background:#fff}',
+          }}
+        />
       </head>
       <body className="min-h-full flex flex-col">
+        {/* Pre-paint boot cover (installed app only — see the head script).
+            The animated SplashScreen paints over it, then clears the flag. */}
+        <div id="md-boot" aria-hidden>
+          <span>
+            {/* eslint-disable-next-line @next/next/no-img-element -- pre-hydration boot art */}
+            <img src="/brand/logo.png" alt="" width={56} height={56} />
+          </span>
+        </div>
         <ThemeProvider>
           <PreferencesProvider initialDensity={initialDensity}>
             <ScrollToTop />
             {children}
             {/* PWA_REGISTER_SLOT */}
             <PWARegister />
+            <SplashScreen />
             <InstallPrompt />
             <AppToaster />
           </PreferencesProvider>

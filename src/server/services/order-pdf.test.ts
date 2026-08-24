@@ -158,14 +158,13 @@ describe("renderOrderPdf", () => {
       },
     };
 
-    it("prints an ORDER SUMMARY page, then one bill page per bucket", async () => {
+    it("prints the ORDER SUMMARY then each bucket bill as flowing sections", async () => {
       const text = pdfText(await renderOrderPdf(BILLED));
       expect(text).toContain("ORDER SUMMARY");
       expect(text).toContain("5108/DLR");
       expect(text).toContain("5108/GEN");
       expect(text).toContain("Bucket discounts");
       expect(text).toContain("Dealer discount 6%");
-      expect(text).toContain("Page 1 of");
       // Bucket totals + words, and the bucket notes under the total.
       expect(text).toContain("Four Hundred Seventy Only");
       expect(text).toContain("Two Hundred Fifty Only");
@@ -174,12 +173,21 @@ describe("renderOrderPdf", () => {
       expect(text).toContain("Seven Hundred Twenty Only");
     });
 
+    it("PAPER SAVER: a small bucketed order fits on a single A4 sheet", async () => {
+      // Sections FLOW (divider + compact bill header) instead of forcing a
+      // fresh page per bucket — so this 3-line order must not paginate at all.
+      // "Page N of M" only prints on multi-page bills, so its absence is the
+      // single-sheet proof.
+      const text = pdfText(await renderOrderPdf(BILLED));
+      expect(text).not.toContain("Page 1 of");
+    });
+
     it("renders the bucketed bill on A5 too", async () => {
       const text = pdfText(await renderOrderPdf(BILLED, "A5"));
       expect(text).toContain("ORDER SUMMARY");
       expect(text).toContain("5108/DLR");
       expect(text).toContain("Dealer discount 6%");
-      expect(text).toContain("Page 1 of");
+      expect(text).toContain("Seven Hundred Twenty Only");
     });
 
     it("leaves the single-bill layout untouched when no billing is present", async () => {

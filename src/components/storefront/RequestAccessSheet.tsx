@@ -39,6 +39,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { StatusChip } from "@/components/common/StatusChip";
+import { CelebrationOverlay } from "@/components/common/CelebrationOverlay";
 import { CityField } from "@/components/storefront/CityField";
 import { useIsMobile } from "@/components/common/use-is-mobile";
 import { accessRequestSchema } from "@/lib/schemas/customer";
@@ -432,8 +433,24 @@ function SuccessState({
   onClose: () => void;
 }) {
   const reduced = useReducedMotion();
+  // Full-screen celebration on a FRESH submission (not the duplicate notice);
+  // plays once, then the sheet's own success content stands.
+  const [overlay, setOverlay] = React.useState(false);
+  React.useEffect(() => {
+    if (duplicate) return;
+    const t = setTimeout(() => setOverlay(true), 0);
+    return () => clearTimeout(t);
+  }, [duplicate]);
   return (
     <div className="flex flex-col items-center gap-3 py-4 text-center">
+      {overlay ? (
+        <CelebrationOverlay
+          title="Request sent!"
+          subtitle="We'll review it shortly — you'll unlock wholesale prices once approved."
+          durationMs={2000}
+          onDone={() => setOverlay(false)}
+        />
+      ) : null}
       <motion.div
         className="flex size-16 items-center justify-center rounded-full bg-success/15 text-success"
         initial={reduced ? false : { scale: 0.6, opacity: 0 }}
