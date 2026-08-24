@@ -3,18 +3,23 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { PackagePlus, UserPlus, Bell, Volume2, VolumeX } from "lucide-react";
 
 import { formatPaise } from "@/components/common/PricePill";
 import { ADMIN_EVENT_NAME, type AdminEventDTO } from "@/lib/admin-events";
 import { Tooltip } from "@/components/ui/tooltip";
+import { Button } from "@/components/ui/button";
 
 /**
  * Live admin events (the "socket" client): one EventSource to
- * /api/admin/events for the whole panel. Each event → a sonner toast with a
- * "View" action, a synthesized ring, and a router.refresh() so badges/lists
- * update without a reload. Extensible via EVENT_META — one entry per event
- * type, nothing else to touch.
+ * /api/admin/events for the whole panel.
+ *
+ * ZOMATO-PANEL BEHAVIOUR (owner request): an order / access request takes over
+ * the WHOLE SCREEN — no backdrop, no auto-dismiss — and a LOUD ring loops the
+ * entire time until the admin acts (View / Dismiss). Bursts queue up behind
+ * the takeover ("+N more"). Unknown event types fall back to a quiet toast.
+ * Extensible via EVENT_META — one entry per event type, nothing else.
  */
 
 /* ------------------------------------------------------------------ */
@@ -27,8 +32,12 @@ interface EventMeta {
   title: string;
   describe: (payload: Record<string, unknown>) => string;
   href: string;
+  /** Label on the takeover's primary action ("View order"). */
+  actionLabel: string;
   icon: React.ComponentType<{ className?: string }>;
   tune: Tune;
+  /** "takeover" = full-screen ringing alert; "toast" = quiet corner note. */
+  alert: "takeover" | "toast";
 }
 
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
@@ -49,15 +58,19 @@ const EVENT_META: Record<string, EventMeta> = {
         .join(" · ");
     },
     href: "/admin/orders",
+    actionLabel: "View order",
     icon: PackagePlus,
     tune: "order",
+    alert: "takeover",
   },
   access_request: {
     title: "New access request",
     describe: (p) => [str(p.businessName), str(p.phone)].filter(Boolean).join(" · "),
     href: "/admin/requests",
+    actionLabel: "Review request",
     icon: UserPlus,
     tune: "request",
+    alert: "takeover",
   },
 };
 
@@ -65,12 +78,16 @@ const FALLBACK_META: EventMeta = {
   title: "New notification",
   describe: () => "",
   href: "/admin/dashboard",
+  actionLabel: "Open",
   icon: Bell,
   tune: "ping",
+  alert: "toast",
 };
 
+const metaFor = (type: string): EventMeta => EVENT_META[type] ?? FALLBACK_META;
+
 /* ------------------------------------------------------------------ */
-/* Ring tunes — synthesized (no audio asset, nothing to precache)      */
+/* Ring engine — LOUD, LOOPING until acknowledged (no audio asset)     */
 /* ------------------------------------------------------------------ */
 
 const MUTE_KEY = "md-admin-sound-muted";
@@ -90,43 +107,57 @@ function armAudioUnlock() {
       /* no audio available */
     }
   };
-  window.addEventListener("pointerdown", unlock, { once: true, passive: true });
-  window.addEventListener("keydown", unlock, { once: true });
+  window.addEventListener("pointerdown", unlock, { passive: true });
+  window.addEventListener("keydown", unlock);
 }
 
-/** One enveloped sine note. */
-function note(ctx: AudioContext, freq: number, at: number, dur: number, gainPeak = 0.12) {
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.type = "sine";
-  osc.frequency.value = freq;
-  gain.gain.setValueAtTime(0, at);
-  gain.gain.linearRampToValueAtTime(gainPeak, at + 0.02);
-  gain.gain.exponentialRampToValueAtTime(0.0001, at + dur);
-  osc.connect(gain).connect(ctx.destination);
-  osc.start(at);
-  osc.stop(at + dur + 0.05);
+/** One enveloped note (sine + a square harmonic — cuts through a noisy shop). */
+function note(ctx: AudioContext, freq: number, at: number, dur: number, peak: number) {
+  for (const [type, mult, share] of [
+    ["sine", 1, 1],
+    ["square", 2, 0.22],
+  ] as const) {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.value = freq * mult;
+    gain.gain.setValueAtTime(0, at);
+    gain.gain.linearRampToValueAtTime(peak * share, at + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(at);
+    osc.stop(at + dur + 0.05);
+  }
 }
 
-/** The ring: order = rising arpeggio; request = door-chime; ping = single. */
-function playTune(tune: Tune) {
+/** One bar (~1.6s) of the ring — the loop replays it while unacknowledged. */
+function playBar(tune: Tune) {
   if (!unlocked || !audioCtx) return;
   try {
     const t = audioCtx.currentTime;
+    const LOUD = 0.32;
     if (tune === "order") {
-      note(audioCtx, 880, t, 0.35);
-      note(audioCtx, 1108.7, t + 0.14, 0.35);
-      note(audioCtx, 1318.5, t + 0.28, 0.6, 0.14);
+      // Urgent ascending triplet, twice — the Zomato-style "new order" nag.
+      note(audioCtx, 880, t, 0.22, LOUD);
+      note(audioCtx, 1108.7, t + 0.18, 0.22, LOUD);
+      note(audioCtx, 1318.5, t + 0.36, 0.36, LOUD);
+      note(audioCtx, 880, t + 0.8, 0.22, LOUD);
+      note(audioCtx, 1108.7, t + 0.98, 0.22, LOUD);
+      note(audioCtx, 1318.5, t + 1.16, 0.42, LOUD);
     } else if (tune === "request") {
-      note(audioCtx, 987.8, t, 0.4);
-      note(audioCtx, 784, t + 0.22, 0.7);
+      note(audioCtx, 987.8, t, 0.3, LOUD);
+      note(audioCtx, 784, t + 0.26, 0.44, LOUD);
+      note(audioCtx, 987.8, t + 0.8, 0.3, LOUD);
+      note(audioCtx, 784, t + 1.06, 0.5, LOUD);
     } else {
-      note(audioCtx, 1046.5, t, 0.4);
+      note(audioCtx, 1046.5, t, 0.4, 0.18);
     }
   } catch {
     /* audio device gone — stay silent */
   }
 }
+
+const BAR_MS = 1_600;
 
 function isMuted(): boolean {
   try {
@@ -136,12 +167,54 @@ function isMuted(): boolean {
   }
 }
 
+/** Loops the ring bar (+ phone vibration) until stopped. */
+function useRinger() {
+  const timer = React.useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stop = React.useCallback(() => {
+    if (timer.current) clearInterval(timer.current);
+    timer.current = null;
+    try {
+      navigator.vibrate?.(0);
+    } catch {
+      /* unsupported */
+    }
+  }, []);
+
+  const start = React.useCallback(
+    (tune: Tune) => {
+      stop();
+      const bar = () => {
+        if (!isMuted()) playBar(tune);
+        try {
+          navigator.vibrate?.([320, 160, 320]);
+        } catch {
+          /* unsupported */
+        }
+      };
+      bar();
+      timer.current = setInterval(bar, BAR_MS);
+    },
+    [stop],
+  );
+
+  React.useEffect(() => stop, [stop]);
+  return { start, stop };
+}
+
 /* ------------------------------------------------------------------ */
-/* The listener (renders nothing)                                      */
+/* The listener + full-screen takeover                                 */
 /* ------------------------------------------------------------------ */
 
 export function AdminLiveEvents() {
   const router = useRouter();
+  const reduced = useReducedMotion();
+  const { start, stop } = useRinger();
+
+  // Takeover queue: newest events wait behind the one on screen. NOTHING here
+  // auto-dismisses — only View / Dismiss advance the queue.
+  const [queue, setQueue] = React.useState<AdminEventDTO[]>([]);
+  const current = queue[0] ?? null;
 
   React.useEffect(() => {
     armAudioUnlock();
@@ -154,16 +227,21 @@ export function AdminLiveEvents() {
       } catch {
         return;
       }
-      const meta = EVENT_META[event.type] ?? FALLBACK_META;
-      const Icon = meta.icon;
-      toast(meta.title, {
-        id: event.id, // dedupes a replay after an SSE reconnect
-        description: meta.describe(event.payload) || undefined,
-        icon: <Icon className="size-4 text-primary" aria-hidden />,
-        duration: 8000,
-        action: { label: "View", onClick: () => router.push(meta.href) },
-      });
-      if (!isMuted()) playTune(meta.tune);
+      const meta = metaFor(event.type);
+      if (meta.alert === "takeover") {
+        setQueue((prev) =>
+          prev.some((e) => e.id === event.id) ? prev : [...prev, event],
+        );
+      } else {
+        const Icon = meta.icon;
+        toast(meta.title, {
+          id: event.id,
+          description: meta.describe(event.payload) || undefined,
+          icon: <Icon className="size-4 text-primary" aria-hidden />,
+          duration: 8000,
+          action: { label: meta.actionLabel, onClick: () => router.push(meta.href) },
+        });
+      }
       // Refresh server components so badges + queues update live.
       router.refresh();
     };
@@ -176,7 +254,113 @@ export function AdminLiveEvents() {
     };
   }, [router]);
 
-  return null;
+  // Ring for as long as ANY takeover is on screen; retune when it changes.
+  React.useEffect(() => {
+    if (!current) {
+      stop();
+      return;
+    }
+    start(metaFor(current.type).tune);
+    return stop;
+  }, [current, start, stop]);
+
+  const dismissCurrent = React.useCallback(() => {
+    setQueue((prev) => prev.slice(1));
+  }, []);
+
+  const viewCurrent = React.useCallback(() => {
+    if (!current) return;
+    const href = metaFor(current.type).href;
+    // Going to the list handles every queued event of that kind too.
+    setQueue((prev) => prev.filter((e) => metaFor(e.type).href !== href));
+    router.push(href);
+  }, [current, router]);
+
+  const meta = current ? metaFor(current.type) : null;
+  const Icon = meta?.icon ?? Bell;
+
+  return (
+    <AnimatePresence>
+      {current && meta && (
+        <motion.div
+          key="admin-takeover"
+          role="alertdialog"
+          aria-modal="true"
+          aria-label={meta.title}
+          initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 1.04 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, transition: { duration: 0.18 } }}
+          className="fixed inset-0 z-[95] flex flex-col items-center justify-center bg-background px-6 text-center"
+          style={{
+            paddingTop: "env(safe-area-inset-top)",
+            paddingBottom: "env(safe-area-inset-bottom)",
+          }}
+        >
+          {/* Urgency pulse rings behind the icon. */}
+          <div className="relative mb-8">
+            {!reduced &&
+              [0, 1].map((i) => (
+                <motion.span
+                  key={i}
+                  aria-hidden
+                  initial={{ scale: 1, opacity: 0.45 }}
+                  animate={{ scale: 2.4, opacity: 0 }}
+                  transition={{
+                    duration: 1.6,
+                    delay: i * 0.8,
+                    repeat: Infinity,
+                    ease: "easeOut",
+                  }}
+                  className="absolute inset-0 rounded-full border-2 border-primary"
+                />
+              ))}
+            <motion.span
+              animate={reduced ? undefined : { rotate: [0, -8, 8, -6, 6, 0] }}
+              transition={{ duration: 0.7, repeat: Infinity, repeatDelay: 0.9 }}
+              className="relative flex size-24 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg"
+            >
+              <Icon className="size-11" aria-hidden />
+            </motion.span>
+          </div>
+
+          <p className="text-xs font-semibold tracking-[0.2em] text-primary uppercase">
+            Action needed
+          </p>
+          <h2 className="mt-2 font-heading text-3xl font-bold text-foreground">
+            {meta.title}
+          </h2>
+          {meta.describe(current.payload) ? (
+            <p className="mt-3 max-w-md text-base text-muted-foreground">
+              {meta.describe(current.payload)}
+            </p>
+          ) : null}
+          {queue.length > 1 ? (
+            <p className="mt-2 rounded-full bg-muted px-3 py-1 text-sm font-medium text-muted-foreground">
+              +{queue.length - 1} more waiting
+            </p>
+          ) : null}
+
+          <div className="mt-10 flex w-full max-w-xs flex-col gap-3">
+            <Button size="lg" className="h-13 w-full text-base" onClick={viewCurrent}>
+              {meta.actionLabel}
+            </Button>
+            <Button
+              variant="outline"
+              size="lg"
+              className="h-11 w-full"
+              onClick={dismissCurrent}
+            >
+              Dismiss
+            </Button>
+          </div>
+
+          <p className="mt-6 text-xs text-muted-foreground">
+            This alert stays (and keeps ringing) until you act.
+          </p>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -198,10 +382,10 @@ export function AdminSoundToggle() {
     } catch {
       /* private mode */
     }
-    if (!next) playTune("ping"); // audible confirmation on unmute
+    if (!next) playBar("ping"); // audible confirmation on unmute
   }
 
-  const Icon = muted ? VolumeX : Volume2;
+  const IconEl = muted ? VolumeX : Volume2;
   return (
     <Tooltip content={muted ? "Notification sounds off" : "Notification sounds on"}>
       <button
@@ -211,7 +395,7 @@ export function AdminSoundToggle() {
         aria-pressed={!muted}
         className="inline-flex size-11 shrink-0 items-center justify-center rounded-full text-foreground/70 outline-none transition-[background-color,color,transform] duration-150 hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-90"
       >
-        <Icon className="size-5" aria-hidden />
+        <IconEl className="size-5" aria-hidden />
       </button>
     </Tooltip>
   );
