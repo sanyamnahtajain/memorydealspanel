@@ -24,6 +24,9 @@ import {
   type OrderListItem,
   type CustomerOrderVolume,
 } from "@/server/services/admin-orders";
+import type { OrderAccessExtension } from "@/server/services/admin-orders";
+import { retractOrderAccessExtension } from "@/server/services/admin-orders";
+import type { DeliveryDisclosure } from "@/lib/delivery";
 import {
   toOrderBillingView,
   type OrderBillingView,
@@ -143,6 +146,10 @@ export interface OrderDetailDTO extends OrderRowDTO {
   tax: OrderTaxDTO | null;
   /** Frozen billing buckets + bucket discounts, or null for a pre-feature order. */
   billing: OrderBillingView | null;
+  /** Frozen delivery disclosure shown to the buyer at placement, or null. */
+  delivery: DeliveryDisclosure | null;
+  /** The +N-days access grant this order triggered (anti-abuse view), or null. */
+  accessExtension: OrderAccessExtension | null;
 }
 
 function toRowDTO(item: OrderListItem): OrderRowDTO {
@@ -226,6 +233,8 @@ function toDetailDTO(detail: OrderDetail): OrderDetailDTO {
         }
       : null,
     billing: toOrderBillingView(detail.billing, detail.orderNumber),
+    delivery: detail.delivery,
+    accessExtension: detail.accessExtension,
   };
 }
 
@@ -498,5 +507,52 @@ export async function orderAbuseViewAction(
 
     const rows = await orderVolumeByCustomer(limit);
     return { ok: true, rows: rows.map(toVolumeDTO) };
+  });
+}
+
+/**
+ * Roll back the +N-days access extension an order granted (anti-abuse, owner
+ * request): available from the order page — typically after cancelling a junk
+ * order placed only to farm access time.
+ */
+const retractSchema = z.object({ id: objectIdSchema });
+
+export async function retractAccessExtensionAction(
+  input: z.input<typeof retractSchema>,
+): Promise<ActionResult<{ done: boolean }>> {
+  return guarded<{ done: boolean }>(async () => {
+    const viewer = await resolveViewer();
+    assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.CUSTOMERS_APPROVE);
+
+    const { id } = retractSchema.parse(input);
+    const result = await retractOrderAccessExtension(id);
+    if (!result.ok) {
+      switch (result.reason) {
+        case "NOT_FOUND":
+          return { ok: false, error: "Order not found." };
+        case "NO_EXTENSION":
+          return { ok: false, error: "This order didn't grant extra access." };
+        case "ALREADY_RETRACTED":
+          return { ok: false, error: "The extra days were already removed." };
+        default:
+          return {
+            ok: false,
+            error: "The customer has no finite access period right now.",
+          };
+      }
+    }
+
+    await writeAudit({
+      actorType: ACTOR,
+      actorId: viewer.adminId,
+      action: "access.retractExtension",
+      entity: "Order",
+      entityId: id,
+      diff: { expiresAt: result.expiresAt?.toISOString() ?? null },
+    });
+    revalidatePath("/admin/orders");
+    revalidatePath("/admin/customers");
+    return { ok: true, done: true };
   });
 }

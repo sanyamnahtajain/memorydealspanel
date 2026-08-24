@@ -200,6 +200,16 @@ describe("renderOrderPdf", () => {
     });
   });
 
+  it("prints the frozen delivery disclosure under the totals (single AND bucketed)", async () => {
+    const delivery = { minChargePaise: 250_00, note: "Free above Rs. 50,000." };
+    const single = pdfText(await renderOrderPdf({ ...DATA, delivery }));
+    expect(single).toContain("Delivery: at least Rs. 250.00 extra");
+    expect(single).toContain("PIN code");
+    expect(single).toContain("Free above Rs. 50,000.");
+    // Absent → nothing printed (old orders unchanged).
+    expect(pdfText(await renderOrderPdf(DATA))).not.toContain("Delivery: at least");
+  });
+
   it("wraps a long product name (no truncation) and prints the customer note inline", async () => {
     const longName =
       "Premium Tempered Glass Full Screen Protector Oleophobic Matte Finish";

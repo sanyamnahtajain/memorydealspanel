@@ -121,7 +121,8 @@ describe("PriceGateCard — price-gate render safety", () => {
     );
 
     expect(container.textContent ?? "").not.toMatch(PRICE_LEAK);
-    expect(screen.getByText(/awaiting approval/i)).toBeInTheDocument();
+    // Canonical simple-English copy from src/lib/access-status.ts.
+    expect(screen.getByText(/being checked/i)).toBeInTheDocument();
   });
 
   it("authorised (canSeePrices=true, PricedProduct) shows the price", () => {

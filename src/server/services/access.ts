@@ -667,3 +667,36 @@ async function notifyAdminsOfRenewal(
     console.error("[access] renewal push failed:", error);
   }
 }
+
+/**
+ * Roll back an order's auto-extension (anti-abuse, owner request): when the
+ * admin cancels an order that granted "+30 days", the same days are taken
+ * back off the customer's live finite grant. Clamped conservatively — an
+ * unlimited grant is never touched, and if the rollback lands in the past the
+ * grant simply lapses (status → EXPIRED when nothing else is live), which is
+ * exactly the pre-order state the customer gamed their way out of.
+ */
+export async function retractAutoExtension(
+  customerId: string,
+  days: number,
+): Promise<{ ok: true; expiresAt: Date | null } | { ok: false; reason: "NO_FINITE_GRANT" }> {
+  const now = new Date();
+  const live = await findLiveGrant(customerId, now);
+  if (!live || live.expiresAt === null) return { ok: false, reason: "NO_FINITE_GRANT" };
+
+  const rolledBack = addDays(live.expiresAt, -days);
+  await prisma.accessGrant.update({
+    where: { id: live.id },
+    data: { expiresAt: rolledBack },
+  });
+
+  // If nothing is live any more, close the gate — session stays (identity ≠
+  // access), the storefront shows "access ended".
+  if (!(await computeCustomerPriceAccess(customerId, now))) {
+    await prisma.customer.update({
+      where: { id: customerId },
+      data: { status: "EXPIRED" },
+    });
+  }
+  return { ok: true, expiresAt: rolledBack };
+}

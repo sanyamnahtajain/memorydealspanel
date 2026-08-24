@@ -8,6 +8,7 @@ import { attachmentUrlPrefix } from "@/lib/requirement-notes";
 import { publicBaseOrEmpty } from "@/server/storage/r2";
 import { DEFAULT_ORDER_PDF_SIZE, type OrderPdfSize } from "@/lib/order-pdf-size";
 import { lineKey, parseOrderBillingSnapshot } from "@/lib/billing-groups/snapshot";
+import { parseStoredDeliveryDisclosure } from "@/lib/delivery";
 import { bucketBillNumber } from "@/lib/billing-groups/engine";
 import { GENERAL_GROUP_CODE, GENERAL_GROUP_NAME } from "@/lib/billing-groups/types";
 
@@ -144,6 +145,11 @@ export interface OrderPdfData {
     groupDiscountPaise: number;
     buckets: OrderPdfBucket[];
   };
+  /**
+   * Frozen delivery disclosure (owner request): the minimum charge always
+   * collected, printed under the totals with the weight/size/PIN-code caveat.
+   */
+  delivery?: { minChargePaise: number; note: string | null } | null;
 }
 
 /**
@@ -615,6 +621,40 @@ export async function renderOrderPdf(
     orderTotalBlock(bills);
   }
 
+  // ---- Delivery disclosure (owner request) — under the totals ----------
+  // The frozen minimum delivery charge + the weight/size/PIN-code caveat.
+  // Simple English, never added into the goods total.
+  if (data.delivery) {
+    if (y < M + 70) newPage();
+    y -= 4;
+    dotted(y);
+    y -= 15;
+    text(
+      `Delivery: at least Rs. ${money(data.delivery.minChargePaise)} extra (not included above).`,
+      M + 2,
+      9,
+      bold,
+    );
+    y -= 12;
+    for (const nl of wrapToWidth(
+      "Final delivery charge depends on parcel weight, parcel size and the PIN code.",
+      helv,
+      8,
+      W - 8,
+    )) {
+      text(nl, M + 2, 8, helv, MUTED);
+      y -= 10;
+    }
+    if (data.delivery.note) {
+      for (const nl of wrapToWidth(data.delivery.note, helv, 8, W - 8)) {
+        if (y < M + 24) newPage();
+        text(nl, M + 2, 8, helv, MUTED);
+        y -= 10;
+      }
+    }
+    y -= 4;
+  }
+
   // ---- Customer requirement PHOTOS, after the bill ---------------------
   // The note TEXT now prints inline under each item above, so this appendix is
   // only for the photographed lists (items that actually carry images). The
@@ -856,6 +896,7 @@ export async function buildOrderPdf(
     discountPaise: order.discountPaise ?? 0,
     requirements,
     ...(billing ? { billing } : {}),
+    delivery: parseStoredDeliveryDisclosure(order.deliveryDisclosure),
   }, paperSize);
   return { bytes, orderNumber: order.orderNumber };
 }

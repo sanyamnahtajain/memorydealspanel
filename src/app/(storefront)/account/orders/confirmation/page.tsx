@@ -16,6 +16,7 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { Button } from "@/components/ui/button";
 import { FadeUp } from "@/components/motion/primitives";
 import { OrderTaxBreakup } from "@/components/storefront/orders/OrderTaxBreakup";
+import { DeliveryNotice } from "@/components/storefront/orders/DeliveryNotice";
 import { OrderBucketSections } from "@/components/orders/billing/OrderBucketSections";
 import { BillingTotalsRows } from "@/components/orders/billing/BillingTotalsRows";
 import { toOrderBillingView } from "@/components/orders/billing/types";
@@ -211,6 +212,8 @@ export default async function OrderConfirmationPage({
           <FadeUp delay={0.07}>
             <div className="mt-4">
               <OrderTaxBreakup tax={order.tax} proforma />
+              {/* The delivery terms the buyer accepted (frozen at placement). */}
+              <DeliveryNotice delivery={order.delivery} className="mt-2" />
             </div>
           </FadeUp>
         ) : null}

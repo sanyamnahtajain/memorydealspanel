@@ -27,6 +27,8 @@ import { AdminNoteEditor } from "./AdminNoteEditor";
 import { OrderCsvButton } from "./OrderCsvButton";
 import { OrderTaxBreakup } from "@/components/storefront/orders/OrderTaxBreakup";
 import { OrderBucketSections } from "@/components/orders/billing/OrderBucketSections";
+import { AccessExtensionNotice } from "./AccessExtensionNotice";
+import { DeliveryNotice } from "@/components/storefront/orders/DeliveryNotice";
 import { BillingTotalsRows } from "@/components/orders/billing/BillingTotalsRows";
 import type { OrderDetailDTO, OrderLineDTO } from "@/server/actions/admin-orders";
 
@@ -64,6 +66,13 @@ export function OrderDetailPanel({ order }: { order: OrderDetailDTO }) {
         </div>
         <OrderCsvButton order={order} />
       </div>
+
+      {/* Anti-abuse: this order granted access time — visible + retractable. */}
+      {order.accessExtension ? (
+        <AccessExtensionNotice orderId={order.id} extension={order.accessExtension} />
+      ) : null}
+      {/* Frozen delivery terms the buyer saw at placement. */}
+      <DeliveryNotice delivery={order.delivery} />
 
       <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
         {/* Snapshot */}

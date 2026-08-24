@@ -12,6 +12,7 @@ import {
   rejectRequest,
   requestAccess,
   requestRenewal,
+  retractAutoExtension,
   revokeGrant,
   snoozeRequest,
   unsnoozeRequest,
@@ -531,5 +532,45 @@ describe("requestRenewal (signed-in, one tap — no form)", () => {
     const blocked = await makeCustomer("renew-blocked");
     await blockCustomer(blocked);
     expect(await requestRenewal(blocked)).toEqual({ ok: false, reason: "BLOCKED" });
+  });
+});
+
+describe("retractAutoExtension (cancel-order rollback — anti-abuse)", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  it("takes the granted days back off the live grant", async () => {
+    const id = await makeCustomer("retract");
+    const { grant } = await approveRequest(id, { expiresInDays: 10, grantedBy: ADMIN });
+    const original = grant.expiresAt!.getTime();
+    const outcome = await autoExtendOnOrder(id); // +30
+    expect(outcome.extended).toBe(true);
+
+    const result = await retractAutoExtension(id, 30);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Back to exactly where they were before the junk order.
+    expect(result.expiresAt?.getTime()).toBe(original);
+    expect(await computeCustomerPriceAccess(id)).toBe(true);
+  });
+
+  it("a rollback landing in the past ends access immediately (EXPIRED)", async () => {
+    const id = await makeCustomer("retract-past");
+    await approveRequest(id, { expiresInDays: 5, grantedBy: ADMIN });
+
+    const result = await retractAutoExtension(id, 30);
+    expect(result.ok).toBe(true);
+    expect(await computeCustomerPriceAccess(id)).toBe(false);
+    const customer = await prisma.customer.findUnique({ where: { id } });
+    expect(customer?.status).toBe("EXPIRED");
+  });
+
+  it("never touches an unlimited grant", async () => {
+    const id = await makeCustomer("retract-forever");
+    await approveRequest(id, { expiresInDays: null, grantedBy: ADMIN });
+    expect(await retractAutoExtension(id, 30)).toEqual({
+      ok: false,
+      reason: "NO_FINITE_GRANT",
+    });
+    expect(await computeCustomerPriceAccess(id)).toBe(true);
   });
 });

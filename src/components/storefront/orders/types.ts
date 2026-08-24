@@ -110,4 +110,6 @@ export interface OrderHistoryDetail {
    * null when gated — and null for a pre-feature order (renders as before).
    */
   billing: OrderBillingView | null;
+  /** Frozen delivery terms shown at placement (not a price — never gated). */
+  delivery: { minChargePaise: number; note: string | null } | null;
 }

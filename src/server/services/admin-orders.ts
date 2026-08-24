@@ -12,6 +12,11 @@ import {
   parseOrderBillingSnapshot,
   type OrderBillingSnapshot,
 } from "@/lib/billing-groups/snapshot";
+import {
+  parseStoredDeliveryDisclosure,
+  type DeliveryDisclosure,
+} from "@/lib/delivery";
+import { retractAutoExtension } from "@/server/services/access";
 
 /**
  * Order service layer — reads and status management over the `Order`
@@ -226,6 +231,33 @@ export interface OrderListItem {
   customer?: OrderCustomerSummary;
 }
 
+/**
+ * The frozen "+N days" auto-extension an order granted at placement, read
+ * back for the admin drawer. `retracted` is true once the admin took the
+ * days back (the stamp survives on the order for the audit trail).
+ */
+export interface OrderAccessExtension {
+  days: number;
+  /** ISO timestamp the grant ran to after this order's extension. */
+  expiresAt: string;
+  retracted: boolean;
+}
+
+/** Defensive read of the frozen Order.accessExtension JSON. */
+function parseOrderAccessExtension(raw: unknown): OrderAccessExtension | null {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const e = raw as Record<string, unknown>;
+  if (typeof e.days !== "number" || !Number.isFinite(e.days) || e.days <= 0) {
+    return null;
+  }
+  if (typeof e.expiresAt !== "string") return null;
+  return {
+    days: e.days,
+    expiresAt: e.expiresAt,
+    retracted: typeof e.retractedAt === "string",
+  };
+}
+
 /** Full order detail (snapshot + notes + customer for admin). */
 export interface OrderDetail extends OrderListItem {
   items: OrderItemSnapshot[];
@@ -239,6 +271,10 @@ export interface OrderDetail extends OrderListItem {
   tax: OrderTaxSnapshot | null;
   /** Frozen billing-group snapshot, or null for a pre-feature order. */
   billing: OrderBillingSnapshot | null;
+  /** Delivery disclosure frozen at placement, or null when none applied. */
+  delivery: DeliveryDisclosure | null;
+  /** The "+N days" access extension this order granted, when it did. */
+  accessExtension: OrderAccessExtension | null;
 }
 
 /** The full set of Order GST columns needed to rebuild the frozen snapshot. */
@@ -413,6 +449,8 @@ export async function getOrder(id: string): Promise<OrderDetail | null> {
       discountPaise: true,
       groupDiscountPaise: true,
       billingGroups: true,
+      deliveryDisclosure: true,
+      accessExtension: true,
     },
   });
   if (!row) return null;
@@ -425,6 +463,8 @@ export async function getOrder(id: string): Promise<OrderDetail | null> {
     discountPaise: row.discountPaise ?? 0,
     tax: toOrderTaxSnapshot(row),
     billing: parseOrderBillingSnapshot(row.billingGroups),
+    delivery: parseStoredDeliveryDisclosure(row.deliveryDisclosure),
+    accessExtension: parseOrderAccessExtension(row.accessExtension),
   };
 }
 
@@ -483,6 +523,63 @@ export async function setAdminNote(
     data: { adminNote: trimmed },
   });
   return result.count > 0;
+}
+
+/* ----------------------------------------------------------------------- */
+/* Admin: retract an order's auto-extension (anti-abuse)                    */
+/* ----------------------------------------------------------------------- */
+
+export type RetractOrderAccessExtensionResult =
+  | { ok: true; expiresAt: Date | null }
+  | {
+      ok: false;
+      reason: "NOT_FOUND" | "NO_EXTENSION" | "ALREADY_RETRACTED" | "NO_FINITE_GRANT";
+    };
+
+/**
+ * Take back the "+N days" a specific order granted at placement: rolls the
+ * customer's live finite grant back via {@link retractAutoExtension}, then
+ * stamps `retractedAt` onto the order's frozen extension record so the drawer
+ * shows it as removed and a second click can't double-retract.
+ */
+export async function retractOrderAccessExtension(
+  orderId: string,
+): Promise<RetractOrderAccessExtensionResult> {
+  const row = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { id: true, customerId: true, accessExtension: true },
+  });
+  if (!row) return { ok: false, reason: "NOT_FOUND" };
+
+  const raw = row.accessExtension;
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    return { ok: false, reason: "NO_EXTENSION" };
+  }
+  const ext = raw as Record<string, unknown>;
+  const days =
+    typeof ext.days === "number" && Number.isFinite(ext.days) && ext.days > 0
+      ? ext.days
+      : null;
+  if (days === null || typeof ext.expiresAt !== "string") {
+    return { ok: false, reason: "NO_EXTENSION" };
+  }
+  if (typeof ext.retractedAt === "string") {
+    return { ok: false, reason: "ALREADY_RETRACTED" };
+  }
+
+  const result = await retractAutoExtension(row.customerId, days);
+  if (!result.ok) return { ok: false, reason: result.reason };
+
+  await prisma.order.update({
+    where: { id: orderId },
+    data: {
+      accessExtension: {
+        ...ext,
+        retractedAt: new Date().toISOString(),
+      } as Prisma.InputJsonValue,
+    },
+  });
+  return { ok: true, expiresAt: result.expiresAt };
 }
 
 /* ----------------------------------------------------------------------- */
@@ -611,6 +708,8 @@ export async function getCustomerOrderByNumber(
       couponCode: true,
       discountPaise: true,
       billingGroups: true,
+      deliveryDisclosure: true,
+      accessExtension: true,
     },
   });
   if (!row) return null;
@@ -628,5 +727,7 @@ export async function getCustomerOrderByNumber(
     discountPaise: row.discountPaise ?? 0,
     tax: toOrderTaxSnapshot(row),
     billing: parseOrderBillingSnapshot(row.billingGroups),
+    delivery: parseStoredDeliveryDisclosure(row.deliveryDisclosure),
+    accessExtension: parseOrderAccessExtension(row.accessExtension),
   };
 }

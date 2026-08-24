@@ -33,6 +33,7 @@ import {
 } from "./order-status";
 import { OrderStatusTimeline } from "./OrderStatusTimeline";
 import { OrderTaxBreakup } from "./OrderTaxBreakup";
+import { DeliveryNotice } from "./DeliveryNotice";
 import { OrderBucketSections } from "@/components/orders/billing/OrderBucketSections";
 import { BillingTotalsRows } from "@/components/orders/billing/BillingTotalsRows";
 import type { OrderHistoryDetail, OrderHistoryLine } from "./types";
@@ -227,6 +228,9 @@ export function OrderDetailView({ detail }: { detail: OrderHistoryDetail }) {
           {detail.priced && detail.tax ? (
             <OrderTaxBreakup tax={detail.tax} proforma />
           ) : null}
+
+          {/* Frozen delivery terms from placement (not a price — never gated). */}
+          <DeliveryNotice delivery={detail.delivery} className="mt-2" />
 
           {detail.note ? (
             <div className="rounded-2xl border border-border bg-muted/40 p-4">

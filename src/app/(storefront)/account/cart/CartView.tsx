@@ -30,6 +30,8 @@ import { formatPaise } from "@/lib/money";
 import { MAX_CART_NOTE_LENGTH, MAX_QTY_PER_LINE } from "@/lib/schemas/cart";
 import { Button } from "@/components/ui/button";
 import { CartLineRow } from "@/components/storefront/cart/CartLineRow";
+import { DeliveryNotice } from "@/components/storefront/orders/DeliveryNotice";
+import type { DeliveryDisclosure } from "@/lib/delivery";
 import { BucketCard } from "@/components/storefront/billing/BucketCard";
 import {
   closestNextTier,
@@ -121,6 +123,8 @@ export interface CartLineData {
 }
 
 export interface CartViewProps {
+  /** Delivery minimum-charge disclosure (owner request) — shown to ALL. */
+  deliveryDisclosure?: DeliveryDisclosure | null;
   initialLines: CartLineData[];
   initialSubtotalPaise: number | null;
   priced: boolean;
@@ -161,6 +165,7 @@ export function CartView({
   initialLines,
   initialSubtotalPaise,
   minOrderValuePaise = null,
+  deliveryDisclosure = null,
   priced,
   canOrder,
   initialTax,
@@ -537,6 +542,7 @@ export function CartView({
           <Summary
             priced={priced}
             subtotalPaise={subtotalPaise ?? initialSubtotalPaise}
+            deliveryDisclosure={deliveryDisclosure}
             itemCount={itemCount}
             note={note}
             onNote={setNote}
@@ -562,6 +568,7 @@ export function CartView({
           <Summary
             priced={priced}
             subtotalPaise={subtotalPaise ?? initialSubtotalPaise}
+            deliveryDisclosure={deliveryDisclosure}
             itemCount={itemCount}
             note={note}
             onNote={setNote}
@@ -630,6 +637,7 @@ export function CartView({
 
 interface SummaryProps {
   priced: boolean;
+  deliveryDisclosure?: DeliveryDisclosure | null;
   subtotalPaise: number | null;
   itemCount: number;
   note: string;
@@ -662,6 +670,7 @@ function Summary({
   subtotalPaise,
   movShortfallPaise = null,
   minOrderValuePaise = null,
+  deliveryDisclosure = null,
   itemCount,
   note,
   onNote,
@@ -900,6 +909,9 @@ function Summary({
           {note.length}/{MAX_CART_NOTE_LENGTH}
         </p>
       </div>
+
+      {/* Delivery terms — every buyer sees this before placing. */}
+      <DeliveryNotice delivery={deliveryDisclosure} />
 
       {!hidePlaceButton ? (
         <Button onClick={onPlace} disabled={!canPlace} className="w-full">

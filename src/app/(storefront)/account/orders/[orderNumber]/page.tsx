@@ -127,6 +127,7 @@ export default async function OrderDetailPage({
         : null,
     // Bucket subtotals/discounts are prices — attach ONLY for a priced viewer.
     billing: priced ? toOrderBillingView(order.billing, order.orderNumber) : null,
+    delivery: order.delivery,
   };
 
   const cartCount = await cartCountForViewer(viewer);

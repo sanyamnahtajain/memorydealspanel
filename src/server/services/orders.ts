@@ -24,7 +24,12 @@ import {
   type OrderBillingSnapshot,
 } from "@/lib/billing-groups/snapshot";
 import { publicBaseOrEmpty } from "@/server/storage/r2";
-import { getMinOrderValuePaise } from "@/server/services/store-settings";
+import {
+  getDeliveryDisclosure,
+  getMinOrderValuePaise,
+} from "@/server/services/store-settings";
+import { parseStoredDeliveryDisclosure, type DeliveryDisclosure } from "@/lib/delivery";
+import { AUTO_RENEW_ON_ORDER } from "@/lib/constants";
 import {
   previewCoupon,
   redeemCoupon,
@@ -1114,6 +1119,8 @@ export interface CustomerOrder {
   tax: OrderTaxSnapshot | null;
   /** Frozen billing-group snapshot, or `null` for a pre-feature order. */
   billing: OrderBillingSnapshot | null;
+  /** Frozen delivery disclosure, or `null` when the feature was off. */
+  delivery: DeliveryDisclosure | null;
 }
 
 /** A random, non-enumerable public order reference, e.g. "MD-4F8K2Q7ZX1AB". */
@@ -1281,6 +1288,11 @@ async function placeOrderLocked(
   // SERVER-SIDE at placement — the cart UI shows the shortfall, but the
   // authoritative gate is here so a stale client can never place below it.
   // Runs on the DISCOUNTED goods subtotal (a coupon can't cheat the floor).
+  // Delivery disclosure (owner request): resolved from the CURRENT rules and
+  // frozen onto the order below, so historical orders keep the terms they were
+  // placed under even after the admin edits the rules.
+  const deliveryDisclosure = await getDeliveryDisclosure();
+
   const minOrderValuePaise = await getMinOrderValuePaise();
   const gatedSubtotalPaise =
     cart.subtotalPaise - groupDiscountPaise - prospectiveDiscountPaise;
@@ -1394,6 +1406,7 @@ async function placeOrderLocked(
       discountPaise,
       groupDiscountPaise,
       billingSnapshot,
+      deliveryDisclosure,
     );
   } catch (error) {
     if (isWriteConflict(error)) {
@@ -1420,10 +1433,27 @@ async function placeOrderLocked(
   // (8) Auto-renew access (owner request): an active buyer whose finite access
   // expires within 30 days gets +30 days on placing an order. Fire-and-forget
   // and only ever EXTENDS a live grant — it can never fail or shorten anything.
+  // ANTI-ABUSE: the extension is STAMPED ONTO THE ORDER so the admin sees that
+  // this order granted time, and cancelling it can roll the 30 days back
+  // (payment isn't taken at placement, so a junk order must not farm access).
   void autoExtendOnOrder(customerId)
-    .then((outcome) => {
+    .then(async (outcome) => {
       if (!outcome.extended) return;
-      return writeAudit({
+      await prisma.order
+        .update({
+          where: { id: order.id },
+          data: {
+            accessExtension: {
+              days: AUTO_RENEW_ON_ORDER.EXTEND_DAYS,
+              previousExpiresAt: outcome.previousExpiresAt.toISOString(),
+              expiresAt: outcome.expiresAt.toISOString(),
+            },
+          },
+        })
+        .catch((err) =>
+          console.error("[orders] failed to stamp access extension:", err),
+        );
+      await writeAudit({
         actorType: "system",
         actorId: "auto-renew-on-order",
         action: "access.autoExtend",
@@ -1473,6 +1503,7 @@ function placeOrderTransaction(
   discountPaise = 0,
   groupDiscountPaise = 0,
   billingSnapshot: OrderBillingSnapshot | null = null,
+  deliveryDisclosure: DeliveryDisclosure | null = null,
 ): Promise<OrderRow> {
   const totalDiscountPaise = discountPaise + groupDiscountPaise;
   // The order-level GST columns. When `tax` is null (kill-switch off) they are
@@ -1515,6 +1546,10 @@ function placeOrderTransaction(
         ...(groupDiscountPaise > 0 ? { groupDiscountPaise } : {}),
         ...(billingSnapshot
           ? { billingGroups: billingSnapshot as unknown as Prisma.InputJsonValue }
+          : {}),
+        // Delivery disclosure frozen at placement (omitted when off).
+        ...(deliveryDisclosure
+          ? { deliveryDisclosure: deliveryDisclosure as unknown as Prisma.InputJsonValue }
           : {}),
         // Pre-GST orders have no tax grand total; with ANY discount the
         // effective total is no longer the subtotal, so freeze it here.
@@ -1646,6 +1681,7 @@ function toCustomerOrder(order: OrderRow): CustomerOrder {
     placedAt: order.placedAt,
     tax: toOrderTaxSnapshot(order),
     billing: parseOrderBillingSnapshot(order.billingGroups),
+    delivery: parseStoredDeliveryDisclosure(order.deliveryDisclosure),
   };
 }
 
