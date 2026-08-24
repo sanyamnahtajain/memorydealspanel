@@ -1,3 +1,4 @@
+import * as React from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
@@ -15,6 +16,10 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { Button } from "@/components/ui/button";
 import { FadeUp } from "@/components/motion/primitives";
 import { OrderTaxBreakup } from "@/components/storefront/orders/OrderTaxBreakup";
+import { OrderBucketSections } from "@/components/orders/billing/OrderBucketSections";
+import { BillingTotalsRows } from "@/components/orders/billing/BillingTotalsRows";
+import { toOrderBillingView } from "@/components/orders/billing/types";
+import type { OrderItemSnapshot } from "@/server/services/orders";
 
 /**
  * Order confirmation page.
@@ -75,6 +80,58 @@ export default async function OrderConfirmationPage({
     timeStyle: "short",
   }).format(order.placedAt);
 
+  // Bucket amounts are prices — only a priced viewer gets the grouped view.
+  const billing = priced ? toOrderBillingView(order.billing, order.orderNumber) : null;
+  const totalDiscountPaise = (billing?.groupDiscountPaise ?? 0) + order.discountPaise;
+
+  const renderItem = (item: OrderItemSnapshot) => (
+    <li className="flex gap-3 p-3">
+      <div className="relative size-14 shrink-0 overflow-hidden rounded-lg bg-muted">
+        {item.imageUrl ? (
+          <Image
+            src={item.imageUrl}
+            alt=""
+            fill
+            sizes="56px"
+            className="object-cover"
+          />
+        ) : (
+          <span className="flex size-full items-center justify-center text-muted-foreground">
+            <ImageOff className="size-4" />
+          </span>
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        {item.brand ? (
+          <p className="truncate text-xs text-muted-foreground">
+            {item.brand}
+          </p>
+        ) : null}
+        <p className="line-clamp-2 text-sm font-medium text-foreground">
+          {item.name}
+        </p>
+        {item.variantLabel ? (
+          <p className="truncate text-xs text-muted-foreground">
+            {item.variantLabel}
+          </p>
+        ) : null}
+        <p className="text-[0.7rem] text-muted-foreground">
+          Qty {item.quantity}
+        </p>
+      </div>
+      {priced ? (
+        <div className="text-right">
+          <p className="text-sm font-semibold text-foreground tabular-nums">
+            {formatPaise(item.lineTotalPaise)}
+          </p>
+          <p className="text-[0.7rem] text-muted-foreground tabular-nums">
+            {formatPaise(item.unitPricePaise)} each
+          </p>
+        </div>
+      ) : null}
+    </li>
+  );
+
   return (
     <StorefrontShell cartCount={cartCount}>
       <div className="mx-auto w-full max-w-2xl py-8 sm:py-10">
@@ -102,66 +159,61 @@ export default async function OrderConfirmationPage({
         </FadeUp>
 
         <FadeUp delay={0.05}>
-          <div className="mt-8 overflow-hidden rounded-xl border border-border bg-card">
-            <ul className="divide-y divide-border">
-              {order.items.map((item) => (
-                <li
-                  key={`${item.productId}:${item.variantId ?? ""}`}
-                  className="flex gap-3 p-3"
-                >
-                  <div className="relative size-14 shrink-0 overflow-hidden rounded-lg bg-muted">
-                    {item.imageUrl ? (
-                      <Image
-                        src={item.imageUrl}
-                        alt=""
-                        fill
-                        sizes="56px"
-                        className="object-cover"
-                      />
-                    ) : (
-                      <span className="flex size-full items-center justify-center text-muted-foreground">
-                        <ImageOff className="size-4" />
+          <div className="mt-8 space-y-3">
+            {billing ? (
+              // Lines grouped by billing bucket (frozen at placement).
+              <OrderBucketSections
+                lines={order.items}
+                billing={billing}
+                orderNumber={order.orderNumber}
+                renderLine={renderItem}
+              />
+            ) : (
+              <div className="overflow-hidden rounded-xl border border-border bg-card">
+                <ul className="divide-y divide-border">
+                  {order.items.map((item) => (
+                    <React.Fragment key={`${item.productId}:${item.variantId ?? ""}`}>
+                      {renderItem(item)}
+                    </React.Fragment>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Totals */}
+            <div className="flex flex-col gap-1.5 rounded-xl border border-border bg-card px-3 py-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold text-foreground">
+                  Subtotal ({order.itemCount} item{order.itemCount === 1 ? "" : "s"})
+                </span>
+                <span className="text-base font-semibold text-foreground tabular-nums">
+                  {priced ? formatPaise(order.subtotalPaise) : "On confirmation"}
+                </span>
+              </div>
+              {priced ? (
+                <>
+                  <BillingTotalsRows billing={billing} />
+                  {order.discountPaise > 0 ? (
+                    <div className="flex items-center justify-between text-emerald-700 dark:text-emerald-300">
+                      <span className="text-sm font-medium">
+                        Coupon{order.couponCode ? ` ${order.couponCode}` : ""}
                       </span>
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    {item.brand ? (
-                      <p className="truncate text-xs text-muted-foreground">
-                        {item.brand}
-                      </p>
-                    ) : null}
-                    <p className="line-clamp-2 text-sm font-medium text-foreground">
-                      {item.name}
-                    </p>
-                    {item.variantLabel ? (
-                      <p className="truncate text-xs text-muted-foreground">
-                        {item.variantLabel}
-                      </p>
-                    ) : null}
-                    <p className="text-[0.7rem] text-muted-foreground">
-                      Qty {item.quantity}
-                    </p>
-                  </div>
-                  {priced ? (
-                    <div className="text-right">
-                      <p className="text-sm font-semibold text-foreground tabular-nums">
-                        {formatPaise(item.lineTotalPaise)}
-                      </p>
-                      <p className="text-[0.7rem] text-muted-foreground tabular-nums">
-                        {formatPaise(item.unitPricePaise)} each
-                      </p>
+                      <span className="text-sm font-semibold tabular-nums">
+                        −{formatPaise(order.discountPaise)}
+                      </span>
                     </div>
                   ) : null}
-                </li>
-              ))}
-            </ul>
-            <div className="flex items-center justify-between border-t border-border bg-muted/40 px-3 py-3">
-              <span className="text-sm font-semibold text-foreground">
-                Subtotal ({order.itemCount} item{order.itemCount === 1 ? "" : "s"})
-              </span>
-              <span className="text-base font-semibold text-foreground tabular-nums">
-                {priced ? formatPaise(order.subtotalPaise) : "On confirmation"}
-              </span>
+                  {/* With GST the frozen grand total (breakup below) already nets the discounts. */}
+                  {totalDiscountPaise > 0 && !order.tax ? (
+                    <div className="flex items-center justify-between border-t border-border pt-1.5">
+                      <span className="text-sm font-medium text-muted-foreground">Total</span>
+                      <span className="text-base font-semibold text-foreground tabular-nums">
+                        {formatPaise(order.subtotalPaise - totalDiscountPaise)}
+                      </span>
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
             </div>
           </div>
         </FadeUp>

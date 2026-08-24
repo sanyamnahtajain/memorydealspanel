@@ -4,6 +4,7 @@ import { prisma } from "@/server/db";
 import { defaultInMemoryStore, setPushStore } from "@/server/notify/push";
 import {
   approveRequest,
+  autoExtendOnOrder,
   blockCustomer,
   computeCustomerPriceAccess,
   expireDueGrants,
@@ -96,6 +97,58 @@ describe("approveRequest", () => {
     });
     expect(grant.expiresAt).toBeNull();
     expect(await computeCustomerPriceAccess(id)).toBe(true);
+  });
+});
+
+describe("autoExtendOnOrder (auto-renew on order)", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  it("adds 30 days when access expires within 30 days", async () => {
+    const id = await makeCustomer("autorenew-soon");
+    const { grant } = await approveRequest(id, { expiresInDays: 10, grantedBy: ADMIN });
+    const before = grant.expiresAt!.getTime();
+
+    const outcome = await autoExtendOnOrder(id);
+    expect(outcome.extended).toBe(true);
+    if (!outcome.extended) return;
+    // Stacked onto the CURRENT expiry (10d left + 30d), never reset to now+30.
+    expect(outcome.expiresAt.getTime() - before).toBe(30 * DAY);
+    expect(await computeCustomerPriceAccess(id)).toBe(true);
+
+    const stored = await prisma.accessGrant.findFirst({ where: { customerId: id } });
+    expect(stored?.expiresAt?.getTime()).toBe(before + 30 * DAY);
+  });
+
+  it("extends exactly at the 30-day boundary", async () => {
+    const id = await makeCustomer("autorenew-edge");
+    await approveRequest(id, { expiresInDays: 30, grantedBy: ADMIN });
+    const outcome = await autoExtendOnOrder(id);
+    expect(outcome.extended).toBe(true);
+  });
+
+  it("leaves access alone when more than 30 days remain", async () => {
+    const id = await makeCustomer("autorenew-far");
+    const { grant } = await approveRequest(id, { expiresInDays: 90, grantedBy: ADMIN });
+    const outcome = await autoExtendOnOrder(id);
+    expect(outcome).toEqual({ extended: false, reason: "outside-window" });
+    const stored = await prisma.accessGrant.findFirst({ where: { customerId: id } });
+    expect(stored?.expiresAt?.getTime()).toBe(grant.expiresAt!.getTime());
+  });
+
+  it("leaves never-expiring access alone", async () => {
+    const id = await makeCustomer("autorenew-forever");
+    await approveRequest(id, { expiresInDays: null, grantedBy: ADMIN });
+    const outcome = await autoExtendOnOrder(id);
+    expect(outcome).toEqual({ extended: false, reason: "never-expires" });
+    const stored = await prisma.accessGrant.findFirst({ where: { customerId: id } });
+    expect(stored?.expiresAt).toBeNull();
+  });
+
+  it("is a no-op for a customer with no live grant (defensive)", async () => {
+    const id = await makeCustomer("autorenew-none");
+    const outcome = await autoExtendOnOrder(id);
+    expect(outcome).toEqual({ extended: false, reason: "no-live-grant" });
+    expect(await computeCustomerPriceAccess(id)).toBe(false);
   });
 });
 

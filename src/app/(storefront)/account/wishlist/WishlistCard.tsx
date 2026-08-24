@@ -19,7 +19,7 @@
 import * as React from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { ImageOff, Trash2, MessageCircle, Eye } from "lucide-react";
+import { ImageOff, Trash2, MessageCircle, Eye, LockIcon } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { toast } from "sonner";
 
@@ -45,8 +45,11 @@ export interface WishlistCardData {
   moq: number | null;
   stockStatus: StockStatus;
   note: string | null;
-  /** WhatsApp enquiry deep link (built server-side; carries no price). */
-  enquireHref: string;
+  /**
+   * WhatsApp enquiry deep link, minted server-side per viewer — `null` when
+   * the viewer's access isn't live (the Enquire button locks).
+   */
+  enquireHref: string | null;
   /** Server-rendered gated price node. */
   priceSlot: React.ReactNode;
 }
@@ -203,22 +206,38 @@ function WishlistCard({
             <Eye aria-hidden />
             View
           </Button>
-          <Button
-            render={
-              <a
-                href={item.enquireHref}
-                target="_blank"
-                rel="noopener noreferrer"
-              />
-            }
-            variant="secondary"
-            size="sm"
-            className="flex-1"
-            aria-label={`Enquire about ${item.name} on WhatsApp`}
-          >
-            <MessageCircle aria-hidden />
-            Enquire
-          </Button>
+          {item.enquireHref ? (
+            <Button
+              render={
+                <a
+                  href={item.enquireHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                />
+              }
+              variant="secondary"
+              size="sm"
+              className="flex-1"
+              aria-label={`Enquire about ${item.name} on WhatsApp`}
+            >
+              <MessageCircle aria-hidden />
+              Enquire
+            </Button>
+          ) : (
+            <Tooltip content="WhatsApp unlocks with approved access">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="flex-1"
+                disabled
+                aria-label={`WhatsApp enquiry for ${item.name} unlocks with approved access`}
+              >
+                <LockIcon aria-hidden />
+                Enquire
+              </Button>
+            </Tooltip>
+          )}
           <Tooltip content="Remove">
             <Button
               type="button"

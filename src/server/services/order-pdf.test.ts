@@ -123,6 +123,74 @@ describe("renderOrderPdf", () => {
     expect(pdfText(explicit)).toContain("Seven Hundred Fifty Only");
   });
 
+  describe("billing buckets", () => {
+    const BILLED: OrderPdfData = {
+      ...DATA,
+      grandTotalPaise: 72000, // 750 − 6% of the 500 dealer bucket (30)
+      billing: {
+        groupDiscountPaise: 3000,
+        buckets: [
+          {
+            code: "DLR",
+            name: "Dealer",
+            separateBill: true,
+            notes: "Deliver to the dealer counter.",
+            billNumber: "5108/DLR",
+            lineIndexes: [0],
+            subtotalPaise: 50000,
+            discountPaise: 3000,
+            appliedPercentBps: 600,
+            netPaise: 47000,
+          },
+          {
+            code: "GEN",
+            name: "General",
+            separateBill: false,
+            notes: null,
+            billNumber: "5108/GEN",
+            lineIndexes: [1, 2],
+            subtotalPaise: 25000,
+            discountPaise: 0,
+            appliedPercentBps: null,
+            netPaise: 25000,
+          },
+        ],
+      },
+    };
+
+    it("prints an ORDER SUMMARY page, then one bill page per bucket", async () => {
+      const text = pdfText(await renderOrderPdf(BILLED));
+      expect(text).toContain("ORDER SUMMARY");
+      expect(text).toContain("5108/DLR");
+      expect(text).toContain("5108/GEN");
+      expect(text).toContain("Bucket discounts");
+      expect(text).toContain("Dealer discount 6%");
+      expect(text).toContain("Page 1 of");
+      // Bucket totals + words, and the bucket notes under the total.
+      expect(text).toContain("Four Hundred Seventy Only");
+      expect(text).toContain("Two Hundred Fifty Only");
+      expect(text).toContain("dealer counter");
+      // Order grand total on the summary.
+      expect(text).toContain("Seven Hundred Twenty Only");
+    });
+
+    it("renders the bucketed bill on A5 too", async () => {
+      const text = pdfText(await renderOrderPdf(BILLED, "A5"));
+      expect(text).toContain("ORDER SUMMARY");
+      expect(text).toContain("5108/DLR");
+      expect(text).toContain("Dealer discount 6%");
+      expect(text).toContain("Page 1 of");
+    });
+
+    it("leaves the single-bill layout untouched when no billing is present", async () => {
+      const text = pdfText(await renderOrderPdf(DATA));
+      expect(text).not.toContain("ORDER SUMMARY");
+      expect(text).not.toContain("Bucket discounts");
+      expect(text).not.toContain("Page 1 of");
+      expect(text).toContain("Seven Hundred Fifty Only");
+    });
+  });
+
   it("wraps a long product name (no truncation) and prints the customer note inline", async () => {
     const longName =
       "Premium Tempered Glass Full Screen Protector Oleophobic Matte Finish";

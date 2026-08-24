@@ -2,10 +2,14 @@ import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf
 
 import { prisma } from "@/server/db";
 import { APP_NAME, CONTACT } from "@/lib/constants";
+import { BUSINESS_PHONE } from "@/server/contact";
 import type { OrderItemSnapshot } from "@/server/services/orders";
 import { attachmentUrlPrefix } from "@/lib/requirement-notes";
 import { publicBaseOrEmpty } from "@/server/storage/r2";
 import { DEFAULT_ORDER_PDF_SIZE, type OrderPdfSize } from "@/lib/order-pdf-size";
+import { lineKey, parseOrderBillingSnapshot } from "@/lib/billing-groups/snapshot";
+import { bucketBillNumber } from "@/lib/billing-groups/engine";
+import { GENERAL_GROUP_CODE, GENERAL_GROUP_NAME } from "@/lib/billing-groups/types";
 
 /**
  * Order PDF (owner request) — a received order rendered in the shop's
@@ -96,6 +100,23 @@ export interface OrderPdfRequirement {
   images: Uint8Array[];
 }
 
+/** One billing bucket of the order, for the summary page + its own bill page. */
+export interface OrderPdfBucket {
+  code: string;
+  name: string;
+  separateBill: boolean;
+  notes: string | null;
+  /** "MD-XXXX/DLR" — printed as the bill number of the bucket's page. */
+  billNumber: string;
+  /** Indexes into `OrderPdfData.lines` (ascending). */
+  lineIndexes: number[];
+  subtotalPaise: number;
+  discountPaise: number;
+  /** The tier percentage that applied (basis points), or null when none did. */
+  appliedPercentBps: number | null;
+  netPaise: number;
+}
+
 export interface OrderPdfData {
   orderNumber: string;
   /** Placed-at date, rendered dd-mm-yyyy. */
@@ -113,6 +134,15 @@ export interface OrderPdfData {
   discountPaise?: number;
   /** Customer requirements (notes + photos) — rendered after the bill. */
   requirements?: OrderPdfRequirement[];
+  /**
+   * Frozen billing buckets. When present the bill becomes an ORDER SUMMARY
+   * page followed by one bill page per separately-billed bucket (plus General);
+   * when absent the single-bill layout renders exactly as before.
+   */
+  billing?: {
+    groupDiscountPaise: number;
+    buckets: OrderPdfBucket[];
+  };
 }
 
 /**
@@ -153,6 +183,39 @@ function ddmmyyyy(d: Date): string {
   return `${dd}-${mm}-${d.getFullYear()}`;
 }
 
+/** "600" bps → "6"; "1250" → "12.5" (for the "Dealer discount 6%" row). */
+function percentLabel(bps: number): string {
+  return (bps / 100).toLocaleString("en-IN", { maximumFractionDigits: 2 });
+}
+
+/** A discount line in a totals block: "Discount (CODE)   - 50.00". */
+interface DiscountRow {
+  label: string;
+  paise: number;
+}
+
+/** What one totals block prints (the order's, or a single bucket's). */
+interface TotalsSpec {
+  /** Printed as a leading "Subtotal" row when set (summary page only). */
+  subtotalPaise?: number;
+  discounts: DiscountRow[];
+  totalQty: number;
+  grandTotalPaise: number;
+  /** "Includes GST" line when set. */
+  taxPaise: number | null;
+  /** Bucket notes, wrapped (muted) under the amount in words. */
+  notes?: string | null;
+}
+
+/** One bill page to print when billing buckets are present. */
+interface BillPage {
+  billNumber: string;
+  /** "Dealer" — shown beside the party block. */
+  label: string;
+  lineIndexes: number[];
+  totals: TotalsSpec;
+}
+
 /** Render the order in the estimate-bill layout. PURE (no DB). */
 export async function renderOrderPdf(
   data: OrderPdfData,
@@ -182,6 +245,12 @@ export async function renderOrderPdf(
   };
   const hline = (yy: number) =>
     page.drawLine({ start: { x: M, y: yy }, end: { x: dim.w - M, y: yy }, thickness: 0.8, color: INK });
+  /** Start a fresh sheet (no masthead) with the cursor at the top margin. */
+  const newPage = () => {
+    page = doc.addPage([dim.w, dim.h]);
+    pages.push(page);
+    y = dim.h - M;
+  };
 
   /**
    * Word-wrap `raw` to lines that fit `width` at `size`. Long single tokens are
@@ -231,14 +300,31 @@ export async function renderOrderPdf(
     y -= 14;
   };
 
-  const masthead = (first: boolean) => {
+  // The bill number the current sheet belongs to (continuation mastheads
+  // repeat it). The order number for the single bill; "MD-XXXX/DLR" on a
+  // bucket's page.
+  let billNumber = data.orderNumber;
+
+  /**
+   * Sheet masthead. `first` prints the full store block + party/bill meta;
+   * continuation sheets print a one-line reminder. `heading` is the muted
+   * document title ("ESTIMATE" / "ORDER SUMMARY"); `group` adds a "Group :"
+   * line to the bill meta on a bucket's page. `withTable` adds the goods
+   * table header (the summary page has its own table).
+   */
+  const masthead = (
+    first: boolean,
+    heading = "ESTIMATE",
+    group: string | null = null,
+    withTable = true,
+  ) => {
     y = dim.h - M;
     if (first) {
-      text("ESTIMATE", M, 9, helv, MUTED, "center", W);
+      text(heading, M, 9, helv, MUTED, "center", W);
       y -= 16;
       text(APP_NAME.toUpperCase(), M, 21, bold, INK, "center", W);
       y -= 15;
-      text(`PH: ${CONTACT.phoneDisplay}`, M, 11, bold, INK, "center", W);
+      text(`PH: ${BUSINESS_PHONE.display}`, M, 11, bold, INK, "center", W);
       y -= 13;
       text(CONTACT.addressLines.slice(1).join(", "), M, 8.5, helv, MUTED, "center", W);
       y -= 10;
@@ -246,7 +332,7 @@ export async function renderOrderPdf(
       y -= 15;
       // Party / bill meta block.
       text("Party Details :", M + 2, 9.5, bold);
-      text(`Bill No.  :  ${data.orderNumber}`, M + W / 2, 9.5, bold, INK, "left", 0);
+      text(`Bill No.  :  ${billNumber}`, M + W / 2, 9.5, bold, INK, "left", 0);
       y -= 13;
       text(data.partyName, M + 2, 10, helv);
       text(`Date      :  ${ddmmyyyy(data.placedAt)}`, M + W / 2, 9.5, helv, INK, "left", 0);
@@ -254,120 +340,222 @@ export async function renderOrderPdf(
         y -= 12;
         text(data.partyPhone, M + 2, 9, helv, MUTED);
       }
+      if (group) {
+        y -= 12;
+        text(`Group     :  ${group}`, M + W / 2, 9.5, helv, INK, "left", 0);
+      }
       y -= 10;
       hline(y);
       y -= 15;
     } else {
-      text(`${APP_NAME.toUpperCase()} — Bill No. ${data.orderNumber}`, M, 9.5, bold, MUTED);
+      text(`${APP_NAME.toUpperCase()} — Bill No. ${billNumber}`, M, 9.5, bold, MUTED);
       y -= 14;
     }
-    tableHeader();
+    if (withTable) tableHeader();
   };
-
-  masthead(true);
 
   const descCol = cols[1];
   const descX = M + cols[0].w; // description column starts after S.No
 
-  data.lines.forEach((line, i) => {
-    // The FULL product name wraps to as many lines as it needs (never
-    // truncated — the whole reason the name was invisible on the A5 sheet),
-    // and the customer's requirement note prints (muted) right under it, so
-    // it's always on the bill instead of only in the photo appendix.
-    const nameLines = wrapToWidth(line.name, helv, 9, descCol.w - 8);
-    const noteLines = line.note ? wrapToWidth(line.note, helv, 8, descCol.w - 12) : [];
-    const rowHeight = nameLines.length * 12 + noteLines.length * 10;
+  /** The goods table rows for `lines` (S.No 1..n), paginating with continuation mastheads. */
+  const goodsRows = (lines: OrderPdfLine[]) => {
+    lines.forEach((line, i) => {
+      // The FULL product name wraps to as many lines as it needs (never
+      // truncated — the whole reason the name was invisible on the A5 sheet),
+      // and the customer's requirement note prints (muted) right under it, so
+      // it's always on the bill instead of only in the photo appendix.
+      const nameLines = wrapToWidth(line.name, helv, 9, descCol.w - 8);
+      const noteLines = line.note ? wrapToWidth(line.note, helv, 8, descCol.w - 12) : [];
+      const rowHeight = nameLines.length * 12 + noteLines.length * 10;
 
-    // Page-break when this whole (possibly tall) row wouldn't clear the bottom.
-    if (y - rowHeight < M + 40) {
-      page = doc.addPage([dim.w, dim.h]);
-      pages.push(page);
-      masthead(false);
-    }
-
-    const rowTop = y;
-
-    // Fixed cells (S.No, Qty, Unit, Rate, Amount) sit on the first line.
-    const fixed: (string | null)[] = [
-      `${i + 1} .`,
-      null,
-      line.qty.toFixed(2),
-      "pcs",
-      money(line.ratePaise),
-      money(line.amountPaise),
-    ];
-    let x = M;
-    cols.forEach((c, ci) => {
-      const val = fixed[ci];
-      if (ci !== 1 && val != null) {
-        y = rowTop;
-        text(winAnsiSafe(val), x + 4, 9, helv, INK, c.align, c.w - 8);
+      // Page-break when this whole (possibly tall) row wouldn't clear the bottom.
+      if (y - rowHeight < M + 40) {
+        newPage();
+        masthead(false);
       }
-      x += c.w;
-    });
 
-    // Description column: wrapped name lines, then wrapped note lines.
-    y = rowTop;
-    for (const nl of nameLines) {
-      text(nl, descX + 4, 9, helv, INK, "left", descCol.w - 8);
-      y -= 12;
-    }
-    for (const nl of noteLines) {
-      text(nl, descX + 8, 8, helv, MUTED, "left", descCol.w - 12);
-      y -= 10;
-    }
+      const rowTop = y;
 
-    // Normalize to the bottom of the tallest column, plus a little breathing room.
-    y = rowTop - rowHeight - 2;
-    // Model-split sub-rows (allocation lines) — staff pick per model.
-    if (line.breakdown && line.breakdown.length > 0) {
-      for (const b of line.breakdown) {
-        if (y < M + 96) {
-          page = doc.addPage([dim.w, dim.h]);
-          pages.push(page);
-          masthead(false);
+      // Fixed cells (S.No, Qty, Unit, Rate, Amount) sit on the first line.
+      const fixed: (string | null)[] = [
+        `${i + 1} .`,
+        null,
+        line.qty.toFixed(2),
+        "pcs",
+        money(line.ratePaise),
+        money(line.amountPaise),
+      ];
+      let x = M;
+      cols.forEach((c, ci) => {
+        const val = fixed[ci];
+        if (ci !== 1 && val != null) {
+          y = rowTop;
+          text(winAnsiSafe(val), x + 4, 9, helv, INK, c.align, c.w - 8);
         }
-        text(`- ${b.qty} x ${b.modelName}`, M + cols[0].w + 10, 8, helv, MUTED);
+        x += c.w;
+      });
+
+      // Description column: wrapped name lines, then wrapped note lines.
+      y = rowTop;
+      for (const nl of nameLines) {
+        text(nl, descX + 4, 9, helv, INK, "left", descCol.w - 8);
+        y -= 12;
+      }
+      for (const nl of noteLines) {
+        text(nl, descX + 8, 8, helv, MUTED, "left", descCol.w - 12);
+        y -= 10;
+      }
+
+      // Normalize to the bottom of the tallest column, plus a little breathing room.
+      y = rowTop - rowHeight - 2;
+      // Model-split sub-rows (allocation lines) — staff pick per model.
+      if (line.breakdown && line.breakdown.length > 0) {
+        for (const b of line.breakdown) {
+          if (y < M + 96) {
+            newPage();
+            masthead(false);
+          }
+          text(`- ${b.qty} x ${b.modelName}`, M + cols[0].w + 10, 8, helv, MUTED);
+          y -= 11;
+        }
+        y -= 3;
+      }
+    });
+  };
+
+  /** A right-aligned label/amount pair in the totals area. */
+  const totalsRow = (label: string, value: string, font: PDFFont, size: number) => {
+    text(label, M + W * 0.35, size, font, INK, "right", W * 0.2);
+    text(value, M, size, font, INK, "right", W);
+    y -= 14;
+  };
+
+  /** Totals block (kept on one page): discounts, grand total, amount in words, GST, notes. */
+  const totalsBlock = (spec: TotalsSpec) => {
+    if (y < M + 96) newPage();
+    y -= 4;
+    hline(y);
+    y -= 16;
+    if (spec.subtotalPaise != null) totalsRow("Subtotal", money(spec.subtotalPaise), helv, 9.5);
+    for (const d of spec.discounts) totalsRow(d.label, `- ${money(d.paise)}`, helv, 9.5);
+    text("Grand Total", M + W * 0.35, 10, bold, INK, "right", W * 0.2);
+    text(`${spec.totalQty.toFixed(2)} pcs`, M + W * 0.56, 10, bold, INK, "left", 0);
+    text(money(spec.grandTotalPaise), M, 10.5, bold, INK, "right", W);
+    y -= 8;
+    hline(y);
+    y -= 16;
+    text("Amount chargeable (in words)", M + 2, 8.5, helv, MUTED);
+    y -= 12;
+    text(amountInWords(spec.grandTotalPaise), M + 2, 9.5, bold);
+    if (spec.taxPaise != null) {
+      y -= 14;
+      text(`Includes GST: Rs. ${money(spec.taxPaise)}`, M + 2, 8.5, helv, MUTED);
+    }
+    if (spec.notes) {
+      y -= 16;
+      text("Notes", M + 2, 8.5, helv, MUTED);
+      y -= 12;
+      for (const nl of wrapToWidth(spec.notes, helv, 8.5, W - 8)) {
+        if (y < M + 30) newPage();
+        text(nl, M + 4, 8.5, helv, MUTED);
         y -= 11;
       }
-      y -= 3;
     }
-  });
+  };
 
-  // Totals block (kept on one page).
-  if (y < M + 96) {
-    page = doc.addPage([dim.w, dim.h]);
-    pages.push(page);
-    y = dim.h - M;
-  }
-  y -= 4;
-  hline(y);
-  y -= 16;
-  if ((data.discountPaise ?? 0) > 0) {
-    text(
-      `Discount${data.couponCode ? ` (${data.couponCode})` : ""}`,
-      M + W * 0.35,
-      9.5,
-      helv,
-      INK,
-      "right",
-      W * 0.2,
-    );
-    text(`- ${money(data.discountPaise ?? 0)}`, M, 9.5, helv, INK, "right", W);
+  /**
+   * ORDER SUMMARY (page 1 when buckets are present): masthead + party/bill
+   * meta, a compact bucket table (Bucket + bill no | Items | Subtotal |
+   * Discount | Net), then the order totals.
+   */
+  const renderBucketSummary = (billing: NonNullable<OrderPdfData["billing"]>) => {
+    masthead(true, "ORDER SUMMARY", null, false);
+    const sCols = [
+      { label: "Bucket", w: W - qty - rate * 3, align: "left" as const },
+      { label: "Items", w: qty, align: "right" as const },
+      { label: "Subtotal", w: rate, align: "right" as const },
+      { label: "Discount", w: rate, align: "right" as const },
+      { label: "Net (Rs.)", w: rate, align: "right" as const },
+    ];
+    let x = M;
+    for (const c of sCols) {
+      text(c.label, x + 4, 9, bold, INK, c.align, c.w - 8);
+      x += c.w;
+    }
+    y -= 5;
+    hline(y);
     y -= 14;
-  }
-  text("Grand Total", M + W * 0.35, 10, bold, INK, "right", W * 0.2);
-  text(`${data.totalQty.toFixed(2)} pcs`, M + W * 0.56, 10, bold, INK, "left", 0);
-  text(money(data.grandTotalPaise), M, 10.5, bold, INK, "right", W);
-  y -= 8;
-  hline(y);
-  y -= 16;
-  text("Amount chargeable (in words)", M + 2, 8.5, helv, MUTED);
-  y -= 12;
-  text(amountInWords(data.grandTotalPaise), M + 2, 9.5, bold);
-  if (data.totalTaxPaise != null) {
-    y -= 14;
-    text(`Includes GST: Rs. ${money(data.totalTaxPaise)}`, M + 2, 8.5, helv, MUTED);
+    for (const b of billing.buckets) {
+      if (y < M + 120) newPage();
+      const rowTop = y;
+      const cells = [
+        null,
+        String(b.lineIndexes.length),
+        money(b.subtotalPaise),
+        b.discountPaise > 0 ? `- ${money(b.discountPaise)}` : "-",
+        money(b.netPaise),
+      ];
+      x = M;
+      sCols.forEach((c, ci) => {
+        const val = cells[ci];
+        if (val != null) {
+          y = rowTop;
+          text(val, x + 4, 8.5, helv, INK, c.align, c.w - 8);
+        }
+        x += c.w;
+      });
+      // Bucket column: name (with "separate bill" marker), bill number beneath.
+      y = rowTop;
+      const name = wrapToWidth(
+        `${b.name} (${b.code})${b.separateBill ? " - separate bill" : ""}`,
+        bold, 9, sCols[0].w - 8,
+      );
+      for (const nl of name) {
+        text(nl, M + 4, 9, bold, INK, "left", sCols[0].w - 8);
+        y -= 12;
+      }
+      text(`Bill No. ${b.billNumber}`, M + 4, 8, helv, MUTED, "left", sCols[0].w - 8);
+      y -= 14;
+    }
+    totalsBlock({
+      subtotalPaise: billing.buckets.reduce((s, b) => s + b.subtotalPaise, 0),
+      discounts: [
+        ...(billing.groupDiscountPaise > 0
+          ? [{ label: "Bucket discounts", paise: billing.groupDiscountPaise }]
+          : []),
+        ...couponRows,
+      ],
+      totalQty: data.totalQty,
+      grandTotalPaise: data.grandTotalPaise,
+      taxPaise: data.totalTaxPaise,
+    });
+  };
+
+  const couponRows: DiscountRow[] =
+    (data.discountPaise ?? 0) > 0
+      ? [{ label: `Discount${data.couponCode ? ` (${data.couponCode})` : ""}`, paise: data.discountPaise ?? 0 }]
+      : [];
+
+  if (!data.billing) {
+    // Single bill — the pre-billing-groups layout, unchanged.
+    masthead(true);
+    goodsRows(data.lines);
+    totalsBlock({
+      discounts: couponRows,
+      totalQty: data.totalQty,
+      grandTotalPaise: data.grandTotalPaise,
+      taxPaise: data.totalTaxPaise,
+    });
+  } else {
+    renderBucketSummary(data.billing);
+    for (const bill of billPages(data)) {
+      newPage();
+      billNumber = bill.billNumber;
+      masthead(true, "ESTIMATE", bill.label);
+      goodsRows(bill.lineIndexes.map((i) => data.lines[i]));
+      totalsBlock(bill.totals);
+    }
+    billNumber = data.orderNumber;
   }
 
   // ---- Customer requirement PHOTOS, after the bill ---------------------
@@ -376,29 +564,19 @@ export async function renderOrderPdf(
   // note is repeated (muted) under each photo group as a caption for staff.
   const requirements = (data.requirements ?? []).filter((r) => r.images.length > 0);
   if (requirements.length > 0) {
-    page = doc.addPage([dim.w, dim.h]);
-    pages.push(page);
-    y = dim.h - M;
+    newPage();
     text("CUSTOMER REQUIREMENT PHOTOS", M, 12, bold, INK, "center", W);
     y -= 10;
     hline(y);
     y -= 18;
 
     for (const req of requirements) {
-      if (y < M + 60) {
-        page = doc.addPage([dim.w, dim.h]);
-        pages.push(page);
-        y = dim.h - M;
-      }
+      if (y < M + 60) newPage();
       text(req.name, M, 10.5, bold);
       y -= 15;
       if (req.note) {
         for (const lineText of wrapToWidth(req.note, helv, 9.5, W - 8)) {
-          if (y < M + 30) {
-            page = doc.addPage([dim.w, dim.h]);
-            pages.push(page);
-            y = dim.h - M;
-          }
+          if (y < M + 30) newPage();
           text(lineText, M + 4, 9.5, helv, MUTED);
           y -= 12;
         }
@@ -425,11 +603,7 @@ export async function renderOrderPdf(
         const scale = Math.min(maxW / image.width, maxH / image.height, 1);
         const drawW = image.width * scale;
         const drawH = image.height * scale;
-        if (y - drawH < M + 20) {
-          page = doc.addPage([dim.w, dim.h]);
-          pages.push(page);
-          y = dim.h - M;
-        }
+        if (y - drawH < M + 20) newPage();
         page.drawImage(image, { x: M, y: y - drawH, width: drawW, height: drawH });
         y -= drawH + 14;
       }
@@ -449,6 +623,66 @@ export async function renderOrderPdf(
   }
 
   return doc.save();
+}
+
+/**
+ * The bill pages to print after the summary: one per separately-billed
+ * bucket, then ONE General page carrying every other line (the General bucket
+ * plus any bucket not billed separately — their discounts still print as their
+ * own rows). Empty pages are skipped.
+ */
+function billPages(data: OrderPdfData): BillPage[] {
+  const buckets = data.billing?.buckets ?? [];
+  const separate = buckets.filter((b) => b.separateBill);
+  const merged = buckets.filter((b) => !b.separateBill);
+  const lineQty = (indexes: number[]) => indexes.reduce((s, i) => s + (data.lines[i]?.qty ?? 0), 0);
+  const discountRow = (b: OrderPdfBucket): DiscountRow[] =>
+    b.discountPaise > 0
+      ? [{
+          label: b.appliedPercentBps != null
+            ? `${b.name} discount ${percentLabel(b.appliedPercentBps)}%`
+            : `${b.name} discount`,
+          paise: b.discountPaise,
+        }]
+      : [];
+
+  const pages: BillPage[] = separate
+    .filter((b) => b.lineIndexes.length > 0)
+    .map((b) => ({
+      billNumber: b.billNumber,
+      label: `${b.name} (${b.code})`,
+      lineIndexes: b.lineIndexes,
+      totals: {
+        discounts: discountRow(b),
+        totalQty: lineQty(b.lineIndexes),
+        grandTotalPaise: b.netPaise,
+        taxPaise: null,
+        notes: b.notes,
+      },
+    }));
+
+  // General: every line no separate bucket claims, in order.
+  const claimed = new Set(separate.flatMap((b) => b.lineIndexes));
+  const generalIdx = data.lines.map((_, i) => i).filter((i) => !claimed.has(i));
+  if (generalIdx.length > 0) {
+    const general = merged.find((b) => b.code === GENERAL_GROUP_CODE);
+    const subtotal = generalIdx.reduce((s, i) => s + data.lines[i].amountPaise, 0);
+    const discount = merged.reduce((s, b) => s + b.discountPaise, 0);
+    const notes = merged.map((b) => b.notes).filter((n): n is string => !!n).join("\n");
+    pages.push({
+      billNumber: general?.billNumber ?? bucketBillNumber(data.orderNumber, GENERAL_GROUP_CODE),
+      label: `${GENERAL_GROUP_NAME} (${GENERAL_GROUP_CODE})`,
+      lineIndexes: generalIdx,
+      totals: {
+        discounts: merged.flatMap(discountRow),
+        totalQty: lineQty(generalIdx),
+        grandTotalPaise: subtotal - discount,
+        taxPaise: null,
+        notes: notes || null,
+      },
+    });
+  }
+  return pages;
 }
 
 /* ------------------------------------------------------------------ */
@@ -516,6 +750,30 @@ export async function buildOrderPdf(
     });
   }
 
+  // Frozen billing buckets → line indexes (the PDF layer never sees keys).
+  const snapshot = parseOrderBillingSnapshot(order.billingGroups);
+  const indexByKey = new Map(items.map((it, i) => [lineKey(it.productId, it.variantId), i]));
+  const billing: OrderPdfData["billing"] = snapshot
+    ? {
+        groupDiscountPaise: snapshot.groupDiscountPaise,
+        buckets: snapshot.buckets.map((b) => ({
+          code: b.code,
+          name: b.name,
+          separateBill: b.separateBill,
+          notes: b.notes,
+          billNumber: bucketBillNumber(order.orderNumber, b.code),
+          lineIndexes: b.lineKeys
+            .map((k) => indexByKey.get(k))
+            .filter((i): i is number => i !== undefined)
+            .sort((a, z) => a - z),
+          subtotalPaise: b.subtotalPaise,
+          discountPaise: b.discountPaise,
+          appliedPercentBps: b.appliedTier?.percentBps ?? null,
+          netPaise: b.netPaise,
+        })),
+      }
+    : undefined;
+
   const bytes = await renderOrderPdf({
     orderNumber: order.orderNumber,
     placedAt: order.placedAt,
@@ -528,6 +786,7 @@ export async function buildOrderPdf(
     couponCode: order.couponCode ?? null,
     discountPaise: order.discountPaise ?? 0,
     requirements,
+    ...(billing ? { billing } : {}),
   }, paperSize);
   return { bytes, orderNumber: order.orderNumber };
 }

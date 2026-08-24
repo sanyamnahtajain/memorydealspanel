@@ -13,7 +13,9 @@ import { PricePill } from "@/components/common/PricePill";
 import { StatusChip, type StatusChipVariant } from "@/components/common/StatusChip";
 import { RequestAccessSheet } from "@/components/storefront/RequestAccessSheet";
 import { AddToCartButton } from "@/components/storefront/cart/AddToCartButton";
-import { buildWhatsAppEnquiryLink } from "./whatsapp";
+import { APP_NAME } from "@/lib/constants";
+import { buildWhatsAppLink, enquiryMessageLines } from "@/lib/whatsapp-link";
+import { gatedEnquiryLabel } from "./WhatsAppEnquire";
 
 /**
  * Client-side variant selector for the product detail page — the variant-aware
@@ -68,6 +70,13 @@ export interface VariantSelectorProps {
   showPrices: boolean;
   /** Present when the viewer is a logged-in customer; drives gated copy. */
   status?: CustomerStatus;
+  /**
+   * The shop's WhatsApp number, handed down by the server ONLY when the
+   * viewer's access is live (`whatsappNumberForViewer`); `null` when gated.
+   * Needed client-side because the enquiry text follows the SELECTED variant.
+   * A gated render never receives the number, so it can't leak.
+   */
+  whatsappNumber: string | null;
   /**
    * Called whenever the selected variant changes (including the initial
    * resolution), so the parent can update the gallery / sticky bar. Optional.
@@ -141,6 +150,7 @@ export function VariantSelector({
   variants,
   showPrices,
   status,
+  whatsappNumber,
   onVariantChange,
   className,
 }: VariantSelectorProps) {
@@ -175,15 +185,23 @@ export function VariantSelector({
 
   const priced = selected && showPrices && isPriced(selected) ? selected : null;
 
-  const enquireHref = buildWhatsAppEnquiryLink({
-    productName: selected
-      ? `${productName} (${optionTypes
-          .map((o) => selection[o.name])
-          .filter(Boolean)
-          .join(" · ")})`
-      : productName,
-    sku: selected?.sku ?? null,
-  });
+  // WhatsApp link follows the SELECTED variant — and exists only when the
+  // server handed us the number (gate open). Gated viewers get `null`.
+  const enquireHref = whatsappNumber
+    ? buildWhatsAppLink(
+        whatsappNumber,
+        enquiryMessageLines({
+          appName: APP_NAME,
+          productName: selected
+            ? `${productName} (${optionTypes
+                .map((o) => selection[o.name])
+                .filter(Boolean)
+                .join(" · ")})`
+            : productName,
+          sku: selected?.sku ?? null,
+        }),
+      )
+    : null;
 
   return (
     <div className={cn("flex flex-col gap-5", className)}>
@@ -306,24 +324,41 @@ export function VariantSelector({
         />
       ) : null}
 
-      {/* Enquire CTA — carries the SELECTED variant's SKU + options. */}
-      <Button
-        size="lg"
-        variant="default"
-        className="h-11 w-full gap-2"
-        disabled={!selected}
-        render={
-          <a
-            href={enquireHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label={`Enquire about ${productName} on WhatsApp`}
-          />
-        }
-      >
-        <MessageCircle aria-hidden />
-        Enquire on WhatsApp
-      </Button>
+      {/* Enquire CTA — carries the SELECTED variant's SKU + options. Locked
+          when the WhatsApp gate is closed: anon can request access (reusing
+          this selector's sheet); a gated customer sees their status. */}
+      {enquireHref ? (
+        <Button
+          size="lg"
+          variant="default"
+          className="h-11 w-full gap-2"
+          disabled={!selected}
+          render={
+            <a
+              href={enquireHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`Enquire about ${productName} on WhatsApp`}
+            />
+          }
+        >
+          <MessageCircle aria-hidden />
+          Enquire on WhatsApp
+        </Button>
+      ) : (
+        <Button
+          type="button"
+          size="lg"
+          variant="outline"
+          className="h-11 w-full gap-2"
+          disabled={status !== undefined}
+          onClick={status === undefined ? () => setRequestOpen(true) : undefined}
+          aria-label={`${gatedEnquiryLabel(status)} — ${productName}`}
+        >
+          <LockKeyhole aria-hidden />
+          {gatedEnquiryLabel(status)}
+        </Button>
+      )}
 
       <RequestAccessSheet
         open={requestOpen}

@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import {
+  ArrowRight,
   Building2,
   Database,
+  Layers,
   Palette,
   ShoppingCart,
   UserCog,
@@ -70,6 +73,21 @@ export default async function AdminSettingsPage() {
           <StoreSettingsForm
             initialMinOrderValuePaise={storeSettings.minOrderValuePaise}
           />
+        </SettingsSection>
+
+        {/* Billing groups — brand buckets with tiered discounts. */}
+        <SettingsSection
+          icon={Layers}
+          title="Billing groups"
+          description="Split carts into brand buckets, each with its own tiered discount and separate bill page."
+        >
+          <Link
+            href="/admin/settings/billing-groups"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-primary underline-offset-4 hover:underline"
+          >
+            Manage billing groups
+            <ArrowRight className="size-4" aria-hidden />
+          </Link>
         </SettingsSection>
 
         <div className="grid gap-6 lg:grid-cols-2">

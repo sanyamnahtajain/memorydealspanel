@@ -14,6 +14,7 @@ import type {
   OrderHistoryDetail,
   OrderHistoryLine,
 } from "@/components/storefront/orders/types";
+import { toOrderBillingView } from "@/components/orders/billing/types";
 
 export const metadata: Metadata = {
   title: `Order — ${APP_NAME}`,
@@ -124,6 +125,8 @@ export default async function OrderDetailPage({
             })),
           }
         : null,
+    // Bucket subtotals/discounts are prices — attach ONLY for a priced viewer.
+    billing: priced ? toOrderBillingView(order.billing, order.orderNumber) : null,
   };
 
   const cartCount = await cartCountForViewer(viewer);

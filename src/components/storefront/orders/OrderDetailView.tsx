@@ -33,6 +33,8 @@ import {
 } from "./order-status";
 import { OrderStatusTimeline } from "./OrderStatusTimeline";
 import { OrderTaxBreakup } from "./OrderTaxBreakup";
+import { OrderBucketSections } from "@/components/orders/billing/OrderBucketSections";
+import { BillingTotalsRows } from "@/components/orders/billing/BillingTotalsRows";
 import type { OrderHistoryDetail, OrderHistoryLine } from "./types";
 import {
   cancelOrderAction,
@@ -55,6 +57,8 @@ export function OrderDetailView({ detail }: { detail: OrderHistoryDetail }) {
   const [cancelling, setCancelling] = React.useState(false);
 
   const cancellable = isCancellable(detail.status);
+  const totalDiscountPaise =
+    (detail.billing?.groupDiscountPaise ?? 0) + detail.discountPaise;
 
   const handleReorder = React.useCallback(async () => {
     setReordering(true);
@@ -158,11 +162,21 @@ export function OrderDetailView({ detail }: { detail: OrderHistoryDetail }) {
         {/* Line items (frozen snapshot) */}
         <section className="space-y-3">
           <h3 className="text-sm font-semibold text-foreground">Items</h3>
-          <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
-            {detail.items.map((line, i) => (
-              <OrderLineRow key={`${line.productId}-${line.variantId ?? ""}-${i}`} line={line} priced={detail.priced} />
-            ))}
-          </ul>
+          {detail.billing ? (
+            // Lines grouped by billing bucket (priced viewers only — see types).
+            <OrderBucketSections
+              lines={detail.items}
+              billing={detail.billing}
+              orderNumber={detail.orderNumber}
+              renderLine={(line) => <OrderLineRow line={line} priced={detail.priced} />}
+            />
+          ) : (
+            <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
+              {detail.items.map((line, i) => (
+                <OrderLineRow key={`${line.productId}-${line.variantId ?? ""}-${i}`} line={line} priced={detail.priced} />
+              ))}
+            </ul>
+          )}
 
           {/* Totals */}
           <div className="rounded-2xl border border-border bg-card p-4">
@@ -176,6 +190,7 @@ export function OrderDetailView({ detail }: { detail: OrderHistoryDetail }) {
                     {formatPaise(detail.subtotalPaise)}
                   </span>
                 </div>
+                <BillingTotalsRows billing={detail.billing} />
                 {detail.discountPaise > 0 ? (
                   <div className="flex items-center justify-between text-emerald-700 dark:text-emerald-300">
                     <span className="text-sm font-medium">
@@ -186,11 +201,12 @@ export function OrderDetailView({ detail }: { detail: OrderHistoryDetail }) {
                     </span>
                   </div>
                 ) : null}
-                {detail.discountPaise > 0 && !detail.tax ? (
+                {/* With GST the frozen grand total (breakup below) already nets the discounts. */}
+                {totalDiscountPaise > 0 && !detail.tax ? (
                   <div className="flex items-center justify-between border-t border-border pt-1.5">
                     <span className="text-sm font-medium text-muted-foreground">Total</span>
                     <span className="text-base font-semibold tabular-nums text-foreground">
-                      {formatPaise(detail.subtotalPaise - detail.discountPaise)}
+                      {formatPaise(detail.subtotalPaise - totalDiscountPaise)}
                     </span>
                   </div>
                 ) : null}

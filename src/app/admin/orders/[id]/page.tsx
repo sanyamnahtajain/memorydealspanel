@@ -12,6 +12,7 @@ import { PageHeader } from "@/components/common";
 import { OrderDetailPanel } from "@/components/admin/orders/OrderDetailPanel";
 import { OrderPdfDownloadButton } from "@/components/admin/orders/OrderPdfDownloadButton";
 import type { OrderDetailDTO } from "@/server/actions/admin-orders";
+import { toOrderBillingView } from "@/components/orders/billing/types";
 
 export const metadata: Metadata = {
   title: "Order — MemoryDeals Admin",
@@ -122,6 +123,7 @@ export default async function AdminOrderDetailPage({
           })),
         }
       : null,
+    billing: toOrderBillingView(detail.billing, detail.orderNumber),
   };
 
   return (

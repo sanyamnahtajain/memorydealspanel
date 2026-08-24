@@ -25,8 +25,12 @@ import { RequestAccessSheet } from "@/components/storefront/RequestAccessSheet";
 import { cn } from "@/lib/utils";
 
 export interface StickyMobileBarProps {
-  /** wa.me deep link (built server-side from CONTACT.whatsappNumber). */
-  enquireHref: string;
+  /**
+   * wa.me deep link minted server-side per viewer — `null` when the WhatsApp
+   * gate is closed, in which case the Enquire slot becomes a locked affordance
+   * (request access for anon; a status word for a gated customer).
+   */
+  enquireHref: string | null;
   /** Authoritative gate verdict (canSeePrices). */
   canSeePrices: boolean;
   /**
@@ -122,18 +126,40 @@ export function StickyMobileBar({
             )}
           </div>
 
-          <a
-            href={enquireHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label="Enquire on WhatsApp"
-            className={cn(
-              "inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-sm outline-none transition-colors hover:bg-primary/90 focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.98]",
-            )}
-          >
-            <MessageCircle aria-hidden className="size-4" />
-            Enquire
-          </a>
+          {enquireHref ? (
+            <a
+              href={enquireHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Enquire on WhatsApp"
+              className={cn(
+                "inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-sm outline-none transition-colors hover:bg-primary/90 focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.98]",
+              )}
+            >
+              <MessageCircle aria-hidden className="size-4" />
+              Enquire
+            </a>
+          ) : (
+            // WhatsApp gate closed: anon can request access here; a signed-in
+            // customer whose access isn't live sees a locked, inert button.
+            <button
+              type="button"
+              disabled={status !== undefined}
+              onClick={status === undefined ? () => setOpen(true) : undefined}
+              aria-label={
+                status === undefined
+                  ? "Request access to enquire on WhatsApp"
+                  : "WhatsApp is available to approved buyers"
+              }
+              className={cn(
+                "inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-full border border-border px-5 text-sm font-semibold text-muted-foreground outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50",
+                status === undefined ? "hover:bg-accent hover:text-foreground" : "opacity-70",
+              )}
+            >
+              <LockIcon aria-hidden className="size-4" />
+              Enquire
+            </button>
+          )}
         </div>
       </div>
 

@@ -13,9 +13,11 @@ export const APP_SLOGAN = "You need it — we have it.";
  */
 export const CONTACT = {
   website: "https://thememorydeals.com",
-  /** Display phone + a wa.me-compatible number (digits only, incl. country code). */
-  phoneDisplay: "088827 67999",
-  whatsappNumber: "918882767999",
+  // NOTE: the phone / WhatsApp number is intentionally NOT here. This constant
+  // is imported by client components (so it ships in the public JS bundle),
+  // and the shop's number must only reach viewers with live price access.
+  // It lives server-side in `@/server/contact` (BUSINESS_PHONE) and is handed
+  // out per-viewer through the gated helpers there.
   addressLines: [
     "The Memory Deals",
     "Shop No. 55 (Basement), HUDA Market",
@@ -37,6 +39,18 @@ export type AccessExpiryPresetDays = (typeof ACCESS_EXPIRY_PRESETS_DAYS)[number]
 
 /** Default validity applied when the admin doesn't pick one (F-A38). */
 export const DEFAULT_ACCESS_EXPIRY_DAYS: AccessExpiryPresetDays = 30;
+
+/**
+ * Auto-renewal on order (owner request): when an approved buyer places an
+ * order and their (finite) access expires within `WINDOW_DAYS`, push the expiry
+ * out by `EXTEND_DAYS` — an active buyer should never get locked out mid-flow.
+ * Never-expiring access and access with more than the window left are left
+ * untouched.
+ */
+export const AUTO_RENEW_ON_ORDER = {
+  WINDOW_DAYS: 30,
+  EXTEND_DAYS: 30,
+} as const;
 
 /** Pagination / infinite-scroll page sizes. */
 export const PAGE_SIZES = {

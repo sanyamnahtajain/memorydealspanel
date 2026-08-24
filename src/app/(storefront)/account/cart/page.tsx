@@ -6,6 +6,8 @@ import { prisma } from "@/server/db";
 import { resolveViewer } from "@/server/auth/viewer";
 import { canSeePrices, isCustomer } from "@/server/types/viewer";
 import { getCart, cartCountForViewer } from "@/server/services/cart";
+import { listActiveBillingGroupConfigs } from "@/server/services/billing-groups";
+import type { GroupRules } from "@/components/storefront/billing/bucket-math";
 import { getMinOrderValuePaise } from "@/server/services/store-settings";
 import { APP_NAME } from "@/lib/constants";
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
@@ -50,6 +52,17 @@ export default async function CartPage() {
   const minOrderValuePaise = cart.priced ? await getMinOrderValuePaise() : null;
   // Header cart badge — count only for an approved customer, else undefined.
   const cartCount = await cartCountForViewer(viewer);
+
+  // Billing-group tiers (ids + tiers ONLY — no matcher/brand data) so the
+  // client can re-run each bucket's tier math across optimistic quantity
+  // changes. Only for a priced viewer whose cart was actually bucketed.
+  const groupRules: GroupRules[] = cart.billing
+    ? (await listActiveBillingGroupConfigs()).flatMap((g) =>
+        g.rules
+          .filter((r) => r.kind === "tieredPercent")
+          .map((r) => ({ groupId: g.id, tiers: r.tiers })),
+      )
+    : [];
 
   // Resolve slugs for detail links (C1's CartLine omits slug). Only real
   // product ids; a vanished product simply has no slug (non-linked line).
@@ -136,6 +149,8 @@ export default async function CartPage() {
                 canOrder={canOrder}
                 initialTax={cart.tax}
                 minOrderValuePaise={minOrderValuePaise}
+                initialBilling={cart.billing}
+                groupRules={groupRules}
               />
             </FadeUp>
           )}

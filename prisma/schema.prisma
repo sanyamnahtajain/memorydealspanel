@@ -245,6 +245,30 @@ model AccessGrant {
   @@index([customerId, expiresAt])
 }
 
+/// Billing group: an admin-configured bucket a cart is split into (by brand
+/// today), with rules (tiered discount) run on the bucket and its own bill page.
+/// Runtime-editable — no deploy to change brands / tiers / switch off. Carts are
+/// NOT stored per group: buckets are derived at read time from these rows, and
+/// orders freeze a snapshot (Order.billingGroups) so history never shifts.
+/// `matcher` and `rules` are tagged-union JSON (see src/lib/billing-groups/types.ts).
+model BillingGroup {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  name           String
+  code           String   @unique
+  color          String   @default("blue")
+  active         Boolean  @default(true)
+  sortOrder      Int      @default(0)
+  matcher        Json
+  rules          Json
+  separateBill   Boolean  @default(true)
+  couponStacking Boolean  @default(true)
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([active, sortOrder])
+}
+
 model AccessRequest {
   id         String        @id @default(auto()) @map("_id") @db.ObjectId
   customerId String        @db.ObjectId
@@ -483,6 +507,12 @@ model Order {
   grandTotalPaise        Int?
   // Group-by-(hsn,rate) summary rows for the invoice layout.
   hsnSummary             Json?
+  // Billing groups (owner request): the total of every bucket's tiered discount,
+  // and the FROZEN bucket snapshot (src/lib/billing-groups/snapshot.ts). Both
+  // absent on orders placed before the feature or with only the General bucket,
+  // so old orders render exactly as before. `subtotalPaise` stays PRE-discount.
+  groupDiscountPaise Int?
+  billingGroups      Json?
   placedAt      DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 

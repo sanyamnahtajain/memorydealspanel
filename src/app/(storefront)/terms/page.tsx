@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { APP_NAME, CONTACT, LEGAL_UPDATED } from "@/lib/constants";
+import { APP_NAME, LEGAL_UPDATED } from "@/lib/constants";
 import { ContentPage } from "@/components/storefront/ContentPage";
 
 export const metadata: Metadata = {
@@ -92,11 +92,9 @@ export default function TermsPage() {
 
       <h2>10. Contact &amp; governing law</h2>
       <p>
-        Questions about these terms? Call us on{" "}
-        <a href={`tel:${CONTACT.phoneDisplay.replace(/\s/g, "")}`}>
-          {CONTACT.phoneDisplay}
-        </a>
-        . These terms are governed by the laws of India.
+        Questions about these terms? Reach us via our{" "}
+        <a href="/contact">Contact page</a>. These terms are governed by the
+        laws of India.
       </p>
 
       <p>

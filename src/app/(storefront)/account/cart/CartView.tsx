@@ -20,36 +20,24 @@
  */
 
 import * as React from "react";
-import Link from "next/link";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
-import {
-  Minus,
-  Plus,
-  Trash2,
-  ImageOff,
-  AlertTriangle,
-  Loader2,
-  ShoppingBag,
-  Lock,
-  X,
-} from "lucide-react";
+import { ChevronDown, Loader2, ShoppingBag, Lock, X } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
 import { formatPaise } from "@/lib/money";
 import { MAX_CART_NOTE_LENGTH, MAX_QTY_PER_LINE } from "@/lib/schemas/cart";
-import {
-  clampQuantity,
-  maxOrderableQty,
-  minOrderableQty,
-} from "@/lib/quantity";
 import { Button } from "@/components/ui/button";
-import { EditBreakdownSheet } from "@/components/storefront/allocation/EditBreakdownSheet";
-import { CartLineRequirement } from "@/components/storefront/requirements/CartLineRequirement";
-import { Tooltip } from "@/components/ui/tooltip";
-import { StatusChip } from "@/components/common/StatusChip";
+import { CartLineRow } from "@/components/storefront/cart/CartLineRow";
+import { BucketCard } from "@/components/storefront/billing/BucketCard";
+import {
+  closestNextTier,
+  formatBps,
+  rebucket,
+  shouldRenderBuckets,
+  type GroupRules,
+} from "@/components/storefront/billing/bucket-math";
 import {
   updateCartQuantityAction,
   removeCartItemAction,
@@ -62,12 +50,7 @@ import {
 } from "@/server/actions/coupons";
 import type { CartLineIssue, CartTaxSummary } from "@/server/services/cart";
 import type { StockStatus } from "@/lib/schemas/shared";
-
-/** Whole-basis-points → "18%" / "18.5%" label. */
-function formatRate(gstRateBps: number): string {
-  const pct = gstRateBps / 100;
-  return `${Number.isInteger(pct) ? pct : pct.toFixed(2)}%`;
-}
+import type { Bucket, BucketedCart } from "@/lib/billing-groups/types";
 
 /**
  * Client-side mirror of the server's integer GST line math (src/lib/gst.ts).
@@ -155,27 +138,23 @@ export interface CartViewProps {
    * server re-checks at placement; this only drives the shortfall UI.
    */
   minOrderValuePaise?: number | null;
+  /**
+   * The server's billing-group split of the ORDERABLE lines (buckets, tiered
+   * discounts, "add ₹X more" hints), or null when gated / not priced. The
+   * client keeps membership from this and re-derives the amounts live.
+   */
+  initialBilling?: BucketedCart | null;
+  /** Each active group's tiers (ids + tiers only) so the live mirror can re-run them. */
+  groupRules?: GroupRules[];
 }
 
-/** A stable per-line key (product + variant pair is unique in a cart). */
+/**
+ * A stable per-line key (product + variant pair is unique in a cart). Same
+ * shape as `lineKey` in src/lib/billing-groups/snapshot.ts, which is what the
+ * server keys `Bucket.lines[].key` with.
+ */
 function lineKey(l: { productId: string; variantId: string | null }): string {
   return `${l.productId}:${l.variantId ?? ""}`;
-}
-
-const ISSUE_COPY: Record<CartLineIssue, { label: string; tone: "warn" | "block" }> = {
-  inactive: { label: "No longer available — will not be ordered", tone: "block" },
-  "out-of-stock": { label: "Out of stock — will not be ordered", tone: "block" },
-  "low-stock": { label: "Low stock", tone: "warn" },
-  "below-moq": { label: "Below minimum — quantity will be raised at order", tone: "warn" },
-  "off-pack": { label: "Not a full pack — quantity will be rounded up at order", tone: "warn" },
-  "breakdown-mismatch": {
-    label: "Model split needs attention — edit the models before ordering",
-    tone: "block",
-  },
-};
-
-function stockVariant(status: StockStatus) {
-  return status === "IN_STOCK" ? "inStock" : status === "LOW" ? "low" : "outOfStock";
 }
 
 export function CartView({
@@ -185,6 +164,8 @@ export function CartView({
   priced,
   canOrder,
   initialTax,
+  initialBilling = null,
+  groupRules = [],
 }: CartViewProps) {
   const router = useRouter();
   const reduced = useReducedMotion();
@@ -216,13 +197,41 @@ export function CartView({
     ? orderableLines.reduce((sum, l) => sum + (l.lineTotalPaise ?? 0), 0)
     : null;
   const itemCount = orderableLines.reduce((sum, l) => sum + l.quantity, 0);
+
+  // Live billing-group mirror: bucket membership from the server, amounts
+  // re-derived from the CURRENT (possibly optimistic) line totals through the
+  // same pure engine. Null when gated — then everything renders as before.
+  const billing = React.useMemo<BucketedCart | null>(() => {
+    if (!priced || !initialBilling) return null;
+    return rebucket(
+      initialBilling,
+      lines.map((l) => ({
+        key: lineKey(l),
+        lineTotalPaise: l.lineTotalPaise,
+        available: l.available,
+      })),
+      groupRules,
+    );
+  }, [priced, initialBilling, lines, groupRules]);
+  const groupDiscountPaise = billing?.groupDiscountPaise ?? 0;
+  // Per-line NET totals (after the bucket discount share) — the base the GST
+  // mirror runs on, so tax is previewed on the discounted amount.
+  const netByKey = React.useMemo(() => {
+    const m = new Map<string, number>();
+    if (!billing) return m;
+    for (const b of billing.buckets) for (const l of b.lines) m.set(l.key, l.netPaise);
+    return m;
+  }, [billing]);
+
   // Minimum order value: the live shortfall (paise) still needed, or null when
   // the minimum is off / already met / the viewer is gated. Server-enforced at
-  // placement — this only disables the button and explains why.
+  // placement — this only disables the button and explains why. Runs on the
+  // DISCOUNTED subtotal (bucket discounts + coupon).
   const discountPaise = priced ? (coupon?.discountPaise ?? 0) : 0;
   const movShortfallPaise =
     minOrderValuePaise != null && subtotalPaise != null
-      ? Math.max(0, minOrderValuePaise - (subtotalPaise - discountPaise)) || null
+      ? Math.max(0, minOrderValuePaise - (subtotalPaise - groupDiscountPaise - discountPaise)) ||
+        null
       : null;
   const canPlace =
     canOrder && orderableLines.length > 0 && !placing && movShortfallPaise === null;
@@ -230,7 +239,8 @@ export function CartView({
   // Live GST preview: re-derived from the current (possibly optimistic) line
   // quantities using the same integer formula as the server, then split by the
   // supply type the server determined. When GST is off (initialTax null) the
-  // whole block is absent and the cart renders exactly as pre-GST.
+  // whole block is absent and the cart renders exactly as pre-GST. Lines feed
+  // in NET of their bucket-discount share so tax previews on the discounted amount.
   const taxPreview = React.useMemo(() => {
     if (!priced || !initialTax) return null;
     let totalTaxablePaise = 0;
@@ -238,7 +248,8 @@ export function CartView({
     let grossPaise = 0;
     for (const l of orderableLines) {
       if (l.gstRateBps === null || l.lineTotalPaise === null) continue;
-      const t = lineTaxOf(l.lineTotalPaise, l.gstRateBps, l.taxInclusive);
+      const base = netByKey.get(lineKey(l)) ?? l.lineTotalPaise;
+      const t = lineTaxOf(base, l.gstRateBps, l.taxInclusive);
       totalTaxablePaise += t.taxablePaise;
       totalTaxPaise += t.taxPaise;
       grossPaise += t.grossPaise;
@@ -267,12 +278,19 @@ export function CartView({
       grandTotalPaise,
       roundingMode: initialTax.roundingMode,
     } satisfies CartTaxSummary;
-  }, [priced, initialTax, orderableLines]);
+  }, [priced, initialTax, orderableLines, netByKey]);
 
   // The customer-facing total that "Place order" commits to: the GST grand
-  // total when GST applies, else the plain subtotal.
+  // total (already on the bucket-discounted base) when GST applies, else
+  // subtotal − bucket discounts; the coupon comes off after either.
   const payablePaise =
-    (taxPreview ? taxPreview.grandTotalPaise : (subtotalPaise ?? 0)) - discountPaise;
+    (taxPreview
+      ? taxPreview.grandTotalPaise
+      : (subtotalPaise ?? 0) - groupDiscountPaise) - discountPaise;
+
+  // Nearest tier unlock across buckets — the one-line mobile nudge.
+  const nudge = closestNextTier(billing);
+  const renderBuckets = shouldRenderBuckets(billing);
 
   // Keep an applied coupon honest as quantities change: re-preview on any
   // subtotal move; a code that stops applying is dropped with a note.
@@ -399,6 +417,14 @@ export function CartView({
     [],
   );
 
+  const patchLine = React.useCallback(
+    (line: CartLineData, patch: (l: CartLineData) => CartLineData) => {
+      const key = lineKey(line);
+      setLines((prev) => prev.map((l) => (lineKey(l) === key ? patch(l) : l)));
+    },
+    [],
+  );
+
   const removeLine = React.useCallback(async (line: CartLineData) => {
     const key = lineKey(line);
     const snapshot = line;
@@ -466,288 +492,40 @@ export function CartView({
           </div>
         ) : null}
 
-        <ul className="flex flex-col gap-3">
-          <AnimatePresence mode="popLayout" initial={false}>
-            {lines.map((line) => {
-              const key = lineKey(line);
-              const busy = pending.has(key);
-              const fatal = line.issues.some(
-                (i) => ISSUE_COPY[i]?.tone === "block",
-              );
-              return (
-                <motion.li
-                  key={key}
-                  layout={!reduced}
-                  initial={reduced ? false : { opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={reduced ? { opacity: 0 } : { opacity: 0, x: -12, height: 0 }}
-                  transition={{ duration: reduced ? 0 : 0.18 }}
-                  className={cn(
-                    "relative flex gap-3 rounded-xl border border-border bg-card p-3",
-                    fatal && "opacity-70",
-                  )}
-                >
-                  {(() => {
-                    const thumb = line.imageUrl ? (
-                      <Image
-                        src={line.imageUrl}
-                        alt=""
-                        fill
-                        sizes="80px"
-                        className="object-cover"
-                      />
-                    ) : (
-                      <span className="flex size-full items-center justify-center text-muted-foreground">
-                        <ImageOff className="size-5" />
-                      </span>
-                    );
-                    const cls =
-                      "relative size-20 shrink-0 overflow-hidden rounded-lg bg-muted";
-                    return line.slug ? (
-                      <Link
-                        href={`/p/${line.slug}`}
-                        className={cls}
-                        aria-label={`View ${line.name}`}
-                      >
-                        {thumb}
-                      </Link>
-                    ) : (
-                      <div className={cls}>{thumb}</div>
-                    );
-                  })()}
-
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        {line.brand ? (
-                          <p className="truncate text-xs font-medium text-muted-foreground">
-                            {line.brand}
-                          </p>
-                        ) : null}
-                        {line.slug ? (
-                          <Link
-                            href={`/p/${line.slug}`}
-                            className="line-clamp-2 text-sm font-medium text-foreground hover:underline"
-                          >
-                            {line.name}
-                          </Link>
-                        ) : (
-                          <p className="line-clamp-2 text-sm font-medium text-foreground">
-                            {line.name}
-                          </p>
-                        )}
-                        {line.variantLabel ? (
-                          <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                            {line.variantLabel}
-                          </p>
-                        ) : null}
-                      </div>
-                      <Tooltip content="Remove">
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          onClick={() => removeLine(line)}
-                          aria-label={`Remove ${line.name}`}
-                        >
-                          <Trash2 className="size-4" />
-                        </Button>
-                      </Tooltip>
-                    </div>
-
-                    {/* Warnings */}
-                    {line.issues.length > 0 ? (
-                      <div className="mt-1.5 flex flex-wrap gap-1.5">
-                        {line.stockStatus !== "IN_STOCK" ? (
-                          <StatusChip variant={stockVariant(line.stockStatus)} />
-                        ) : null}
-                        {line.issues
-                          .filter((i) => i !== "low-stock" && i !== "out-of-stock")
-                          .map((issue) => (
-                            <span
-                              key={issue}
-                              className={cn(
-                                "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[0.7rem] font-medium",
-                                ISSUE_COPY[issue]?.tone === "block"
-                                  ? "bg-destructive/10 text-destructive"
-                                  : "bg-amber-500/10 text-amber-700 dark:text-amber-300",
-                              )}
-                            >
-                              <AlertTriangle className="size-3" />
-                              {ISSUE_COPY[issue]?.label ?? issue}
-                            </span>
-                          ))}
-                      </div>
-                    ) : null}
-
-                    {/* Per-model split (allocation lines): summary + editor.
-                        The plain stepper is hidden — quantity follows the split. */}
-                    {line.allocationRequired ? (
-                      <div className="mt-2 flex flex-col gap-1.5">
-                        {line.breakdown && line.breakdown.length > 0 ? (
-                          <p className="text-xs leading-relaxed text-muted-foreground">
-                            {line.breakdown
-                              .slice(0, 3)
-                              .map((b) => `${b.qty} × ${b.name}`)
-                              .join(" · ")}
-                            {line.breakdown.length > 3
-                              ? ` · +${line.breakdown.length - 3} more`
-                              : ""}
-                          </p>
-                        ) : null}
-                        <div>
-                          <EditBreakdownSheet
-                            productId={line.productId}
-                            variantId={line.variantId}
-                            moq={line.moq}
-                            packMultiple={line.packMultiple}
-                            initial={(line.breakdown ?? []).map((b) => ({
-                              modelId: b.modelId,
-                              name: b.name,
-                              qty: b.qty,
-                            }))}
-                            disabled={!canOrder || busy}
-                            onSaved={(quantity, rows) => {
-                              const key = lineKey(line);
-                              setLines((prev) =>
-                                prev.map((l) =>
-                                  lineKey(l) === key
-                                    ? {
-                                        ...l,
-                                        quantity,
-                                        breakdown: rows.map((r) => ({
-                                          modelId: r.modelId,
-                                          name: r.name,
-                                          qty: r.qty,
-                                        })),
-                                        issues: l.issues.filter(
-                                          (i) => i !== "breakdown-mismatch",
-                                        ),
-                                        lineTotalPaise:
-                                          l.unitPricePaise != null
-                                            ? l.unitPricePaise * quantity
-                                            : null,
-                                      }
-                                    : l,
-                                ),
-                              );
-                            }}
-                          />
-                        </div>
-                      </div>
-                    ) : null}
-
-                    {/* Requirement note & photos (admin-flagged products) */}
-                    {line.allowRequirementNotes ? (
-                      <CartLineRequirement
-                        productId={line.productId}
-                        variantId={line.variantId}
-                        productName={line.name}
-                        note={line.note}
-                        attachments={line.attachments}
-                        disabled={!canOrder || busy}
-                        onSaved={(note, attachments) => {
-                          const key = lineKey(line);
-                          setLines((prev) =>
-                            prev.map((l) =>
-                              lineKey(l) === key ? { ...l, note, attachments } : l,
-                            ),
-                          );
-                        }}
-                      />
-                    ) : null}
-
-                    {/* Qty + price row */}
-                    <div className="mt-2.5 flex items-center justify-between gap-2">
-                      <div className={line.allocationRequired ? "hidden" : "inline-flex items-center rounded-lg border border-border"}>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          disabled={
-                            !canOrder ||
-                            busy ||
-                            line.quantity <=
-                              minOrderableQty(line.moq, line.packMultiple)
-                          }
-                          onClick={() =>
-                            changeQuantity(
-                              line,
-                              clampQuantity(
-                                line.quantity - Math.max(1, line.packMultiple),
-                                line.moq,
-                                line.packMultiple,
-                                line.maxQty,
-                              ),
-                            )
-                          }
-                          aria-label="Decrease quantity"
-                        >
-                          <Minus className="size-3.5" />
-                        </Button>
-                        <QtyInput
-                          value={line.quantity}
-                          busy={busy}
-                          disabled={!canOrder}
-                          commit={(raw) =>
-                            changeQuantity(
-                              line,
-                              clampQuantity(raw, line.moq, line.packMultiple, line.maxQty),
-                            )
-                          }
-                        />
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          disabled={
-                            !canOrder ||
-                            busy ||
-                            line.quantity >= maxOrderableQty(line.packMultiple, line.maxQty)
-                          }
-                          onClick={() =>
-                            changeQuantity(
-                              line,
-                              clampQuantity(
-                                line.quantity + Math.max(1, line.packMultiple),
-                                line.moq,
-                                line.packMultiple,
-                                line.maxQty,
-                              ),
-                            )
-                          }
-                          aria-label="Increase quantity"
-                        >
-                          <Plus className="size-3.5" />
-                        </Button>
-                      </div>
-
-                      <div className="text-right">
-                        {priced && line.unitPricePaise != null ? (
-                          <>
-                            <p className="text-sm font-semibold text-foreground tabular-nums">
-                              {formatPaise(line.lineTotalPaise ?? 0)}
-                            </p>
-                            <p className="text-[0.7rem] text-muted-foreground tabular-nums">
-                              {formatPaise(line.unitPricePaise)} each
-                            </p>
-                            {line.gstRateBps != null ? (
-                              <p className="text-[0.65rem] text-muted-foreground">
-                                {line.taxInclusive ? "incl." : "+"}{" "}
-                                {formatRate(line.gstRateBps)} GST
-                              </p>
-                            ) : null}
-                          </>
-                        ) : (
-                          <p className="text-xs text-muted-foreground">
-                            Price on approval
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </motion.li>
-              );
-            })}
-          </AnimatePresence>
-        </ul>
+        {renderBuckets ? (
+          <BucketedLines
+            billing={billing}
+            lines={lines}
+            pending={pending}
+            canOrder={canOrder}
+            priced={priced}
+            reduced={reduced}
+            onRemove={removeLine}
+            onChangeQuantity={changeQuantity}
+            onPatch={patchLine}
+          />
+        ) : (
+          <ul className="flex flex-col gap-3">
+            <AnimatePresence mode="popLayout" initial={false}>
+              {lines.map((line) => {
+                const key = lineKey(line);
+                return (
+                  <CartLineRow
+                    key={key}
+                    line={line}
+                    busy={pending.has(key)}
+                    canOrder={canOrder}
+                    priced={priced}
+                    reduced={reduced}
+                    onRemove={removeLine}
+                    onChangeQuantity={changeQuantity}
+                    onPatch={patchLine}
+                  />
+                );
+              })}
+            </AnimatePresence>
+          </ul>
+        )}
       </div>
 
       {/* Summary (mobile, inline). The note + full GST breakdown that the
@@ -772,6 +550,7 @@ export function CartView({
             suggestions={suggestions}
             onApplyCoupon={applyCoupon}
             onRemoveCoupon={() => setCoupon(null)}
+            billing={billing}
             hidePlaceButton
           />
         </div>
@@ -796,6 +575,7 @@ export function CartView({
             suggestions={suggestions}
             onApplyCoupon={applyCoupon}
             onRemoveCoupon={() => setCoupon(null)}
+            billing={billing}
             movShortfallPaise={movShortfallPaise}
             minOrderValuePaise={minOrderValuePaise}
           />
@@ -819,9 +599,17 @@ export function CartView({
               <p className="text-[0.7rem] font-medium text-amber-700 dark:text-amber-300">
                 Add {formatPaise(movShortfallPaise)} more to place
               </p>
+            ) : priced && nudge ? (
+              <p className="truncate text-[0.7rem] font-medium text-emerald-700 dark:text-emerald-300">
+                {formatPaise(nudge.hint.remainingPaise)} more for{" "}
+                {formatBps(nudge.hint.tier.percentBps)} on {nudge.bucket.name.toLowerCase()}
+              </p>
             ) : (
               <p className="text-[0.7rem] text-muted-foreground">
                 {itemCount} item{itemCount === 1 ? "" : "s"}
+                {priced && groupDiscountPaise > 0
+                  ? ` · ${formatPaise(groupDiscountPaise)} saved`
+                  : ""}
                 {taxPreview ? " · incl. GST" : ""}
               </p>
             )}
@@ -865,6 +653,8 @@ interface SummaryProps {
   minOrderValuePaise?: number | null;
   /** Hide the internal Place-order button (mobile uses the sticky bar's). */
   hidePlaceButton?: boolean;
+  /** Live billing-group mirror (bucket discounts), or null when gated / none. */
+  billing?: BucketedCart | null;
 }
 
 function Summary({
@@ -886,6 +676,7 @@ function Summary({
   onApplyCoupon,
   onRemoveCoupon,
   hidePlaceButton = false,
+  billing = null,
 }: SummaryProps) {
   const [codeInput, setCodeInput] = React.useState("");
   // With GST on, the taxable base is what we call "subtotal" for an exclusive
@@ -893,8 +684,12 @@ function Summary({
   // display the taxable subtotal + the GST lines + the grand total.
   const showTax = priced && tax !== null;
   const discount = priced ? (coupon?.discountPaise ?? 0) : 0;
+  const groupDiscount = priced ? (billing?.groupDiscountPaise ?? 0) : 0;
+  // The GST grand total is already on the bucket-discounted base; without GST
+  // the bucket discounts come straight off the subtotal. Coupon after either.
   const grandTotalPaise =
-    (showTax ? tax.grandTotalPaise : (subtotalPaise ?? 0)) - discount;
+    (showTax ? tax.grandTotalPaise : (subtotalPaise ?? 0) - groupDiscount) - discount;
+  const discountedBuckets = billing?.buckets.filter((b) => b.discountPaise > 0) ?? [];
   return (
     <div className="flex flex-col gap-4">
       <h2 className="text-sm font-semibold text-foreground">Order summary</h2>
@@ -908,6 +703,13 @@ function Summary({
             {priced ? formatPaise(subtotalPaise ?? 0) : "—"}
           </dd>
         </div>
+
+        {priced && groupDiscount > 0 ? (
+          <BucketDiscountRows
+            totalPaise={groupDiscount}
+            buckets={discountedBuckets}
+          />
+        ) : null}
 
         {coupon && priced ? (
           <div className="flex items-center justify-between text-emerald-700 dark:text-emerald-300">
@@ -1114,6 +916,166 @@ function Summary({
 }
 
 /**
+ * "Bucket discounts" row in the Summary with a collapsible per-bucket
+ * breakdown ("Dealer brands · 6% · −₹1,500"). Only mounted for a priced
+ * viewer with a non-zero group discount.
+ */
+function BucketDiscountRows({
+  totalPaise,
+  buckets,
+}: {
+  totalPaise: number;
+  buckets: Bucket[];
+}) {
+  const reduced = useReducedMotion();
+  const [open, setOpen] = React.useState(false);
+  const panelId = React.useId();
+  const collapsible = buckets.length > 0;
+  return (
+    <>
+      <div className="flex items-center justify-between text-emerald-700 dark:text-emerald-300">
+        <dt className="flex items-center gap-1.5">
+          Bucket discounts
+          {collapsible ? (
+            <button
+              type="button"
+              onClick={() => setOpen((o) => !o)}
+              aria-expanded={open}
+              aria-controls={panelId}
+              className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[0.7rem] font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Breakdown
+              <ChevronDown
+                className={cn("size-3 transition-transform", open && "rotate-180")}
+                aria-hidden
+              />
+            </button>
+          ) : null}
+        </dt>
+        <dd className="font-medium tabular-nums">−{formatPaise(totalPaise)}</dd>
+      </div>
+      <AnimatePresence initial={false}>
+        {open && collapsible ? (
+          <motion.div
+            id={panelId}
+            key="breakdown"
+            initial={reduced ? false : { opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={reduced ? { opacity: 0 } : { opacity: 0, height: 0 }}
+            transition={{ duration: reduced ? 0 : 0.18 }}
+            className="overflow-hidden"
+          >
+            <div className="flex flex-col gap-1 pl-3 text-[0.75rem] text-muted-foreground">
+              {buckets.map((b) => (
+                <div key={b.code} className="flex items-center justify-between gap-2">
+                  <dt className="min-w-0 truncate">
+                    {b.name}
+                    {b.appliedTier ? ` · ${formatBps(b.appliedTier.percentBps)}` : ""}
+                  </dt>
+                  <dd className="tabular-nums">−{formatPaise(b.discountPaise)}</dd>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </>
+  );
+}
+
+interface BucketedLinesProps {
+  billing: BucketedCart;
+  lines: CartLineData[];
+  pending: ReadonlySet<string>;
+  canOrder: boolean;
+  priced: boolean;
+  reduced: boolean | null;
+  onRemove: (line: CartLineData) => void;
+  onChangeQuantity: (line: CartLineData, nextQty: number) => void;
+  onPatch: (line: CartLineData, patch: (l: CartLineData) => CartLineData) => void;
+}
+
+/**
+ * The cart split into bucket cards. Each bucket renders its own lines; any
+ * line the mirror didn't bucket (unavailable / unpriced — not orderable) is
+ * listed after the cards so nothing in the cart ever disappears.
+ */
+function BucketedLines({
+  billing,
+  lines,
+  pending,
+  canOrder,
+  priced,
+  reduced,
+  onRemove,
+  onChangeQuantity,
+  onPatch,
+}: BucketedLinesProps) {
+  const byKey = new Map(lines.map((l) => [lineKey(l), l] as const));
+  const placed = new Set<string>();
+  const groups = billing.buckets.map((bucket) => {
+    const bucketLines: CartLineData[] = [];
+    for (const l of bucket.lines) {
+      const line = byKey.get(l.key);
+      if (!line) continue;
+      placed.add(l.key);
+      bucketLines.push(line);
+    }
+    return { bucket, lines: bucketLines };
+  });
+  const leftovers = lines.filter((l) => !placed.has(lineKey(l)));
+
+  const row = (line: CartLineData) => {
+    const key = lineKey(line);
+    return (
+      <CartLineRow
+        key={key}
+        line={line}
+        busy={pending.has(key)}
+        canOrder={canOrder}
+        priced={priced}
+        reduced={reduced}
+        onRemove={onRemove}
+        onChangeQuantity={onChangeQuantity}
+        onPatch={onPatch}
+      />
+    );
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <AnimatePresence mode="popLayout" initial={false}>
+        {groups.map(({ bucket, lines: bucketLines }) => (
+          <BucketCard key={bucket.code} bucket={bucket} priced={priced}>
+            <ul className="flex flex-col gap-3">
+              <AnimatePresence mode="popLayout" initial={false}>
+                {bucketLines.map(row)}
+              </AnimatePresence>
+            </ul>
+          </BucketCard>
+        ))}
+      </AnimatePresence>
+
+      {leftovers.length > 0 ? (
+        <section aria-labelledby="cart-not-orderable">
+          <h2
+            id="cart-not-orderable"
+            className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+          >
+            Not orderable
+          </h2>
+          <ul className="flex flex-col gap-3">
+            <AnimatePresence mode="popLayout" initial={false}>
+              {leftovers.map(row)}
+            </AnimatePresence>
+          </ul>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+/**
  * The GST breakdown rows inside the Summary: taxable base, then CGST+SGST
  * (intra-state) OR IGST (inter-state) OR a single combined "GST" line (no place
  * of supply), plus any invoice round-off. Amounts are the live preview.
@@ -1159,64 +1121,5 @@ function TaxLines({ tax }: { tax: CartTaxSummary }) {
         </div>
       ) : null}
     </>
-  );
-}
-
-/**
- * Editable quantity (the "hard to click + one by one" fix): type any number,
- * committed on blur / Enter through the SAME clamp as the server (MOQ floor,
- * pack rounding, admin max). Escape restores the current value. The draft is
- * local so typing never fires network calls per keystroke.
- */
-function QtyInput({
-  value,
-  busy,
-  disabled,
-  commit,
-}: {
-  value: number;
-  busy: boolean;
-  disabled: boolean;
-  commit: (raw: number) => void;
-}) {
-  const [draft, setDraft] = React.useState<string | null>(null);
-
-  function submit() {
-    if (draft == null) return;
-    const parsed = Number.parseInt(draft, 10);
-    setDraft(null);
-    if (!Number.isFinite(parsed) || parsed === value) return;
-    commit(parsed);
-  }
-
-  if (busy) {
-    return (
-      <span className="inline-flex w-14 items-center justify-center">
-        <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
-      </span>
-    );
-  }
-  return (
-    <input
-      type="text"
-      inputMode="numeric"
-      pattern="[0-9]*"
-      aria-label="Quantity"
-      value={draft ?? String(value)}
-      disabled={disabled}
-      onFocus={(e) => e.currentTarget.select()}
-      onChange={(e) => setDraft(e.target.value.replace(/[^0-9]/g, ""))}
-      onBlur={submit}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          e.currentTarget.blur();
-        } else if (e.key === "Escape") {
-          setDraft(null);
-          e.currentTarget.blur();
-        }
-      }}
-      className="w-14 border-0 bg-transparent text-center text-sm font-medium tabular-nums outline-none focus-visible:bg-muted/50 disabled:opacity-50"
-    />
   );
 }

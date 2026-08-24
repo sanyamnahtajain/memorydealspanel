@@ -13,7 +13,7 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { Button } from "@/components/ui/button";
 import { FadeUp } from "@/components/motion/primitives";
 import { renderPriceSlot } from "@/components/storefront/priceSlot";
-import { buildWhatsAppEnquiryLink } from "@/components/storefront/product";
+import { whatsappEnquiryHrefForViewer } from "@/server/contact";
 import { WishlistGrid, type WishlistCardData } from "./WishlistCard";
 
 /**
@@ -67,7 +67,8 @@ export default async function WishlistPage() {
       moq: p.moq,
       stockStatus: p.stockStatus,
       note: entry.note,
-      enquireHref: buildWhatsAppEnquiryLink({
+      // Gated per viewer: null (locked button) unless access is live.
+      enquireHref: whatsappEnquiryHrefForViewer(viewer, {
         productName: p.name,
         sku: p.sku,
       }),

@@ -47,6 +47,8 @@ export interface VariantProductViewProps {
   footer?: React.ReactNode;
   /** Google-only access gate — routes "Request access" to Google when set. */
   googleGateHref?: string | null;
+  /** Shop WhatsApp number — server-gated; `null` when the viewer can't contact. */
+  whatsappNumber: string | null;
 }
 
 export function VariantProductView({
@@ -62,6 +64,7 @@ export function VariantProductView({
   header,
   footer,
   googleGateHref = null,
+  whatsappNumber,
 }: VariantProductViewProps) {
   const [selectedImages, setSelectedImages] =
     React.useState<PublicProductImage[]>(productImages);
@@ -92,6 +95,7 @@ export function VariantProductView({
           {header}
           <VariantSelector
             googleGateHref={googleGateHref}
+            whatsappNumber={whatsappNumber}
             productName={productName}
             productId={productId}
             moq={moq}

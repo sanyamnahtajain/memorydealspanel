@@ -14,6 +14,15 @@ import {
   sanitizeNote as sanitizeRequirementNote,
   sanitizeAttachments,
 } from "@/lib/requirement-notes";
+import { autoExtendOnOrder } from "./access";
+import { bucketizeCartLines } from "./billing-groups";
+import type { BucketedCart } from "@/lib/billing-groups/types";
+import {
+  lineKey,
+  parseOrderBillingSnapshot,
+  toOrderBillingSnapshot,
+  type OrderBillingSnapshot,
+} from "@/lib/billing-groups/snapshot";
 import { publicBaseOrEmpty } from "@/server/storage/r2";
 import { getMinOrderValuePaise } from "@/server/services/store-settings";
 import {
@@ -165,6 +174,8 @@ export interface PricedCartLine {
   name: string;
   sku: string;
   brand: string | null;
+  /** Brand-master id (null for legacy free-text brands) — drives billing groups. */
+  brandId: string | null;
   variantLabel: string | null;
   slug: string;
   imageUrl: string | null;
@@ -215,6 +226,12 @@ export interface PricedCart {
    * re-derives it.
    */
   taxPreview: CartTaxPreview | null;
+  /**
+   * The orderable lines bucketed by the CURRENT billing-group rules, with each
+   * bucket's tiered discount (line keys = `lineKey(productId, variantId)`).
+   * A cart with no matching groups is one General bucket, zero discount.
+   */
+  billing: BucketedCart;
 }
 
 /**
@@ -252,6 +269,7 @@ const CART_PRODUCT_SELECT = {
   slug: true,
   sku: true,
   brand: true,
+  brandId: true,
   brandRef: { select: { name: true } },
   price: true,
   moq: true,
@@ -437,6 +455,7 @@ function priceLine(
     name: product.name,
     sku: product.sku,
     brand: product.brandRef?.name ?? product.brand ?? null,
+    brandId: product.brandId ?? null,
     variantLabel: null,
     slug: product.slug,
     imageUrl: primaryImageUrl(product.images),
@@ -639,6 +658,7 @@ export async function priceCartForCustomer(customerId: string): Promise<PricedCa
       itemCount: 0,
       lineCount: 0,
       taxPreview: null,
+      billing: await bucketizeCartLines([]),
     };
   }
 
@@ -696,8 +716,22 @@ export async function priceCartForCustomer(customerId: string): Promise<PricedCa
   const subtotalPaise = orderableLines.reduce((sum, l) => sum + l.lineTotalPaise, 0);
   const itemCount = orderableLines.reduce((sum, l) => sum + l.quantity, 0);
 
-  // GST preview over the orderable lines (null when the kill-switch is off).
-  const computed = computeOrderTax(orderableLines, ctx, placeOfSupply);
+  // Billing groups: bucket the orderable lines under the CURRENT rules.
+  const billing = await bucketizeCartLines(
+    orderableLines.map((l) => ({
+      key: lineKey(l.productId, l.variantId),
+      brandId: l.brandId,
+      lineTotalPaise: l.lineTotalPaise,
+    })),
+  );
+
+  // GST preview over the orderable lines (null when the kill-switch is off),
+  // on the group-DISCOUNTED line values — the same base placement taxes.
+  const computed = computeOrderTax(
+    applyGroupDiscountToLines(orderableLines, billing),
+    ctx,
+    placeOfSupply,
+  );
   const taxPreview: CartTaxPreview | null = computed
     ? {
         supplyType: computed.order.supplyType,
@@ -719,7 +753,53 @@ export async function priceCartForCustomer(customerId: string): Promise<PricedCa
     itemCount,
     lineCount: orderableLines.length,
     taxPreview,
+    billing,
   };
+}
+
+/** Per-line billing-group discount share, keyed by `lineKey`. */
+function groupDiscountByLine(billing: BucketedCart): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const bucket of billing.buckets) {
+    for (const line of bucket.lines) map.set(line.key, line.discountPaise);
+  }
+  return map;
+}
+
+/** The same lines with each total reduced by its billing-group discount share. */
+function applyGroupDiscountToLines(
+  lines: PricedCartLine[],
+  billing: BucketedCart,
+): PricedCartLine[] {
+  if (billing.groupDiscountPaise === 0) return lines;
+  const byLine = groupDiscountByLine(billing);
+  return lines.map((l) => ({
+    ...l,
+    lineTotalPaise: l.lineTotalPaise - (byLine.get(lineKey(l.productId, l.variantId)) ?? 0),
+  }));
+}
+
+/**
+ * Coupon-eligible view of the lines: post-group-discount totals, and ZERO for
+ * lines in a bucket whose group forbids coupon stacking (they're invisible to
+ * the coupon, so its eligible subtotal excludes them).
+ */
+function couponLinesFor(
+  lines: PricedCartLine[],
+  billing: BucketedCart,
+): { productId: string; lineTotalPaise: number }[] {
+  const byLine = groupDiscountByLine(billing);
+  const noStack = new Set<string>();
+  for (const bucket of billing.buckets) {
+    if (!bucket.couponStacking) for (const line of bucket.lines) noStack.add(line.key);
+  }
+  return lines.map((l) => {
+    const key = lineKey(l.productId, l.variantId);
+    return {
+      productId: l.productId,
+      lineTotalPaise: noStack.has(key) ? 0 : l.lineTotalPaise - (byLine.get(key) ?? 0),
+    };
+  });
 }
 
 /**
@@ -780,6 +860,8 @@ export interface OrderItemSnapshot {
   name: string;
   sku: string;
   brand: string | null;
+  /** Brand-master id at placement; absent on pre-feature orders / legacy brands. */
+  brandId?: string;
   variantLabel: string | null;
   slug: string;
   imageUrl: string | null;
@@ -809,6 +891,7 @@ function toSnapshot(line: PricedCartLine, tax?: OrderItemTaxSnapshot): OrderItem
     quantity: line.quantity,
     unitPricePaise: line.unitPricePaise,
     lineTotalPaise: line.lineTotalPaise,
+    ...(line.brandId ? { brandId: line.brandId } : {}),
     ...(tax ? { tax } : {}),
     ...(line.breakdown && line.breakdown.length > 0
       ? { breakdown: line.breakdown }
@@ -1029,6 +1112,8 @@ export interface CustomerOrder {
    * later catalog / profile change never mutates it.
    */
   tax: OrderTaxSnapshot | null;
+  /** Frozen billing-group snapshot, or `null` for a pre-feature order. */
+  billing: OrderBillingSnapshot | null;
 }
 
 /** A random, non-enumerable public order reference, e.g. "MD-4F8K2Q7ZX1AB". */
@@ -1164,16 +1249,20 @@ async function placeOrderLocked(
     };
   }
 
+  // (4a1) Billing groups — bucket discount, decided by the CURRENT rules and
+  // frozen onto the order below. Runs FIRST: the coupon then sees the
+  // post-group-discount totals (and nothing from a no-stacking bucket).
+  const billing = cart.billing;
+  const groupDiscountPaise = billing.groupDiscountPaise;
+  const billingSnapshot = toOrderBillingSnapshot(billing);
+
   // (4a2) Coupon PREVIEW (no claim yet) — resolves the prospective discount so
   // the minimum-order gate below runs on the DISCOUNTED goods subtotal. The
   // atomic redemption claim happens after the cheap gates, just before the
   // order is created.
   let couponCode: string | null = null;
   let prospectiveDiscountPaise = 0;
-  const couponLines = cart.orderableLines.map((l) => ({
-    productId: l.productId,
-    lineTotalPaise: l.lineTotalPaise,
-  }));
+  const couponLines = couponLinesFor(cart.orderableLines, billing);
   if (input.couponCode) {
     const quote = await previewCoupon(input.couponCode, couponLines);
     if (!quote.ok) {
@@ -1193,7 +1282,8 @@ async function placeOrderLocked(
   // authoritative gate is here so a stale client can never place below it.
   // Runs on the DISCOUNTED goods subtotal (a coupon can't cheat the floor).
   const minOrderValuePaise = await getMinOrderValuePaise();
-  const gatedSubtotalPaise = cart.subtotalPaise - prospectiveDiscountPaise;
+  const gatedSubtotalPaise =
+    cart.subtotalPaise - groupDiscountPaise - prospectiveDiscountPaise;
   if (minOrderValuePaise !== null && gatedSubtotalPaise < minOrderValuePaise) {
     const shortfall = minOrderValuePaise - gatedSubtotalPaise;
     return {
@@ -1251,28 +1341,29 @@ async function placeOrderLocked(
     loadTaxContext(),
     resolvePlaceOfSupply(customerId),
   ]);
-  // GST runs on the DISCOUNTED line values: the order-level discount is split
-  // across lines proportionally (integer-exact, largest remainder) and each
-  // line's taxable amount is its total minus its share.
-  // A scoped coupon (e.g. six specific products in a 20-line cart) spreads
-  // its discount across the ELIGIBLE lines only — ineligible lines keep their
-  // full taxable value.
+  // GST runs on the DISCOUNTED line values: first each line's billing-group
+  // share (already allocated per line by the engine), then the coupon's
+  // order-level discount split proportionally (integer-exact, largest
+  // remainder) across its ELIGIBLE lines — ineligible lines keep their full
+  // taxable value. A scoped coupon (e.g. six specific products in a 20-line
+  // cart) spreads across those lines only.
+  const groupedLines = applyGroupDiscountToLines(cart.orderableLines, billing);
   const scopeSet = couponScope.length > 0 ? new Set(couponScope) : null;
   const discountAlloc =
     discountPaise > 0
       ? allocateDiscount(
-          cart.orderableLines.map((l) =>
-            scopeSet === null || scopeSet.has(l.productId) ? l.lineTotalPaise : 0,
+          couponLines.map((cl) =>
+            scopeSet === null || scopeSet.has(cl.productId) ? cl.lineTotalPaise : 0,
           ),
           discountPaise,
         )
       : null;
   const taxLines = discountAlloc
-    ? cart.orderableLines.map((l, i) => ({
+    ? groupedLines.map((l, i) => ({
         ...l,
         lineTotalPaise: l.lineTotalPaise - discountAlloc[i],
       }))
-    : cart.orderableLines;
+    : groupedLines;
   const computed = computeOrderTax(taxLines, ctx, placeOfSupply);
 
   const items = cart.orderableLines.map((line, i) =>
@@ -1301,6 +1392,8 @@ async function placeOrderLocked(
       computed?.order ?? null,
       couponCode,
       discountPaise,
+      groupDiscountPaise,
+      billingSnapshot,
     );
   } catch (error) {
     if (isWriteConflict(error)) {
@@ -1323,6 +1416,29 @@ async function placeOrderLocked(
   void notifyAdminsOfOrder(order.orderNumber, cart.itemCount, cart.subtotalPaise).catch((err) => {
     console.error("[orders] admin notification failed:", err);
   });
+
+  // (8) Auto-renew access (owner request): an active buyer whose finite access
+  // expires within 30 days gets +30 days on placing an order. Fire-and-forget
+  // and only ever EXTENDS a live grant — it can never fail or shorten anything.
+  void autoExtendOnOrder(customerId)
+    .then((outcome) => {
+      if (!outcome.extended) return;
+      return writeAudit({
+        actorType: "system",
+        actorId: "auto-renew-on-order",
+        action: "access.autoExtend",
+        entity: "Customer",
+        entityId: customerId,
+        diff: {
+          orderNumber,
+          previousExpiresAt: outcome.previousExpiresAt.toISOString(),
+          expiresAt: outcome.expiresAt.toISOString(),
+        },
+      });
+    })
+    .catch((err) => {
+      console.error("[orders] access auto-renewal failed:", err);
+    });
   void writeAudit({
     actorType: "customer",
     actorId: customerId,
@@ -1355,7 +1471,10 @@ function placeOrderTransaction(
   tax: OrderTaxSnapshot | null,
   couponCode: string | null = null,
   discountPaise = 0,
+  groupDiscountPaise = 0,
+  billingSnapshot: OrderBillingSnapshot | null = null,
 ): Promise<OrderRow> {
+  const totalDiscountPaise = discountPaise + groupDiscountPaise;
   // The order-level GST columns. When `tax` is null (kill-switch off) they are
   // ALL left at their schema defaults/null and `taxApplied` is false — the order
   // is byte-for-byte a pre-GST order (subtotalPaise remains the effective total).
@@ -1390,10 +1509,17 @@ function placeOrderTransaction(
         // Coupon frozen at placement (explicit null — absent ≠ null on Mongo).
         couponCode,
         discountPaise: discountPaise > 0 ? discountPaise : null,
-        // Pre-GST orders have no tax grand total; with a discount the
+        // Billing groups — the bucket discount total + the frozen bucket
+        // snapshot. Both OMITTED (absent, not null) when there's nothing, so
+        // such orders stay byte-for-byte pre-feature.
+        ...(groupDiscountPaise > 0 ? { groupDiscountPaise } : {}),
+        ...(billingSnapshot
+          ? { billingGroups: billingSnapshot as unknown as Prisma.InputJsonValue }
+          : {}),
+        // Pre-GST orders have no tax grand total; with ANY discount the
         // effective total is no longer the subtotal, so freeze it here.
-        ...(tax === null && discountPaise > 0
-          ? { grandTotalPaise: cart.subtotalPaise - discountPaise }
+        ...(tax === null && totalDiscountPaise > 0
+          ? { grandTotalPaise: cart.subtotalPaise - totalDiscountPaise }
           : {}),
         ...taxFields,
       },
@@ -1519,6 +1645,7 @@ function toCustomerOrder(order: OrderRow): CustomerOrder {
     discountPaise: order.discountPaise ?? 0,
     placedAt: order.placedAt,
     tax: toOrderTaxSnapshot(order),
+    billing: parseOrderBillingSnapshot(order.billingGroups),
   };
 }
 

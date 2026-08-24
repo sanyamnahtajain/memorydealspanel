@@ -79,3 +79,15 @@ export function canSeePrices(viewer: ViewerContext): boolean {
     viewer.status === "APPROVED"
   );
 }
+
+/**
+ * The single WhatsApp-contact gate (owner request): the shop's WhatsApp is
+ * reachable ONLY by viewers whose price access is live — exactly the
+ * `canSeePrices` set. Anyone else (anon visitors from Instagram, PENDING /
+ * REJECTED / EXPIRED / BLOCKED customers) gets a "request access" affordance
+ * instead of a wa.me link, so the number never reaches them. Kept as its own
+ * predicate so the two policies can diverge later without a hunt.
+ */
+export function canContactOnWhatsApp(viewer: ViewerContext): boolean {
+  return canSeePrices(viewer);
+}

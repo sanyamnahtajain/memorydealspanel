@@ -8,6 +8,10 @@ import {
   type OrderItemTaxSnapshot,
   type OrderTaxSnapshot,
 } from "@/server/services/orders";
+import {
+  parseOrderBillingSnapshot,
+  type OrderBillingSnapshot,
+} from "@/lib/billing-groups/snapshot";
 
 /**
  * Order service layer — reads and status management over the `Order`
@@ -233,6 +237,8 @@ export interface OrderDetail extends OrderListItem {
   discountPaise: number;
   /** Frozen order-level GST snapshot, or null for a pre-GST order. */
   tax: OrderTaxSnapshot | null;
+  /** Frozen billing-group snapshot, or null for a pre-feature order. */
+  billing: OrderBillingSnapshot | null;
 }
 
 /** The full set of Order GST columns needed to rebuild the frozen snapshot. */
@@ -405,6 +411,8 @@ export async function getOrder(id: string): Promise<OrderDetail | null> {
       adminNote: true,
       couponCode: true,
       discountPaise: true,
+      groupDiscountPaise: true,
+      billingGroups: true,
     },
   });
   if (!row) return null;
@@ -416,6 +424,7 @@ export async function getOrder(id: string): Promise<OrderDetail | null> {
     couponCode: row.couponCode ?? null,
     discountPaise: row.discountPaise ?? 0,
     tax: toOrderTaxSnapshot(row),
+    billing: parseOrderBillingSnapshot(row.billingGroups),
   };
 }
 
@@ -601,6 +610,7 @@ export async function getCustomerOrderByNumber(
       note: true,
       couponCode: true,
       discountPaise: true,
+      billingGroups: true,
     },
   });
   if (!row) return null;
@@ -617,5 +627,6 @@ export async function getCustomerOrderByNumber(
     couponCode: row.couponCode ?? null,
     discountPaise: row.discountPaise ?? 0,
     tax: toOrderTaxSnapshot(row),
+    billing: parseOrderBillingSnapshot(row.billingGroups),
   };
 }

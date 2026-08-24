@@ -2,6 +2,7 @@ import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf
 
 import { prisma } from "@/server/db";
 import { APP_NAME, CONTACT } from "@/lib/constants";
+import { BUSINESS_PHONE } from "@/server/contact";
 
 /**
  * Catalogue / price-list PDF (owner request) — a downloadable product PDF for
@@ -179,7 +180,7 @@ export async function renderCatalogPdf(
       // Estimate-bill style masthead: store name, phone, address.
       drawText(APP_NAME.toUpperCase(), MARGIN, 20, bold, INK, "center", usableW);
       y -= 16;
-      drawText(`PH: ${CONTACT.phoneDisplay}`, MARGIN, 11, bold, INK, "center", usableW);
+      drawText(`PH: ${BUSINESS_PHONE.display}`, MARGIN, 11, bold, INK, "center", usableW);
       y -= 14;
       drawText(CONTACT.addressLines.slice(1).join(", "), MARGIN, 8.5, helv, MUTED, "center", usableW);
       y -= 16;

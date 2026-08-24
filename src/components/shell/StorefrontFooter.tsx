@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { MapPin, MessageCircle, Phone } from "lucide-react";
+import { MapPin, MessageCircle } from "lucide-react";
 
 import { APP_NAME, APP_TAGLINE, CONTACT } from "@/lib/constants";
 import { Logo } from "@/components/brand/Logo";
@@ -33,6 +33,11 @@ const COLUMNS: { title: string; links: { label: string; href: string }[] }[] = [
 /**
  * Storefront footer: brand blurb, quick links, and contact details. Rendered by
  * StorefrontShell below the page content. Token-styled; works in light/dark.
+ *
+ * NO phone / WhatsApp number here (owner request): this footer is part of the
+ * client shell on every page, so anything in it ships to every visitor. The
+ * shop's number is gated per viewer and surfaces only on product pages and the
+ * Contact page for approved buyers — the footer just points there.
  */
 export function StorefrontFooter() {
   const year = new Date().getFullYear();
@@ -49,24 +54,13 @@ export function StorefrontFooter() {
             </p>
             <ul className="mt-4 space-y-2 text-sm">
               <li>
-                <a
-                  href={`tel:${CONTACT.phoneDisplay.replace(/\s/g, "")}`}
-                  className="inline-flex items-center gap-2 text-muted-foreground transition-colors hover:text-foreground"
-                >
-                  <Phone className="size-4" aria-hidden />
-                  {CONTACT.phoneDisplay}
-                </a>
-              </li>
-              <li>
-                <a
-                  href={`https://wa.me/${CONTACT.whatsappNumber}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <Link
+                  href="/contact"
                   className="inline-flex items-center gap-2 text-muted-foreground transition-colors hover:text-foreground"
                 >
                   <MessageCircle className="size-4" aria-hidden />
-                  WhatsApp
-                </a>
+                  WhatsApp &amp; phone for approved buyers
+                </Link>
               </li>
               <li>
                 <a

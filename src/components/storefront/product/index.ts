@@ -9,8 +9,6 @@ export type {
 } from "./ProductBreadcrumb";
 export { WhatsAppEnquire } from "./WhatsAppEnquire";
 export type { WhatsAppEnquireProps } from "./WhatsAppEnquire";
-export { buildWhatsAppEnquiryLink } from "./whatsapp";
-export type { WaEnquiryInput } from "./whatsapp";
 export { RelatedRail } from "./RelatedRail";
 export type { RelatedRailProps, RelatedRailItem } from "./RelatedRail";
 export { StickyMobileBar } from "./StickyMobileBar";

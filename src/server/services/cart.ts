@@ -3,6 +3,9 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/server/db";
 import type { CustomerViewer, ViewerContext } from "@/server/types/viewer";
 import { canSeePrices } from "@/server/types/viewer";
+import { bucketizeCartLines } from "@/server/services/billing-groups";
+import { lineKey } from "@/lib/billing-groups/snapshot";
+import type { BucketedCart } from "@/lib/billing-groups/types";
 import type { StockStatus } from "@/lib/schemas/shared";
 import {
   MAX_CART_LINES,
@@ -127,6 +130,8 @@ export interface CartLine {
   sku: string;
   /** Brand label, when known (legacy string or brand master name). */
   brand: string | null;
+  /** Brand-master id (null for legacy free-text brands) — drives billing groups. */
+  brandId: string | null;
   /** Primary image url for the line thumbnail, when any. */
   imageUrl: string | null;
   /** Human option label for a variant line, e.g. "20000mAh · Black". */
@@ -226,6 +231,13 @@ export interface Cart {
    * the viewer is gated. Grand total here is what "Place order" will freeze.
    */
   tax: CartTaxSummary | null;
+  /**
+   * Billing groups: the orderable lines bucketed under the CURRENT rules with
+   * each bucket's tiered discount + "add ₹X more" hint — ONLY for a priced
+   * viewer (it carries amounts), else `null`. Line keys are
+   * `lineKey(productId, variantId)`.
+   */
+  billing: BucketedCart | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -286,6 +298,8 @@ interface ResolvedUnit {
   name: string;
   sku: string;
   brand: string | null;
+  /** Brand-master id (null for legacy free-text brands) — drives billing groups. */
+  brandId: string | null;
   imageUrl: string | null;
   variantLabel: string | null;
   moq: number;
@@ -314,6 +328,7 @@ const PRODUCT_SELECT = {
   name: true,
   sku: true,
   brand: true,
+  brandId: true,
   brandRef: { select: { name: true } },
   price: true,
   moq: true,
@@ -488,6 +503,7 @@ async function resolveUnit(
         name: product.name,
         sku: product.sku,
         brand: baseBrand,
+    brandId: product.brandId ?? null,
         imageUrl: firstImageUrl(product),
         variantLabel: null,
         moq: normaliseMoq(product.moq),
@@ -514,6 +530,7 @@ async function resolveUnit(
     name: product.name,
     sku: product.sku,
     brand: baseBrand,
+    brandId: product.brandId ?? null,
     imageUrl: firstImageUrl(product),
     variantLabel: null,
     moq: normaliseMoq(product.moq),
@@ -544,6 +561,7 @@ function resolveVariantUnit(
     name: product.name,
     sku: variant.sku,
     brand: baseBrand,
+    brandId: product.brandId ?? null,
     imageUrl: firstImageUrl(product),
     variantLabel: variantLabel(variant.optionValues),
     moq: normaliseMoq(variant.moq ?? product.moq),
@@ -637,6 +655,7 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
     let name: string;
     let sku: string;
     let brand: string | null;
+    let brandId: string | null;
     let imageUrl: string | null;
     let variantLbl: string | null;
     let moq: number;
@@ -652,6 +671,7 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
       name = "Unavailable product";
       sku = "";
       brand = null;
+      brandId = null;
       imageUrl = null;
       variantLbl = null;
       moq = MIN_QTY_PER_LINE;
@@ -664,6 +684,7 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
       name = unit.name;
       sku = unit.sku;
       brand = unit.brand;
+      brandId = unit.brandId;
       imageUrl = unit.imageUrl;
       variantLbl = unit.variantLabel;
       moq = unit.moq;
@@ -737,6 +758,7 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
       name,
       sku,
       brand,
+      brandId,
       imageUrl,
       variantLabel: variantLbl,
       quantity: row.quantity,
@@ -800,6 +822,22 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
     };
   }
 
+  // Billing groups (priced viewers only — the result carries amounts): bucket
+  // the ORDERABLE lines under the current rules. One indexed read, done once
+  // for the whole cart (never inside the per-line loop).
+  let billing: BucketedCart | null = null;
+  if (priced) {
+    billing = await bucketizeCartLines(
+      lines
+        .filter((l) => l.available && l.lineTotalPaise !== null)
+        .map((l) => ({
+          key: lineKey(l.productId, l.variantId),
+          brandId: l.brandId,
+          lineTotalPaise: l.lineTotalPaise as number,
+        })),
+    );
+  }
+
   return {
     lines,
     itemCount,
@@ -807,6 +845,7 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
     subtotalPaise: priced ? subtotalPaise : null,
     priced,
     tax,
+    billing,
   };
 }
 

@@ -24,6 +24,10 @@ import {
   type OrderListItem,
   type CustomerOrderVolume,
 } from "@/server/services/admin-orders";
+import {
+  toOrderBillingView,
+  type OrderBillingView,
+} from "@/components/orders/billing/types";
 
 /**
  * Admin order actions — the admin queue's mutating + read surface.
@@ -137,6 +141,8 @@ export interface OrderDetailDTO extends OrderRowDTO {
   adminNote: string | null;
   /** Frozen order-level GST snapshot, or null for a pre-GST order. */
   tax: OrderTaxDTO | null;
+  /** Frozen billing buckets + bucket discounts, or null for a pre-feature order. */
+  billing: OrderBillingView | null;
 }
 
 function toRowDTO(item: OrderListItem): OrderRowDTO {
@@ -219,6 +225,7 @@ function toDetailDTO(detail: OrderDetail): OrderDetailDTO {
           })),
         }
       : null,
+    billing: toOrderBillingView(detail.billing, detail.orderNumber),
   };
 }
 

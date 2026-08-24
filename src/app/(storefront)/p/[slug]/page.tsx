@@ -35,9 +35,12 @@ import {
   RelatedRail,
   type RelatedRailItem,
   StickyMobileBar,
-  buildWhatsAppEnquiryLink,
   VariantProductView,
 } from "@/components/storefront/product";
+import {
+  whatsappEnquiryHrefForViewer,
+  whatsappNumberForViewer,
+} from "@/server/contact";
 import { ProductPriceArea } from "./ProductPriceArea";
 import { RequirementPrompt } from "@/components/storefront/requirements/RequirementPrompt";
 import { prisma } from "@/server/db";
@@ -192,10 +195,14 @@ export default async function ProductDetailPage({ params }: PageParams) {
   // the "See price" affordance / a status word.
   const stickyPriceLabel =
     showPrices && hasPrice(product) ? formatPaise(product.price) : undefined;
-  const enquireHref = buildWhatsAppEnquiryLink({
+  // WhatsApp gate (owner request): the wa.me link — and the number the variant
+  // selector needs — exist ONLY for a viewer with live access. Gated viewers
+  // get `null`, and every CTA renders a locked "request access" affordance.
+  const enquireHref = whatsappEnquiryHrefForViewer(viewer, {
     productName: product.name,
     sku: product.sku,
   });
+  const whatsappNumber = whatsappNumberForViewer(viewer);
 
   // A product opts into variants per-row. When it does, a client coordinator
   // (VariantProductView) owns the gallery + selector so picking a variant
@@ -333,6 +340,7 @@ export default async function ProductDetailPage({ params }: PageParams) {
             googleGateHref={
               googleOAuthConfigured() ? "/auth/google/start?returnTo=/account" : null
             }
+            whatsappNumber={whatsappNumber}
             productName={product.name}
             productImages={product.images}
             productId={product.id}
@@ -410,8 +418,12 @@ export default async function ProductDetailPage({ params }: PageParams) {
                 {/* Inline Enquire — hidden on mobile where the sticky bar owns it. */}
                 <div className="hidden md:block">
                   <WhatsAppEnquire
+                    href={enquireHref}
                     productName={product.name}
-                    sku={product.sku}
+                    status={customerStatus}
+                    googleGateHref={
+                      googleOAuthConfigured() ? "/auth/google/start?returnTo=/account" : null
+                    }
                   />
                 </div>
 

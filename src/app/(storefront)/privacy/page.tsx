@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { APP_NAME, CONTACT, LEGAL_UPDATED } from "@/lib/constants";
+import { APP_NAME, LEGAL_UPDATED } from "@/lib/constants";
 import { ContentPage } from "@/components/storefront/ContentPage";
 
 export const metadata: Metadata = {
@@ -79,11 +79,7 @@ export default function PrivacyPage() {
       <h2>Your choices</h2>
       <p>
         You can request access to, correction of, or deletion of your personal
-        information by contacting us on{" "}
-        <a href={`tel:${CONTACT.phoneDisplay.replace(/\s/g, "")}`}>
-          {CONTACT.phoneDisplay}
-        </a>{" "}
-        or via our Contact page.
+        information via our <a href="/contact">Contact page</a>.
       </p>
 
       <h2>Changes</h2>

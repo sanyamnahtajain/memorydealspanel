@@ -9,6 +9,7 @@ import {
   requestAccessFloodLimiter,
 } from "@/server/security/ratelimit";
 import { verifyTurnstile } from "@/server/security/turnstile";
+import { AUTO_RENEW_ON_ORDER } from "@/lib/constants";
 
 /**
  * Access-lifecycle service — the customer price-access state machine.
@@ -370,6 +371,50 @@ export async function extendGrant(
 
 /** Alias for `extendGrant` — renewing lapsed access is the same operation. */
 export const renewGrant = extendGrant;
+
+/** Who `grantedBy` records for an automatic (no-admin) renewal. */
+export const AUTO_RENEW_GRANTED_BY = "system:auto-renew-on-order";
+
+export type AutoRenewOutcome =
+  | { extended: true; previousExpiresAt: Date; expiresAt: Date }
+  | { extended: false; reason: "no-live-grant" | "never-expires" | "outside-window" };
+
+/**
+ * Auto-renewal on order (owner request). Called right after a successful
+ * placement: if the buyer's LIVE grant is finite and expires within
+ * `AUTO_RENEW_ON_ORDER.WINDOW_DAYS`, push its expiry out by `EXTEND_DAYS`
+ * (stacked onto the current expiry via `extendGrant`, so time is never lost).
+ *
+ * Deliberately conservative — it only ever EXTENDS an already-live grant:
+ *   - no live grant → no-op (ordering requires access, so this is defensive),
+ *   - never-expiring grant → no-op (nothing to renew),
+ *   - more than the window left → no-op (not yet at risk).
+ */
+export async function autoExtendOnOrder(
+  customerId: string,
+  now: Date = new Date(),
+): Promise<AutoRenewOutcome> {
+  const live = await findLiveGrant(customerId, now);
+  if (!live) return { extended: false, reason: "no-live-grant" };
+  if (live.expiresAt === null) return { extended: false, reason: "never-expires" };
+
+  const windowEnd = addDays(now, AUTO_RENEW_ON_ORDER.WINDOW_DAYS);
+  if (live.expiresAt.getTime() > windowEnd.getTime()) {
+    return { extended: false, reason: "outside-window" };
+  }
+
+  const updated = await extendGrant(
+    customerId,
+    AUTO_RENEW_ON_ORDER.EXTEND_DAYS,
+    AUTO_RENEW_GRANTED_BY,
+  );
+  return {
+    extended: true,
+    previousExpiresAt: live.expiresAt,
+    // extendGrant only returns a finite expiry on this path (live was finite).
+    expiresAt: updated.expiresAt ?? addDays(live.expiresAt, AUTO_RENEW_ON_ORDER.EXTEND_DAYS),
+  };
+}
 
 /**
  * Revoke all live grants for a customer (sets `revokedAt`), moves them to

@@ -26,6 +26,8 @@ import { OrderStatusControl } from "./OrderStatusControl";
 import { AdminNoteEditor } from "./AdminNoteEditor";
 import { OrderCsvButton } from "./OrderCsvButton";
 import { OrderTaxBreakup } from "@/components/storefront/orders/OrderTaxBreakup";
+import { OrderBucketSections } from "@/components/orders/billing/OrderBucketSections";
+import { BillingTotalsRows } from "@/components/orders/billing/BillingTotalsRows";
 import type { OrderDetailDTO, OrderLineDTO } from "@/server/actions/admin-orders";
 
 function formatDateTime(iso: string): string {
@@ -39,6 +41,8 @@ function formatDateTime(iso: string): string {
 }
 
 export function OrderDetailPanel({ order }: { order: OrderDetailDTO }) {
+  const groupDiscountPaise = order.billing?.groupDiscountPaise ?? 0;
+  const totalDiscountPaise = groupDiscountPaise + order.discountPaise;
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -65,14 +69,24 @@ export function OrderDetailPanel({ order }: { order: OrderDetailDTO }) {
         {/* Snapshot */}
         <section className="space-y-3">
           <h2 className="text-sm font-semibold text-foreground">Items</h2>
-          <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
-            {order.items.map((line, i) => (
-              <OrderLineRow
-                key={`${line.productId}-${line.variantId ?? ""}-${i}`}
-                line={line}
-              />
-            ))}
-          </ul>
+          {order.billing ? (
+            // Lines grouped by billing bucket (frozen at placement).
+            <OrderBucketSections
+              lines={order.items}
+              billing={order.billing}
+              orderNumber={order.orderNumber}
+              renderLine={(line) => <OrderLineRow line={line} />}
+            />
+          ) : (
+            <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
+              {order.items.map((line, i) => (
+                <OrderLineRow
+                  key={`${line.productId}-${line.variantId ?? ""}-${i}`}
+                  line={line}
+                />
+              ))}
+            </ul>
+          )}
 
           <div className="flex flex-col gap-1.5 rounded-2xl border border-border bg-card p-4">
             <div className="flex items-center justify-between">
@@ -83,6 +97,7 @@ export function OrderDetailPanel({ order }: { order: OrderDetailDTO }) {
                 {formatPaise(order.subtotalPaise)}
               </span>
             </div>
+            <BillingTotalsRows billing={order.billing} />
             {order.discountPaise > 0 ? (
               <div className="flex items-center justify-between text-emerald-700 dark:text-emerald-300">
                 <span className="text-sm font-medium">
@@ -93,11 +108,12 @@ export function OrderDetailPanel({ order }: { order: OrderDetailDTO }) {
                 </span>
               </div>
             ) : null}
-            {order.discountPaise > 0 && !order.tax ? (
+            {/* With GST the frozen grand total (tax breakup below) already nets the discounts. */}
+            {totalDiscountPaise > 0 && !order.tax ? (
               <div className="flex items-center justify-between border-t border-border pt-1.5">
                 <span className="text-sm font-medium text-muted-foreground">Total</span>
                 <span className="text-base font-semibold tabular-nums text-foreground">
-                  {formatPaise(order.subtotalPaise - order.discountPaise)}
+                  {formatPaise(order.subtotalPaise - totalDiscountPaise)}
                 </span>
               </div>
             ) : null}

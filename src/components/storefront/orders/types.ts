@@ -1,5 +1,7 @@
 import type { OrderStatus } from "@prisma/client";
 
+import type { OrderBillingView } from "@/components/orders/billing/types";
+
 /**
  * Client-safe order DTOs for the customer history views. Dates are ISO
  * strings. Price fields are present ONLY when the server decided the viewer
@@ -103,4 +105,9 @@ export interface OrderHistoryDetail {
   priced: boolean;
   /** Frozen order-level GST snapshot, or null when off / gated. */
   tax: OrderHistoryTax | null;
+  /**
+   * Frozen billing buckets + bucket discounts. Amounts are prices, so this is
+   * null when gated — and null for a pre-feature order (renders as before).
+   */
+  billing: OrderBillingView | null;
 }

@@ -71,6 +71,8 @@ const ENTITY_NOUNS: Record<string, string> = {
   request: "access request",
   accessrequest: "access request",
   image: "image",
+  billing_group: "billing group",
+  billinggroup: "billing group",
 };
 
 /**
