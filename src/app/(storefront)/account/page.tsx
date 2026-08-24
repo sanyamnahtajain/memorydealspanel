@@ -60,7 +60,14 @@ export default async function AccountPage({
     redirect(viewer.kind === "admin" ? "/admin/dashboard" : "/account/login");
   }
 
-  const [{ renew, request }, customer, openRequest, notifyTopics] = await Promise.all([
+  const [
+    { renew, request },
+    customer,
+    openRequest,
+    notifyTopics,
+    orderCount,
+    savedCount,
+  ] = await Promise.all([
     searchParams,
     prisma.customer.findUnique({
       where: { id: viewer.customerId },
@@ -93,6 +100,10 @@ export default async function AccountPage({
     // Notification switches for this customer (no prices, no device state —
     // the device half is resolved in the browser by the panel itself).
     getNotifyTopicStates({ kind: "customer", id: viewer.customerId }),
+    // Counts for the hub tiles. Counts only — never an amount, so nothing
+    // here can leak a price to a customer whose access has lapsed.
+    prisma.order.count({ where: { customerId: viewer.customerId } }),
+    prisma.wishlistItem.count({ where: { customerId: viewer.customerId } }),
   ]);
 
   if (!customer) {
@@ -181,14 +192,20 @@ export default async function AccountPage({
         <FadeUp delay={hasLivePrices ? 0.08 : 0.03}>
           <AccountLinksPanel
             cartCount={cartCount ?? 0}
+            orderCount={orderCount}
+            savedCount={savedCount}
             canOrder={hasLivePrices}
+            hasBusinessSection={gstEnabled}
           />
         </FadeUp>
 
         {/* Appearance & preferences — theme, density, default view, motion.
             Applies instantly and is remembered on this device. */}
         <FadeUp delay={0.1}>
-          <div className="space-y-4 rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-sm ring-1 ring-foreground/5 sm:p-7">
+          <div
+            id="account-appearance"
+            className="scroll-mt-24 space-y-4 rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-sm ring-1 ring-foreground/5 sm:p-7"
+          >
             <div className="space-y-1">
               <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
                 Preferences
@@ -228,7 +245,10 @@ export default async function AccountPage({
             resolved client-side inside the panel; only the per-topic choices
             come from the server. */}
         <FadeUp delay={0.12}>
-          <div className="space-y-4 rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-sm ring-1 ring-foreground/5 sm:p-7">
+          <div
+            id="account-alerts"
+            className="scroll-mt-24 space-y-4 rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-sm ring-1 ring-foreground/5 sm:p-7"
+          >
             <div className="space-y-1">
               <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
                 Alerts
@@ -248,7 +268,10 @@ export default async function AccountPage({
             seller has GST enabled; otherwise this card is absent (pre-GST). */}
         {gstEnabled ? (
           <FadeUp delay={0.14}>
-            <div className="space-y-4 rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-sm ring-1 ring-foreground/5 sm:p-7">
+            <div
+              id="account-business"
+              className="scroll-mt-24 space-y-4 rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-sm ring-1 ring-foreground/5 sm:p-7"
+            >
               <div className="space-y-1">
                 <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
                   Tax
