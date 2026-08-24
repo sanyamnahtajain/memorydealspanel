@@ -59,6 +59,26 @@ export interface NotifyTopic {
  */
 const CUSTOMER_TOPICS = [
   {
+    key: "order.placed",
+    audience: "customer",
+    label: "Order placed",
+    description: "A confirmation the moment we receive your order.",
+    defaultOn: true,
+    lockedOn: true,
+    sound: "short",
+    fallbackUrl: "/account/orders",
+  },
+  {
+    key: "cart.reminder",
+    audience: "customer",
+    label: "Items left in cart",
+    description:
+      "A reminder if you added items but did not place the order. At most one per week.",
+    defaultOn: true,
+    sound: "short",
+    fallbackUrl: "/account/cart",
+  },
+  {
     key: "order.status",
     audience: "customer",
     label: "My order updates",

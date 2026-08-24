@@ -41,7 +41,7 @@ import {
 } from "@/lib/allocation";
 import { limit } from "@/server/security/ratelimit";
 import { writeAudit } from "@/server/security/audit";
-import { notifyAdmins } from "@/server/notify/push";
+import { notifyAdmins, notifyCustomer} from "@/server/notify/push";
 import { withPlacementLock } from "@/server/services/placement-lock";
 import type { StockStatus } from "@/lib/schemas/shared";
 import {
@@ -1428,6 +1428,18 @@ async function placeOrderLocked(
   // (7) Notify admins — fire-and-forget; must never fail the placement.
   void notifyAdminsOfOrder(order.orderNumber, cart.itemCount, cart.subtotalPaise).catch((err) => {
     console.error("[orders] admin notification failed:", err);
+  });
+
+  // (7b) Confirm to the BUYER that we have their order. They have just paid
+  // nothing and been redirected, so an alert on their own phone is the only
+  // proof the request landed. Locked-on topic; fire-and-forget like the above.
+  void notifyCustomer(customerId, "order.placed", {
+    title: "We got your order",
+    body: `Order ${order.orderNumber} — ${cart.itemCount} item${cart.itemCount === 1 ? "" : "s"}. We will confirm it shortly.`,
+    url: `/account/orders/${order.orderNumber}`,
+    tag: `order.placed:${order.orderNumber}`,
+  }).catch((err) => {
+    console.error("[orders] customer notification failed:", err);
   });
 
   // (8) Auto-renew access (owner request): an active buyer whose finite access
