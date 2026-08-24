@@ -57,6 +57,8 @@ export interface PendingRequest {
   /** AccessRequest id. */
   id: string;
   customerId: string;
+  /** Filed by an already-known customer re-requesting lapsed access. */
+  renewal: boolean;
   businessName: string;
   contactName: string;
   /** Canonical +91… phone. */
@@ -146,7 +148,7 @@ export function ApprovalSwipeDeck({ requests, searching = false }: ApprovalSwipe
         prev.some((r) => r.id === request.id)
           ? prev
           : [request, ...prev].sort(
-              (a, b) => a.createdAt.localeCompare(b.createdAt),
+              (a, b) => b.createdAt.localeCompare(a.createdAt), // newest first
             ),
       );
     },
@@ -603,6 +605,11 @@ function SwipeCard({
               </p>
             </div>
             <StatusChip variant="pending" />
+                {request.renewal ? (
+                  <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+                    Renewal
+                  </span>
+                ) : null}
           </div>
 
           <dl className="grid w-full grid-cols-1 gap-2 text-sm">
@@ -689,6 +696,11 @@ function RequestList({
                     {request.businessName}
                   </h3>
                   <StatusChip variant="pending" />
+                {request.renewal ? (
+                  <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+                    Renewal
+                  </span>
+                ) : null}
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
                   <span className="inline-flex items-center gap-1.5">
@@ -942,6 +954,11 @@ function SelectableList({
                       {request.businessName}
                     </h3>
                     <StatusChip variant="pending" />
+                {request.renewal ? (
+                  <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+                    Renewal
+                  </span>
+                ) : null}
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
                     <span className="inline-flex items-center gap-1.5">

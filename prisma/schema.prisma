@@ -274,6 +274,9 @@ model AccessRequest {
   customerId String        @db.ObjectId
   customer   Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
   status     RequestStatus @default(PENDING)
+  // True when filed by an ALREADY-KNOWN customer re-requesting lapsed access
+  // (owner request): the admin queue shows these as "Renewal".
+  renewal    Boolean       @default(false)
   reason     String?
   decidedAt  DateTime?
   createdAt  DateTime      @default(now())

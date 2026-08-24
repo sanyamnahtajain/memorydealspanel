@@ -6,6 +6,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { DownloadIcon, ShareIcon, XIcon } from "lucide-react";
 
@@ -26,17 +27,46 @@ interface BeforeInstallPromptEvent extends Event {
 }
 
 /**
- * Re-prompt cadence: a dismissal ("Not now" / ✕ / declining the native sheet)
- * only SNOOZES the prompt for this long. It reappears after the window elapses
- * (on the next visit, or live if the tab stays open) and keeps nudging every
- * 4 hours — UNTIL the app is actually installed, after which it never shows
- * again.
+ * The storefront and the ADMIN panel are two separate PWAs (own manifests,
+ * names, start URLs) — so install state, snooze state, copy and cadence are
+ * per-variant. Without the split, a customer-storefront install on the same
+ * browser profile would silently suppress the ADMIN install prompt forever
+ * (the exact bug this fixes). The admin variant nags more often (owner
+ * request): staff should run the installed app to get ringing order alerts.
  */
-const SNOOZE_MS = 4 * 60 * 60 * 1000; // 4 hours
-/** Epoch-ms of the last dismissal (drives the snooze window). */
-const DISMISS_AT_KEY = "md-pwa-install-dismissed-at";
-/** Set once installed → the prompt is suppressed permanently. */
-const INSTALLED_KEY = "md-pwa-installed";
+type InstallVariant = "storefront" | "admin";
+
+interface VariantConfig {
+  /** Home-screen app title in the prompt. */
+  title: string;
+  /** One-line pitch under the title (non-iOS). */
+  body: string;
+  /** Re-prompt cadence after a dismissal. */
+  snoozeMs: number;
+  installedKey: string;
+  dismissKey: string;
+  /** Which paths this variant lives on (each PWA has its own scope). */
+  onPath: (pathname: string) => boolean;
+}
+
+const VARIANTS: Record<InstallVariant, VariantConfig> = {
+  storefront: {
+    title: "Install MemoryDeals",
+    body: "Add it to your home screen for faster access.",
+    snoozeMs: 4 * 60 * 60 * 1000, // 4h
+    installedKey: "md-pwa-installed",
+    dismissKey: "md-pwa-install-dismissed-at",
+    onPath: (p) => !p.startsWith("/admin"),
+  },
+  admin: {
+    title: "Install TMD Admin",
+    body: "Order alerts ring loudest in the installed app — add it to this device.",
+    snoozeMs: 2 * 60 * 60 * 1000, // 2h — staff should really install it
+    installedKey: "md-pwa-admin-installed",
+    dismissKey: "md-pwa-admin-dismissed-at",
+    onPath: (p) => p.startsWith("/admin"),
+  },
+};
 
 function isStandalone(): boolean {
   if (typeof window === "undefined") return false;
@@ -58,9 +88,9 @@ function isIos(): boolean {
 }
 
 /** Installed for good — a stored flag or an already-standalone session. */
-function isInstalled(): boolean {
+function isInstalled(cfg: VariantConfig): boolean {
   try {
-    if (window.localStorage.getItem(INSTALLED_KEY) === "1") return true;
+    if (window.localStorage.getItem(cfg.installedKey) === "1") return true;
   } catch {
     /* ignore */
   }
@@ -68,29 +98,29 @@ function isInstalled(): boolean {
 }
 
 /** Milliseconds left on the current snooze, or 0 if not snoozed. */
-function snoozeRemaining(): number {
+function snoozeRemaining(cfg: VariantConfig): number {
   try {
-    const raw = window.localStorage.getItem(DISMISS_AT_KEY);
+    const raw = window.localStorage.getItem(cfg.dismissKey);
     const at = raw ? parseInt(raw, 10) : 0;
     if (!at) return 0;
-    const remaining = at + SNOOZE_MS - Date.now();
+    const remaining = at + cfg.snoozeMs - Date.now();
     return remaining > 0 ? remaining : 0;
   } catch {
     return 0;
   }
 }
 
-function markInstalled() {
+function markInstalled(cfg: VariantConfig) {
   try {
-    window.localStorage.setItem(INSTALLED_KEY, "1");
+    window.localStorage.setItem(cfg.installedKey, "1");
   } catch {
     /* ignore */
   }
 }
 
-function markDismissedNow() {
+function markDismissedNow(cfg: VariantConfig) {
   try {
-    window.localStorage.setItem(DISMISS_AT_KEY, String(Date.now()));
+    window.localStorage.setItem(cfg.dismissKey, String(Date.now()));
   } catch {
     /* ignore — snooze simply won't persist across reloads. */
   }
@@ -102,8 +132,8 @@ function markDismissedNow() {
  * - Chromium: captures `beforeinstallprompt`, suppresses the default mini-bar,
  *   and shows a custom card whose CTA triggers the native prompt.
  * - iOS Safari: no install event exists, so shows an Add-to-Home-Screen hint.
- * - Dismissal snoozes for 4h and then re-prompts, repeating until the app is
- *   installed; already-installed (standalone) sessions never see it.
+ * - Dismissal snoozes per variant and then re-prompts, repeating until the app
+ *   is installed; already-installed (standalone) sessions never see it.
  *
  * Token-styled; renders nothing until it has something to show. Safe on both
  * the light storefront and dark admin surfaces.
@@ -113,7 +143,15 @@ function subscribeNoop(): () => void {
   return () => {};
 }
 
-export function InstallPrompt({ className }: { className?: string }) {
+export function InstallPrompt({
+  variant = "storefront",
+  className,
+}: {
+  variant?: InstallVariant;
+  className?: string;
+}) {
+  const cfg = VARIANTS[variant];
+  const pathname = usePathname() ?? "/";
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(
     null,
   );
@@ -131,32 +169,34 @@ export function InstallPrompt({ className }: { className?: string }) {
   // Lazily computed from client state; only ever consulted once `mounted`, so
   // an SSR/CSR difference can't cause a hydration mismatch.
   const [iosHint] = useState(
-    () =>
-      typeof window !== "undefined" && isIos() && !isStandalone(),
+    () => typeof window !== "undefined" && isIos() && !isStandalone(),
   );
   const [snoozed, setSnoozed] = useState(() => {
     if (typeof window === "undefined") return true;
-    return isInstalled() || snoozeRemaining() > 0;
+    return isInstalled(cfg) || snoozeRemaining(cfg) > 0;
   });
 
   // Re-show once the snooze window elapses, unless already installed. Runs in a
   // timeout/handler (never synchronously in an effect), so state updates stay
   // outside the effect body.
-  const scheduleReshow = useCallback((delay: number) => {
-    return window.setTimeout(
-      () => {
-        if (!isInstalled()) setSnoozed(false);
-      },
-      Math.max(0, Math.min(delay, 2 ** 31 - 1)),
-    );
-  }, []);
+  const scheduleReshow = useCallback(
+    (delay: number) => {
+      return window.setTimeout(
+        () => {
+          if (!isInstalled(cfg)) setSnoozed(false);
+        },
+        Math.max(0, Math.min(delay, 2 ** 31 - 1)),
+      );
+    },
+    [cfg],
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (isInstalled()) return; // permanently suppressed
+    if (isInstalled(cfg)) return; // permanently suppressed
 
     // If currently snoozed, arm a timer to reveal when the window elapses.
-    const remaining = snoozeRemaining();
+    const remaining = snoozeRemaining(cfg);
     const timer = remaining > 0 ? scheduleReshow(remaining) : undefined;
 
     const onBeforeInstall = (event: Event) => {
@@ -165,7 +205,7 @@ export function InstallPrompt({ className }: { className?: string }) {
       setHasPrompt(true);
     };
     const onInstalled = () => {
-      markInstalled();
+      markInstalled(cfg);
       setHasPrompt(false);
       setDeferred(null);
       setSnoozed(true);
@@ -179,15 +219,17 @@ export function InstallPrompt({ className }: { className?: string }) {
       window.removeEventListener("beforeinstallprompt", onBeforeInstall);
       window.removeEventListener("appinstalled", onInstalled);
     };
-  }, [scheduleReshow]);
+  }, [cfg, scheduleReshow]);
 
-  const visible = mounted && !snoozed && (hasPrompt || iosHint);
+  // Each variant only lives on its own PWA's paths (separate manifests).
+  const onOwnSurface = cfg.onPath(pathname);
+  const visible = mounted && onOwnSurface && !snoozed && (hasPrompt || iosHint);
 
   const snooze = useCallback(() => {
-    markDismissedNow();
+    markDismissedNow(cfg);
     setSnoozed(true);
-    scheduleReshow(SNOOZE_MS);
-  }, [scheduleReshow]);
+    scheduleReshow(cfg.snoozeMs);
+  }, [cfg, scheduleReshow]);
 
   const install = useCallback(async () => {
     if (!deferred) return;
@@ -196,7 +238,7 @@ export function InstallPrompt({ className }: { className?: string }) {
       await deferred.prompt();
       const choice = await deferred.userChoice;
       if (choice.outcome === "accepted") {
-        markInstalled();
+        markInstalled(cfg);
         setSnoozed(true);
         return;
       }
@@ -207,20 +249,20 @@ export function InstallPrompt({ className }: { className?: string }) {
     } finally {
       setDeferred(null);
     }
-  }, [deferred, snooze]);
+  }, [cfg, deferred, snooze]);
 
   if (!visible) return null;
 
   return (
     <AnimatePresence>
       <motion.div
-        key="pwa-install"
+        key={`pwa-install-${variant}`}
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 12 }}
         transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
         role="dialog"
-        aria-label="Install MemoryDeals"
+        aria-label={cfg.title}
         className={cn(
           "fixed inset-x-3 bottom-3 z-50 mx-auto flex max-w-sm items-start gap-3 rounded-xl border border-border bg-card p-3 text-card-foreground shadow-lg sm:inset-x-auto sm:right-4 sm:left-auto",
           className,
@@ -231,7 +273,7 @@ export function InstallPrompt({ className }: { className?: string }) {
         </span>
 
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium">Install MemoryDeals</p>
+          <p className="text-sm font-medium">{cfg.title}</p>
           {iosHint ? (
             <p className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
               Tap
@@ -239,9 +281,7 @@ export function InstallPrompt({ className }: { className?: string }) {
               then &ldquo;Add to Home Screen&rdquo;.
             </p>
           ) : (
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Add it to your home screen for faster access.
-            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{cfg.body}</p>
           )}
 
           {!iosHint ? (

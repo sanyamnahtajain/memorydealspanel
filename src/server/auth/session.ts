@@ -24,7 +24,22 @@ export { SESSION_COOKIE };
 
 const TOKEN_BYTES = 32; // 256-bit opaque token
 const ADMIN_TTL_MS = 24 * 60 * 60 * 1000; // 24h
-const CUSTOMER_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30d
+const CUSTOMER_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30d idle window (slides on activity)
+/**
+ * Customer cookie horizon (180d). The COOKIE outlives the DB row's sliding
+ * 30-day idle window on purpose: `getSession` extends `expiresAt` while the
+ * customer keeps visiting (see below), and the cookie must still be around to
+ * carry the token. The DB row stays the single source of truth — an idle
+ * 30 days still logs out, cookie or not.
+ */
+const CUSTOMER_COOKIE_TTL_MS = 180 * 24 * 60 * 60 * 1000;
+/**
+ * Customers may stay signed in on a few devices at once (phone PWA + a
+ * browser + the shop desktop). Logins beyond the cap revoke the LEAST
+ * recently used sessions — multi-device is legitimate; mass account-sharing
+ * still gets squeezed. Admins remain strictly single-session.
+ */
+const MAX_CUSTOMER_SESSIONS = 5;
 
 /**
  * Only bump lastSeenAt at most once per this interval to avoid a DB write
@@ -96,23 +111,42 @@ export async function createSession(
   const ttl = subject.kind === "admin" ? ADMIN_TTL_MS : CUSTOMER_TTL_MS;
   const expiresAt = new Date(Date.now() + ttl);
 
-  // SINGLE ACTIVE SESSION: a new login revokes every other live session for
-  // this principal — the newest device wins and the older one is signed out on
-  // its next request. Revoked (not deleted) so the admin Sessions viewer keeps
-  // its audit trail. Runs BEFORE the new row is created, so a crash between
-  // the two steps can never leave two live sessions.
-  await prisma.session.updateMany({
-    where: {
-      ...(subject.kind === "admin"
-        ? { adminId: subject.adminId }
-        : { customerId: subject.customerId }),
-      // Mongo: an omitted optional column is ABSENT, not null — match both so
-      // rows created before this feature (no revokedAt key) are also revoked.
-      OR: [{ revokedAt: null }, { revokedAt: { isSet: false } }],
-      expiresAt: { gt: new Date() },
-    },
-    data: { revokedAt: new Date() },
-  });
+  if (subject.kind === "admin") {
+    // SINGLE ACTIVE SESSION (admins only): a new login revokes every other
+    // live session — the newest device wins. Revoked (not deleted) so the
+    // Sessions viewer keeps its audit trail.
+    await prisma.session.updateMany({
+      where: {
+        adminId: subject.adminId,
+        // Mongo: an omitted optional column is ABSENT, not null — match both so
+        // rows created before this feature (no revokedAt key) are also revoked.
+        OR: [{ revokedAt: null }, { revokedAt: { isSet: false } }],
+        expiresAt: { gt: new Date() },
+      },
+      data: { revokedAt: new Date() },
+    });
+  } else {
+    // CUSTOMERS: multi-device is a feature, not a leak (phone PWA + browser
+    // used to sign each other out — the #1 "frequent logout" complaint).
+    // Enforce only a CAP: keep the (MAX-1) most recently used live sessions
+    // beside the new one; revoke the least-recent overflow.
+    const live = await prisma.session.findMany({
+      where: {
+        customerId: subject.customerId,
+        OR: [{ revokedAt: null }, { revokedAt: { isSet: false } }],
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: { lastSeenAt: "desc" },
+      select: { id: true },
+    });
+    const overflow = live.slice(MAX_CUSTOMER_SESSIONS - 1).map((s) => s.id);
+    if (overflow.length > 0) {
+      await prisma.session.updateMany({
+        where: { id: { in: overflow } },
+        data: { revokedAt: new Date() },
+      });
+    }
+  }
 
   await prisma.session.create({
     data: {
@@ -133,7 +167,12 @@ export async function createSession(
     secure: isProd(),
     sameSite: "lax",
     path: "/",
-    expires: expiresAt,
+    // Customers get the long cookie horizon (the DB row slides within it);
+    // admin cookies stay pinned to the 24h row.
+    expires:
+      subject.kind === "customer"
+        ? new Date(Date.now() + CUSTOMER_COOKIE_TTL_MS)
+        : expiresAt,
   });
 
   return { token, expiresAt };
@@ -171,11 +210,24 @@ export async function getSession(): Promise<Session | null> {
 
   if (now.getTime() - session.lastSeenAt.getTime() >= LAST_SEEN_THROTTLE_MS) {
     try {
+      // SLIDING WINDOW (customers): activity pushes the expiry back out to a
+      // fresh 30-day idle window, so an active buyer is NEVER hard-logged-out
+      // at an arbitrary day-30 cliff (the old fixed window was a top
+      // "frequent logout" cause). Piggybacks on the throttled lastSeen bump —
+      // still at most one write per 5 minutes. Admin rows keep their fixed 24h.
+      const slide =
+        session.customerId !== null
+          ? new Date(now.getTime() + CUSTOMER_TTL_MS)
+          : null;
       await prisma.session.update({
         where: { id: session.id },
-        data: { lastSeenAt: now },
+        data: {
+          lastSeenAt: now,
+          ...(slide && slide > session.expiresAt ? { expiresAt: slide } : {}),
+        },
       });
       session.lastSeenAt = now;
+      if (slide && slide > session.expiresAt) session.expiresAt = slide;
     } catch {
       // A failed throttle bump must not fail the request.
     }

@@ -14,6 +14,7 @@ import {
   extendGrant,
   rejectRequest,
   requestAccess as requestAccessService,
+  requestRenewal,
   revokeGrant,
   type RequestAccessResult,
   snoozeRequest,
@@ -586,5 +587,46 @@ export async function unsnoozeAccessAction(
     });
     revalidate();
     return { ok: true, requestId };
+  });
+}
+
+/**
+ * A SIGNED-IN customer requests renewal of lapsed access (owner flow: "your
+ * access expired → one tap → I get ringed"). No form, no field re-entry —
+ * the service files a renewal-flagged PENDING request from the record we
+ * already hold. Idempotent (an open request returns duplicate: true).
+ */
+export async function requestRenewalAction(): Promise<
+  ActionResult<{ duplicate: boolean }>
+> {
+  return guarded<{ duplicate: boolean }>(async () => {
+    const viewer = await resolveViewer();
+    if (viewer.kind !== "customer") {
+      return { ok: false, error: "Please sign in first." };
+    }
+
+    const result = await requestRenewal(viewer.customerId);
+    if (!result.ok) {
+      switch (result.reason) {
+        case "ACTIVE":
+          return { ok: false, error: "Your access is still active — nothing to renew." };
+        case "BLOCKED":
+          return { ok: false, error: "This account is blocked. Please contact the store." };
+        default:
+          return { ok: false, error: "We couldn't find your account. Please sign in again." };
+      }
+    }
+
+    await writeAudit({
+      actorType: "customer",
+      actorId: viewer.customerId,
+      action: "access.renewalRequest",
+      entity: "Customer",
+      entityId: viewer.customerId,
+      diff: { duplicate: result.duplicate },
+    });
+    revalidatePath("/account");
+    revalidatePath("/admin/requests");
+    return { ok: true, duplicate: result.duplicate };
   });
 }

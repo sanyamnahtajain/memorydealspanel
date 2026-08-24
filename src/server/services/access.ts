@@ -105,7 +105,8 @@ export async function requestAccess(
     if (existing.status === "APPROVED") {
       return {
         ok: false,
-        error: "This number is already approved. Please sign in.",
+        error:
+          "This number is already approved. Sign in with the same Google account or phone number — no new request needed.",
       };
     }
     const pending = await prisma.accessRequest.findFirst({
@@ -431,7 +432,10 @@ export async function revokeGrant(customerId: string): Promise<Customer> {
     where: { id: customerId },
     data: { status: "EXPIRED" },
   });
-  await revokeAllForCustomer(customerId);
+  // IDENTITY ≠ ACCESS (owner principle): expiring access closes the price
+  // gate but NEVER signs the customer out — they stay logged in and see the
+  // "access expired → request renewal" state. (Matches the expiry cron, which
+  // also keeps sessions; only BLOCKING kicks a customer out.)
   return customer;
 }
 
@@ -587,4 +591,79 @@ export async function unsnoozeRequest(
   });
   if (res.count === 0) return { ok: false, error: "NOT_FOUND" };
   return { ok: true };
+}
+
+/* ------------------------------------------------------------------ */
+/* Customer-initiated renewal (owner request)                          */
+/* ------------------------------------------------------------------ */
+
+export type RenewalRequestResult =
+  | { ok: true; duplicate: boolean }
+  | { ok: false; reason: "NOT_FOUND" | "BLOCKED" | "ACTIVE" };
+
+/**
+ * A SIGNED-IN customer asks to renew lapsed access. The identity is already
+ * verified and every business detail is on file, so — unlike the public
+ * request form — this touches NOTHING on the Customer row (no password, no
+ * GSTIN, no status change): it only files a PENDING AccessRequest flagged
+ * `renewal: true` (the admin queue badges it "Renewal") and rings the admin
+ * panel (Notification → SSE takeover + Web Push).
+ *
+ *  - unknown customer  → NOT_FOUND (stale session edge)
+ *  - BLOCKED           → refused (blocking must stay admin-reversible only)
+ *  - live access       → ACTIVE (nothing to renew)
+ *  - open request      → ok, duplicate: true (idempotent — no spam, no dupes)
+ */
+export async function requestRenewal(customerId: string): Promise<RenewalRequestResult> {
+  const customer = await prisma.customer.findUnique({
+    where: { id: customerId },
+    select: { id: true, status: true, businessName: true, phone: true },
+  });
+  if (!customer) return { ok: false, reason: "NOT_FOUND" };
+  if (customer.status === "BLOCKED") return { ok: false, reason: "BLOCKED" };
+  if (
+    customer.status === "APPROVED" &&
+    (await findLiveGrant(customerId, new Date())) !== null
+  ) {
+    return { ok: false, reason: "ACTIVE" };
+  }
+
+  const open = await prisma.accessRequest.findFirst({
+    where: { customerId, status: { in: ["PENDING", "SNOOZED"] } },
+    select: { id: true },
+  });
+  if (open) return { ok: true, duplicate: true };
+
+  await prisma.accessRequest.create({
+    data: { customerId, status: "PENDING", renewal: true },
+  });
+  await notifyAdminsOfRenewal(customerId, customer.businessName, customer.phone);
+  return { ok: true, duplicate: false };
+}
+
+/** Ring the admin panel: Notification row (→ SSE takeover) + Web Push. */
+async function notifyAdminsOfRenewal(
+  customerId: string,
+  businessName: string,
+  phone: string,
+): Promise<void> {
+  try {
+    await prisma.notification.create({
+      data: {
+        type: "renewal_request",
+        payload: { customerId, businessName, phone },
+      },
+    });
+  } catch (error) {
+    console.error("[access] failed to persist renewal notification:", error);
+  }
+  try {
+    await sendPushToAdmin({
+      title: "Access renewal request",
+      body: `${businessName} is asking to renew their price access.`,
+      url: "/admin/requests",
+    });
+  } catch (error) {
+    console.error("[access] renewal push failed:", error);
+  }
 }

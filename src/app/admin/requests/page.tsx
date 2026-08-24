@@ -109,10 +109,13 @@ export default async function AdminRequestsPage({
   const [pendingRows, snoozedRows, decidedRows, decidedTotal] = await Promise.all([
     prisma.accessRequest.findMany({
       where: withSearch({ status: "PENDING" }),
-      orderBy: { createdAt: "asc" },
+      // Newest first (owner request) — with hundreds queued, the fresh ones
+      // must be on top, not a scroll away.
+      orderBy: { createdAt: "desc" },
       select: {
         id: true,
         customerId: true,
+        renewal: true,
         createdAt: true,
         customer: {
           select: {
@@ -127,10 +130,11 @@ export default async function AdminRequestsPage({
     }),
     prisma.accessRequest.findMany({
       where: withSearch({ status: "SNOOZED" }),
-      orderBy: { createdAt: "asc" },
+      orderBy: { createdAt: "desc" },
       select: {
         id: true,
         customerId: true,
+        renewal: true,
         createdAt: true,
         customer: {
           select: {
@@ -247,6 +251,7 @@ export default async function AdminRequestsPage({
   const pending: PendingRequest[] = pendingRows.map((row) => ({
     id: row.id,
     customerId: row.customerId,
+    renewal: row.renewal,
     businessName: row.customer.businessName,
     contactName: row.customer.contactName,
     phone: row.customer.phone,
@@ -258,6 +263,7 @@ export default async function AdminRequestsPage({
   const snoozed: PendingRequest[] = snoozedRows.map((row) => ({
     id: row.id,
     customerId: row.customerId,
+    renewal: row.renewal,
     businessName: row.customer.businessName,
     contactName: row.customer.contactName,
     phone: row.customer.phone,

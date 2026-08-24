@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { prisma } from "@/server/db";
 import { createSession } from "@/server/auth/session";
 import { writeAudit } from "@/server/security/audit";
+import { computeCustomerPriceAccess } from "@/server/services/access";
 import {
   completeGoogleCallback,
   createSignupHandoff,
@@ -60,7 +61,21 @@ export async function GET(req: Request): Promise<Response> {
       entity: "Customer",
       entityId: resolution.customerId,
     });
-    return to(result.returnTo || "/account");
+    // STATUS-AWARE LANDING (owner request): a returning customer whose access
+    // isn't live must never be dumped somewhere that looks like a failed
+    // login. Live access → wherever they came from. Lapsed/expired/rejected →
+    // the account page with the one-tap renewal dialog auto-open. Pending →
+    // the account page's "under review" state.
+    const row = await prisma.customer.findUnique({
+      where: { id: resolution.customerId },
+      select: { status: true },
+    });
+    const live =
+      row?.status === "APPROVED" &&
+      (await computeCustomerPriceAccess(resolution.customerId));
+    if (live) return to(result.returnTo || "/account");
+    if (row?.status === "PENDING") return to("/account");
+    return to("/account?renew=1");
   }
 
   // New visitor → complete the request-access form with the verified email.

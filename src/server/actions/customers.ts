@@ -515,13 +515,15 @@ export async function setCustomerStatusAction(
           error: "Approve grants access — use Approve, not the status field.",
         };
       }
-      // Moving to REJECTED / EXPIRED cuts live access.
+      // Moving to REJECTED / EXPIRED cuts live access — the price gate closes,
+      // but the customer STAYS signed in (identity ≠ access; only blocking
+      // revokes sessions). They see the clear "access expired" state instead
+      // of a mystifying logout.
       if (nextStatus === "REJECTED" || nextStatus === "EXPIRED") {
         await prisma.accessGrant.updateMany({
           where: { customerId, revokedAt: null },
           data: { revokedAt: new Date() },
         });
-        await revokeAllForCustomer(customerId);
       }
       await prisma.customer.update({
         where: { id: customerId },

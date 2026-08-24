@@ -11,6 +11,7 @@ import {
   extendGrant,
   rejectRequest,
   requestAccess,
+  requestRenewal,
   revokeGrant,
   snoozeRequest,
   unsnoozeRequest,
@@ -465,5 +466,70 @@ describe("request-access rate limiting (CGNAT-safe)", () => {
       expect(res.ok, `stranger ${i} behind the shared IP should pass`).toBe(true);
       if (res.ok) created.push(res.customerId);
     }
+  });
+});
+
+describe("requestRenewal (signed-in, one tap — no form)", () => {
+  it("EXPIRED customer: files a renewal-flagged PENDING request + notification, touching NOTHING else", async () => {
+    const id = await makeCustomer("renew-expired");
+    await approveRequest(id, { expiresInDays: 30, grantedBy: ADMIN });
+    // Lapse the grant + status, as the cron would.
+    await prisma.accessGrant.updateMany({
+      where: { customerId: id },
+      data: { expiresAt: new Date(Date.now() - 60_000) },
+    });
+    await prisma.customer.update({ where: { id }, data: { status: "EXPIRED" } });
+    const before = await prisma.customer.findUnique({ where: { id } });
+
+    const result = await requestRenewal(id);
+    expect(result).toEqual({ ok: true, duplicate: false });
+
+    const request = await prisma.accessRequest.findFirst({
+      where: { customerId: id, status: "PENDING" },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(request?.renewal).toBe(true);
+
+    // The identity is untouched: status, password, everything stays.
+    const after = await prisma.customer.findUnique({ where: { id } });
+    expect(after?.status).toBe("EXPIRED");
+    expect(after?.passwordHash).toBe(before?.passwordHash);
+    expect(after?.businessName).toBe(before?.businessName);
+
+    // The admin got ringed.
+    const notif = await prisma.notification.findFirst({
+      where: { type: "renewal_request" },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(notif).not.toBeNull();
+    await prisma.notification.deleteMany({ where: { type: "renewal_request" } });
+  });
+
+  it("is idempotent: a second tap reports duplicate without a second request", async () => {
+    const id = await makeCustomer("renew-dupe");
+    await approveRequest(id, { expiresInDays: 1, grantedBy: ADMIN });
+    await prisma.accessGrant.updateMany({
+      where: { customerId: id },
+      data: { expiresAt: new Date(Date.now() - 60_000) },
+    });
+    await prisma.customer.update({ where: { id }, data: { status: "EXPIRED" } });
+
+    expect(await requestRenewal(id)).toEqual({ ok: true, duplicate: false });
+    expect(await requestRenewal(id)).toEqual({ ok: true, duplicate: true });
+    const open = await prisma.accessRequest.count({
+      where: { customerId: id, status: "PENDING" },
+    });
+    expect(open).toBe(1);
+    await prisma.notification.deleteMany({ where: { type: "renewal_request" } });
+  });
+
+  it("refuses while access is still live, and for blocked accounts", async () => {
+    const live = await makeCustomer("renew-live");
+    await approveRequest(live, { expiresInDays: 30, grantedBy: ADMIN });
+    expect(await requestRenewal(live)).toEqual({ ok: false, reason: "ACTIVE" });
+
+    const blocked = await makeCustomer("renew-blocked");
+    await blockCustomer(blocked);
+    expect(await requestRenewal(blocked)).toEqual({ ok: false, reason: "BLOCKED" });
   });
 });

@@ -88,6 +88,17 @@ const EVENT_META: Record<string, EventMeta> = {
     tune: "request",
     alert: "takeover",
   },
+  renewal_request: {
+    title: "Access renewal request",
+    describe: (p) =>
+      [str(p.businessName), str(p.phone)].filter(Boolean).join(" · ") +
+      " · access lapsed",
+    href: "/admin/requests",
+    actionLabel: "Review renewal",
+    icon: UserPlus,
+    tune: "request",
+    alert: "takeover",
+  },
 };
 
 const FALLBACK_META: EventMeta = {

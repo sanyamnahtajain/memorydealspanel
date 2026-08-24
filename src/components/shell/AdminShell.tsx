@@ -22,6 +22,7 @@ import {
   AdminLiveEvents,
   AdminSoundToggle,
 } from "@/components/admin/notifications/AdminLiveEvents"
+import { InstallPrompt } from "@/components/pwa/InstallPrompt"
 import { TabBadge } from "@/components/shell/TabBadge"
 import { Logo } from "@/components/brand/Logo"
 import {
@@ -198,6 +199,9 @@ export function AdminShell({
             {/* Live event stream (SSE) — one connection per open panel:
                 toast + ring + badge refresh on orders/requests. */}
             <AdminLiveEvents />
+            {/* Frequent "install TMD Admin" nag (2h snooze) until installed —
+                staff get ringing alerts most reliably in the installed app. */}
+            <InstallPrompt variant="admin" />
             <ThemeToggle variant="compact" className="ml-auto" />
             <AdminSoundToggle />
             <Tooltip
