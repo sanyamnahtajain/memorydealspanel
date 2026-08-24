@@ -37,7 +37,10 @@ export interface ExpiryBannerProps {
    * or not expiring soon, the banner renders nothing.
    */
   expiresAt: Date | string | null;
-  /** Where the renewal CTA points. Defaults to the account renewal flow. */
+  /**
+   * Where the renewal CTA points. Defaults to the account page with the
+   * one-tap renewal dialog auto-opened (`?renew=1`).
+   */
   renewHref?: string;
   /**
    * A stable key for the dismissed state so re-approvals surface a fresh
@@ -81,7 +84,7 @@ function subscribeToStorage(onStoreChange: () => void): () => void {
  */
 export function ExpiryBanner({
   expiresAt,
-  renewHref = "/account/renew",
+  renewHref = "/account?renew=1",
   dismissKey,
   className,
 }: ExpiryBannerProps) {
@@ -141,8 +144,8 @@ export function ExpiryBanner({
       <AlertTriangle className="size-4 shrink-0" aria-hidden />
       <p className="min-w-0 flex-1">
         Your price access expires in{" "}
-        <span className="font-semibold">{dayLabel}</span>. Request a renewal to
-        keep seeing wholesale pricing.
+        <span className="font-semibold">{dayLabel}</span>. Place an order before
+        then and your access extends by 30 days automatically.
       </p>
       <Button
         size="sm"

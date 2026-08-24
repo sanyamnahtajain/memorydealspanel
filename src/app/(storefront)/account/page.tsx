@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { googleOAuthConfigured } from "@/server/services/google-auth";
 import { redirect } from "next/navigation";
 
 import { prisma } from "@/server/db";
@@ -14,6 +13,7 @@ import { ExpiryBanner } from "@/components/storefront/ExpiryBanner";
 import { PreferencesPanel } from "@/components/preferences/PreferencesPanel";
 import { AccountLogoutButton } from "./AccountLogoutButton";
 import { AccountRenewalButton } from "./AccountRenewalButton";
+import { resolveAccessState } from "@/lib/access-status";
 import { getSellerTaxProfile } from "@/server/services/tax-profile";
 import { getGstViewPreference } from "@/server/prefs/gst-view";
 import { GstViewToggle } from "@/components/storefront/GstViewToggle";
@@ -47,32 +47,48 @@ function formatExpiry(date: Date): string {
  *
  * PRICE GATE: this page shows NO prices. It reads only status + grant expiry.
  */
-export default async function AccountPage() {
+export default async function AccountPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ renew?: string; request?: string }>;
+}) {
   const viewer = await resolveViewer();
   if (!isCustomer(viewer)) {
     // Admins land on their own dashboard; anon goes to login.
     redirect(viewer.kind === "admin" ? "/admin/dashboard" : "/account/login");
   }
 
-  const customer = await prisma.customer.findUnique({
-    where: { id: viewer.customerId },
-    select: {
-      businessName: true,
-      contactName: true,
-      phone: true,
-      gstNumber: true,
-      placeOfSupplyStateCode: true,
-      accessGrants: {
-        where: {
-          revokedAt: null,
-          OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+  const [{ renew, request }, customer, openRequest] = await Promise.all([
+    searchParams,
+    prisma.customer.findUnique({
+      where: { id: viewer.customerId },
+      select: {
+        businessName: true,
+        contactName: true,
+        phone: true,
+        gstNumber: true,
+        placeOfSupplyStateCode: true,
+        accessGrants: {
+          where: {
+            revokedAt: null,
+            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+          },
+          orderBy: { approvedAt: "desc" },
+          take: 1,
+          select: { expiresAt: true },
         },
-        orderBy: { approvedAt: "desc" },
-        take: 1,
-        select: { expiresAt: true },
       },
-    },
-  });
+    }),
+    // An open request supersedes any renewal CTA: the card shows
+    // "Under review" instead of offering to file another one.
+    prisma.accessRequest.findFirst({
+      where: {
+        customerId: viewer.customerId,
+        status: { in: ["PENDING", "SNOOZED"] },
+      },
+      select: { id: true },
+    }),
+  ]);
 
   if (!customer) {
     redirect("/account/login");
@@ -81,6 +97,20 @@ export default async function AccountPage() {
   const status = viewer.status;
   const hasLivePrices = canSeePrices(viewer);
   const grantExpiry = customer.accessGrants[0]?.expiresAt ?? null;
+  const hasOpenRequest = openRequest !== null;
+
+  // Deep link (?renew=1 / ?request=1, incl. the old /account/renew URL):
+  // auto-open the one-tap renewal dialog when it's actually applicable.
+  const autoOpenRenewal = renew === "1" || request === "1";
+
+  // The ONE resolved access state every surface renders from.
+  const accessState = resolveAccessState({
+    signedIn: true,
+    status,
+    priceAccess: hasLivePrices,
+    expiresAt: grantExpiry ? grantExpiry.toISOString() : null,
+    hasOpenRequest,
+  });
 
   // Header cart badge — a count only for an approved customer, else undefined.
   const cartCount = await cartCountForViewer(viewer);
@@ -121,17 +151,15 @@ export default async function AccountPage() {
               status={status}
               hasLivePrices={hasLivePrices}
               expiryLabel={grantExpiry ? formatExpiry(grantExpiry) : null}
+              expiresAt={grantExpiry ? grantExpiry.toISOString() : null}
+              hasOpenRequest={hasOpenRequest}
               renewalTrigger={
-                <AccountRenewalButton
-                  googleGateHref={
-                    googleOAuthConfigured() ? "/auth/google/start?returnTo=/account" : null
-                  }
-                  label={
-                    status === "REJECTED"
-                      ? "Request access again"
-                      : "Request renewal"
-                  }
-                />
+                accessState === "expired" || accessState === "rejected" ? (
+                  <AccountRenewalButton
+                    state={accessState}
+                    autoOpen={autoOpenRenewal}
+                  />
+                ) : null
               }
             />
 

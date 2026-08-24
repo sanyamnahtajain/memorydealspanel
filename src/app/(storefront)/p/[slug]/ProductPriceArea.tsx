@@ -6,10 +6,15 @@ import { LockKeyhole } from "lucide-react";
 import type { PublicProduct, PricedProduct } from "@/server/dto/product";
 import type { CustomerStatus } from "@/lib/schemas/shared";
 import type { GstView } from "@/server/prefs/gst-view";
+import { accessCopy, resolveAccessState } from "@/lib/access-status";
 import { PricePill, formatPaise } from "@/components/common";
 import { StatusChip } from "@/components/common/StatusChip";
 import { Button } from "@/components/ui/button";
 import { RequestAccessSheet } from "@/components/storefront/RequestAccessSheet";
+import {
+  GatedRenewCta,
+  ACCESS_CHIP_VARIANT,
+} from "@/components/storefront/GatedRenewCta";
 
 /**
  * Price area for the product detail page — the detail-styled render-side
@@ -19,9 +24,9 @@ import { RequestAccessSheet } from "@/components/storefront/RequestAccessSheet";
  *   - a price-authorised viewer holding a PricedProduct sees the real price;
  *   - an anon viewer (or a customer who may still request) sees a locked
  *     placeholder whose CTA opens the {@link RequestAccessSheet} inline;
- *   - a logged-in customer whose access isn't live (pending / expired /
- *     rejected / blocked) sees a status reason instead of the request form,
- *     since re-requesting from here isn't what they need.
+ *   - a logged-in customer whose access isn't live sees the canonical access
+ *     status (src/lib/access-status.ts) — and, for expired/rejected, a
+ *     one-tap renewal CTA (GatedRenewCta) instead of the anon request form.
  *
  * PRICE-GATE SAFETY: when `showPrices` is false the DAL handed us a
  * `PublicProduct` with NO price fields (structurally absent), so nothing here
@@ -100,51 +105,6 @@ function hasPrice(
   return "price" in product && typeof product.price === "number";
 }
 
-interface GatedReason {
-  status: string;
-  hint: string;
-  variant: "pending" | "expired" | "rejected" | "blocked";
-}
-
-/**
- * Maps a logged-in customer's status to gate copy. Returns null when the
- * request form is the right affordance (anon has no status; APPROVED-but-
- * ungranted is treated like expired so the customer knows to seek renewal).
- */
-function resolveGatedReason(
-  status: CustomerStatus | undefined,
-): GatedReason | null {
-  switch (status) {
-    case "PENDING":
-      return {
-        status: "Awaiting approval",
-        hint: "We'll notify you once approved — then prices unlock across the catalog.",
-        variant: "pending",
-      };
-    case "EXPIRED":
-    case "APPROVED":
-      return {
-        status: "Access expired",
-        hint: "Your price access has lapsed. Request a renewal to keep seeing wholesale pricing.",
-        variant: "expired",
-      };
-    case "REJECTED":
-      return {
-        status: "Request declined",
-        hint: "Reach out if you think this is a mistake.",
-        variant: "rejected",
-      };
-    case "BLOCKED":
-      return {
-        status: "Account blocked",
-        hint: "Contact support for help with your account.",
-        variant: "blocked",
-      };
-    default:
-      return null;
-  }
-}
-
 export function ProductPriceArea({
   googleGateHref = null,
   product,
@@ -197,10 +157,20 @@ export function ProductPriceArea({
     );
   }
 
-  const gatedReason = resolveGatedReason(status);
+  // Canonical access state (src/lib/access-status.ts). `priceAccess: false`:
+  // we only reach here when the gate is closed, so a status of APPROVED means
+  // the grant lapsed and resolves to "expired" — expired = status EXPIRED or
+  // (APPROVED && !showPrices).
+  const state = resolveAccessState({
+    signedIn: status !== undefined,
+    status,
+    priceAccess: false,
+  });
 
-  // Gated + logged-in customer: show the status reason, not the request form.
-  if (gatedReason) {
+  // Gated + logged-in customer: the canonical status plus (for expired/
+  // rejected) the ONE action — a renewal request — not the anon request form.
+  if (state !== "anon") {
+    const copy = accessCopy(state);
     return (
       <div className="rounded-2xl border border-border bg-muted/40 p-4 sm:p-5">
         <div className="flex items-start justify-between gap-4">
@@ -216,9 +186,12 @@ export function ProductPriceArea({
           />
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <StatusChip variant={gatedReason.variant} label={gatedReason.status} />
+          <StatusChip variant={ACCESS_CHIP_VARIANT[state]} label={copy.chip} />
         </div>
-        <p className="mt-2 text-sm text-muted-foreground">{gatedReason.hint}</p>
+        <p className="mt-2 text-sm text-muted-foreground">{copy.body}</p>
+        {state === "expired" || state === "rejected" ? (
+          <GatedRenewCta state={state} size="sm" className="mt-3 h-9" />
+        ) : null}
         {/* Label only — never a paise amount for a gated viewer. */}
         <TaxTreatmentLine
           gstRateBps={tax.gstRateBps}

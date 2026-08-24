@@ -6,12 +6,17 @@ import { Check, LockKeyhole, MessageCircle } from "lucide-react";
 import type { ProductOptionType } from "@/server/dto/product";
 import type { PublicVariant, PricedVariant } from "@/server/dto/variant";
 import type { CustomerStatus, StockStatus } from "@/lib/schemas/shared";
+import { accessCopy, resolveAccessState } from "@/lib/access-status";
 import { cn } from "@/lib/utils";
 import { formatPaise } from "@/lib/money";
 import { Button } from "@/components/ui/button";
 import { PricePill } from "@/components/common/PricePill";
 import { StatusChip, type StatusChipVariant } from "@/components/common/StatusChip";
 import { RequestAccessSheet } from "@/components/storefront/RequestAccessSheet";
+import {
+  GatedRenewCta,
+  ACCESS_CHIP_VARIANT,
+} from "@/components/storefront/GatedRenewCta";
 import { AddToCartButton } from "@/components/storefront/cart/AddToCartButton";
 import { APP_NAME } from "@/lib/constants";
 import { buildWhatsAppLink, enquiryMessageLines } from "@/lib/whatsapp-link";
@@ -360,57 +365,25 @@ export function VariantSelector({
         </Button>
       )}
 
-      <RequestAccessSheet
-        open={requestOpen}
-        onOpenChange={setRequestOpen}
-        googleGateHref={googleGateHref}
-      />
+      {/* The request sheet is an anon affordance only — a signed-in customer
+          gets their canonical status (and renewal CTA) instead. */}
+      {status === undefined ? (
+        <RequestAccessSheet
+          open={requestOpen}
+          onOpenChange={setRequestOpen}
+          googleGateHref={googleGateHref}
+        />
+      ) : null}
     </div>
   );
 }
 
-interface GatedReason {
-  label: string;
-  hint: string;
-  variant: StatusChipVariant;
-}
-
-function resolveGatedReason(status: CustomerStatus | undefined): GatedReason | null {
-  switch (status) {
-    case "PENDING":
-      return {
-        label: "Awaiting approval",
-        hint: "We'll notify you once approved — then prices unlock across the catalog.",
-        variant: "pending",
-      };
-    case "EXPIRED":
-    case "APPROVED":
-      return {
-        label: "Access expired",
-        hint: "Your price access has lapsed. Request a renewal to keep seeing wholesale pricing.",
-        variant: "expired",
-      };
-    case "REJECTED":
-      return {
-        label: "Request declined",
-        hint: "Reach out if you think this is a mistake.",
-        variant: "rejected",
-      };
-    case "BLOCKED":
-      return {
-        label: "Account blocked",
-        hint: "Contact support for help with your account.",
-        variant: "blocked",
-      };
-    default:
-      return null;
-  }
-}
-
 /**
  * The gated (locked) price affordance shown when `showPrices` is false. For a
- * logged-in customer we surface their status reason; for anon we offer the
- * request-access form. NEVER reads a price (there is none in scope).
+ * logged-in customer we surface the canonical access status (src/lib/
+ * access-status.ts) — plus, for expired/rejected, the one-tap renewal CTA;
+ * for anon we offer the request-access form. NEVER reads a price (there is
+ * none in scope).
  */
 function GatedPrice({
   status,
@@ -419,17 +392,27 @@ function GatedPrice({
   status: CustomerStatus | undefined;
   onRequest: () => void;
 }) {
-  const reason = resolveGatedReason(status);
+  // priceAccess: false — this affordance only renders when the gate is
+  // closed, so APPROVED resolves to "expired" (grant lapsed).
+  const state = resolveAccessState({
+    signedIn: status !== undefined,
+    status,
+    priceAccess: false,
+  });
 
-  if (reason) {
+  if (state !== "anon") {
+    const copy = accessCopy(state);
     return (
       <div className="mt-1 space-y-2">
         <div className="flex items-center gap-2">
           <PricePill variant="locked" size="lg" />
           <LockKeyhole aria-hidden className="size-4 text-muted-foreground" />
         </div>
-        <StatusChip variant={reason.variant} label={reason.label} />
-        <p className="text-sm text-muted-foreground">{reason.hint}</p>
+        <StatusChip variant={ACCESS_CHIP_VARIANT[state]} label={copy.chip} />
+        <p className="text-sm text-muted-foreground">{copy.body}</p>
+        {state === "expired" || state === "rejected" ? (
+          <GatedRenewCta state={state} size="sm" className="h-9" />
+        ) : null}
       </div>
     );
   }

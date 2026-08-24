@@ -204,6 +204,12 @@ export default async function ProductDetailPage({ params }: PageParams) {
   });
   const whatsappNumber = whatsappNumberForViewer(viewer);
 
+  // Google gate for every price CTA on this page. returnTo is THIS product —
+  // a shopper who signs in from a product page lands back on it, not /account.
+  const googleGateHref = googleOAuthConfigured()
+    ? `/auth/google/start?returnTo=${encodeURIComponent(`/p/${slug}`)}`
+    : null;
+
   // A product opts into variants per-row. When it does, a client coordinator
   // (VariantProductView) owns the gallery + selector so picking a variant
   // updates the gated price, stock, images, and enquiry CTA together. When it
@@ -337,9 +343,7 @@ export default async function ProductDetailPage({ params }: PageParams) {
 
         {showVariantHero ? (
           <VariantProductView
-            googleGateHref={
-              googleOAuthConfigured() ? "/auth/google/start?returnTo=/account" : null
-            }
+            googleGateHref={googleGateHref}
             whatsappNumber={whatsappNumber}
             productName={product.name}
             productImages={product.images}
@@ -370,9 +374,7 @@ export default async function ProductDetailPage({ params }: PageParams) {
                 {heroHeader}
 
                 <ProductPriceArea
-                  googleGateHref={
-                    googleOAuthConfigured() ? "/auth/google/start?returnTo=/account" : null
-                  }
+                  googleGateHref={googleGateHref}
                   product={product as PublicProduct | PricedProduct}
                   showPrices={showPrices}
                   status={customerStatus}
@@ -421,9 +423,7 @@ export default async function ProductDetailPage({ params }: PageParams) {
                     href={enquireHref}
                     productName={product.name}
                     status={customerStatus}
-                    googleGateHref={
-                      googleOAuthConfigured() ? "/auth/google/start?returnTo=/account" : null
-                    }
+                    googleGateHref={googleGateHref}
                   />
                 </div>
 
@@ -449,9 +449,7 @@ export default async function ProductDetailPage({ params }: PageParams) {
       </div>
 
       <StickyMobileBar
-        googleGateHref={
-          googleOAuthConfigured() ? "/auth/google/start?returnTo=/account" : null
-        }
+        googleGateHref={googleGateHref}
         enquireHref={enquireHref}
         canSeePrices={showPrices}
         priceLabel={stickyPriceLabel}

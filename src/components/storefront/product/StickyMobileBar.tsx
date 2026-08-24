@@ -9,8 +9,9 @@
  * the server formatted from the PricedProduct. When gated, `priceLabel` is
  * `undefined` and the bar shows a "See price" button that opens the
  * RequestAccessSheet (anon / requestable) or, for a logged-in customer whose
- * access isn't live, a non-actionable status word. No raw paise ever reach the
- * client through this bar.
+ * access isn't live, the canonical status word (src/lib/access-status.ts) —
+ * tappable for expired customers, opening the renewal dialog. No raw paise
+ * ever reach the client through this bar.
  *
  * It only mounts on mobile (below `md`); on larger screens the inline price
  * area + Enquire button already sit in view, so the bar is hidden via CSS
@@ -21,7 +22,9 @@ import * as React from "react";
 import { LockIcon, MessageCircle } from "lucide-react";
 
 import type { CustomerStatus } from "@/lib/schemas/shared";
+import { accessCopy, resolveAccessState } from "@/lib/access-status";
 import { RequestAccessSheet } from "@/components/storefront/RequestAccessSheet";
+import { GatedRenewCta } from "@/components/storefront/GatedRenewCta";
 import { cn } from "@/lib/utils";
 
 export interface StickyMobileBarProps {
@@ -44,23 +47,6 @@ export interface StickyMobileBarProps {
   googleGateHref?: string | null;
 }
 
-/** Short status word for a gated logged-in customer (no request form). */
-function gatedStatusWord(status: CustomerStatus | undefined): string | null {
-  switch (status) {
-    case "PENDING":
-      return "Awaiting approval";
-    case "EXPIRED":
-    case "APPROVED":
-      return "Access expired";
-    case "REJECTED":
-      return "Request declined";
-    case "BLOCKED":
-      return "Account blocked";
-    default:
-      return null;
-  }
-}
-
 export function StickyMobileBar({
   enquireHref,
   canSeePrices,
@@ -70,7 +56,14 @@ export function StickyMobileBar({
 }: StickyMobileBarProps) {
   const [open, setOpen] = React.useState(false);
   const showPrice = canSeePrices && priceLabel !== undefined;
-  const gatedWord = gatedStatusWord(status);
+  // Canonical access state (src/lib/access-status.ts); the status slot only
+  // renders when the gate is closed, so APPROVED resolves to "expired".
+  const state = resolveAccessState({
+    signedIn: status !== undefined,
+    status,
+    priceAccess: false,
+  });
+  const gatedWord = state !== "anon" ? accessCopy(state).chip : null;
 
   return (
     <>
@@ -94,6 +87,19 @@ export function StickyMobileBar({
                 <span className="truncate font-heading text-lg font-semibold text-foreground tabular-nums">
                   {priceLabel}
                 </span>
+              </>
+            ) : state === "expired" ? (
+              <>
+                <span className="text-[0.65rem] font-medium tracking-wide text-muted-foreground uppercase">
+                  Wholesale price
+                </span>
+                {/* Expired isn't a dead end: the status word itself is the
+                    tappable renewal action. */}
+                <GatedRenewCta
+                  state="expired"
+                  appearance="text"
+                  label="Access expired — renew"
+                />
               </>
             ) : gatedWord ? (
               <>

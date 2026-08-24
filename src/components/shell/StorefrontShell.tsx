@@ -14,6 +14,7 @@ import { TabBadge } from "@/components/shell/TabBadge"
 import { Logo } from "@/components/brand/Logo"
 import { IndependenceBadge } from "@/components/brand/IndependenceBadge"
 import { StorefrontFooter } from "@/components/shell/StorefrontFooter"
+import { AccessStatusBanner } from "@/components/access/AccessStatusBanner"
 import { SlabyPromoCard } from "@/components/slaby/SlabyPromoCard"
 import { WishlistBadge } from "@/components/storefront/wishlist/WishlistBadge"
 import { CartBadge } from "@/components/storefront/cart/CartBadge"
@@ -249,6 +250,9 @@ export function StorefrontShell({
           </div>
         </div>
       </header>
+
+      {/* ——— Access status strip (renders nothing for anon/active) ——— */}
+      <AccessStatusBanner />
 
       {/* ——— Content ——— */}
       {/* Bottom padding clears the FIXED mobile tab bar (~3.5rem + safe

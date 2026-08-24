@@ -6,6 +6,7 @@ import {
   Database,
   Layers,
   Sparkles,
+  Truck,
   Palette,
   ShoppingCart,
   UserCog,
@@ -20,6 +21,8 @@ import { SignOutButton } from "@/components/admin/SignOutButton";
 import { ExportMenu } from "@/components/admin/ExportMenu";
 import { PreferencesPanel } from "@/components/preferences/PreferencesPanel";
 import { StoreSettingsForm } from "@/components/admin/settings/StoreSettingsForm";
+import { DeliverySettingsForm } from "@/components/admin/settings/DeliverySettingsForm";
+import { parseDeliveryRules } from "@/lib/delivery";
 import { getStoreSettings } from "@/server/services/store-settings";
 
 export const metadata: Metadata = {
@@ -74,6 +77,15 @@ export default async function AdminSettingsPage() {
           <StoreSettingsForm
             initialMinOrderValuePaise={storeSettings.minOrderValuePaise}
           />
+        </SettingsSection>
+
+        {/* Delivery — the minimum-charge disclosure (owner request). */}
+        <SettingsSection
+          icon={Truck}
+          title="Delivery"
+          description="The minimum delivery charge customers are told about on the cart, orders and bills."
+        >
+          <DeliverySettingsForm initial={parseDeliveryRules(storeSettings.deliveryRules)} />
         </SettingsSection>
 
         {/* Billing groups — brand buckets with tiered discounts. */}

@@ -15,8 +15,11 @@
  */
 
 import * as React from "react";
+import Link from "next/link";
 import { motion, useReducedMotion } from "motion/react";
 import { Loader2Icon } from "lucide-react";
+
+import { GoogleSignInBlock } from "@/components/auth/GoogleSignInBlock";
 
 import { Button } from "@/components/ui/button";
 import { SlabyBadge } from "@/components/slaby/SlabyMark";
@@ -415,7 +418,14 @@ export function RequestAccessForm({ onClose, google = null }: RequestAccessFormP
         {submitting ? "Submitting…" : "Request price access"}
       </Button>
       <p className="text-center text-xs text-muted-foreground">
-        Already requested? Just log in to check your status.
+        Already requested?{" "}
+        <Link
+          href="/account/login"
+          className="font-medium text-primary underline-offset-4 hover:underline"
+        >
+          Log in
+        </Link>{" "}
+        to check your status.
       </p>
     </form>
   );
@@ -505,9 +515,15 @@ function SuccessState({
 /* Responsive shell                                                   */
 /* ------------------------------------------------------------------ */
 
-const TITLE = "Request price access";
-const DESCRIPTION =
+/* Per-variant header copy: the password form asks for business details, the
+ * Google gate is simply "sign in" (owner request — a signed-out tap on a price
+ * must read as one login flow, not a form). Kept as module consts. */
+const FORM_TITLE = "Request price access";
+const FORM_DESCRIPTION =
   "Tell us about your business. Once approved you'll see live wholesale prices across the catalog.";
+const GOOGLE_TITLE = "Sign in to see prices";
+const GOOGLE_DESCRIPTION =
+  "Approved retailers see live wholesale pricing across the catalog.";
 
 export interface RequestAccessSheetProps {
   open: boolean;
@@ -518,30 +534,16 @@ export interface RequestAccessSheetProps {
   googleGateHref?: string | null;
 }
 
-/** The Continue-with-Google gate used by the sheet AND the standalone page. */
+/** The Continue-with-Google gate used by the sheet AND the standalone page.
+ *  Thin wrapper over the ONE shared {@link GoogleSignInBlock} so the sheet and
+ *  the login page render the identical piece of code. */
 export function GoogleAccessGate({ href }: { href: string }) {
   return (
-    <div className="flex flex-col items-center gap-4 py-4 text-center">
-      <p className="text-sm text-muted-foreground">
-        Start by signing in with Google — then share your business details
-        (business name, phone, GSTIN) for review.
-      </p>
-      <a
-        href={href}
-        className="inline-flex h-11 w-full max-w-xs items-center justify-center gap-2.5 rounded-lg border border-border bg-background text-sm font-semibold text-foreground outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
-      >
-        <svg aria-hidden viewBox="0 0 24 24" className="size-4.5">
-          <path fill="#4285F4" d="M23.5 12.27c0-.85-.08-1.66-.22-2.45H12v4.64h6.46a5.53 5.53 0 0 1-2.4 3.62v3h3.88c2.27-2.1 3.56-5.17 3.56-8.8z" />
-          <path fill="#34A853" d="M12 24c3.24 0 5.96-1.07 7.94-2.91l-3.88-3c-1.08.72-2.45 1.15-4.06 1.15-3.13 0-5.78-2.11-6.72-4.95H1.27v3.1A12 12 0 0 0 12 24z" />
-          <path fill="#FBBC05" d="M5.28 14.29a7.2 7.2 0 0 1 0-4.58v-3.1H1.27a12 12 0 0 0 0 10.78l4.01-3.1z" />
-          <path fill="#EA4335" d="M12 4.77c1.76 0 3.34.6 4.59 1.8l3.44-3.44A11.98 11.98 0 0 0 1.27 6.6l4.01 3.1C6.22 6.88 8.87 4.77 12 4.77z" />
-        </svg>
-        Continue with Google
-      </a>
-      <p className="text-xs text-muted-foreground">
-        Already approved? The same button signs you straight in.
-      </p>
-    </div>
+    <GoogleSignInBlock
+      href={href}
+      sub="Sign in with Google to continue. New customers then share business details for review; approved customers go straight in."
+      className="mx-auto max-w-xs items-center py-4 text-center"
+    />
   );
 }
 
@@ -560,6 +562,10 @@ export function RequestAccessSheet({
   // Remount the form on each open so a previous success/error doesn't linger.
   const formKey = open ? "open" : "closed";
 
+  // Per-variant header: the Google gate is a sign-in, not a form.
+  const title = googleGateHref ? GOOGLE_TITLE : FORM_TITLE;
+  const description = googleGateHref ? GOOGLE_DESCRIPTION : FORM_DESCRIPTION;
+
   if (isMobile) {
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>
@@ -573,8 +579,8 @@ export function RequestAccessSheet({
             className="mx-auto mt-2.5 h-1 w-10 rounded-full bg-muted"
           />
           <SheetHeader className="pb-1 text-center">
-            <SheetTitle>{TITLE}</SheetTitle>
-            <SheetDescription>{DESCRIPTION}</SheetDescription>
+            <SheetTitle>{title}</SheetTitle>
+            <SheetDescription>{description}</SheetDescription>
           </SheetHeader>
           <div className="px-4 pb-4">
             {googleGateHref ? (
@@ -593,8 +599,8 @@ export function RequestAccessSheet({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{TITLE}</DialogTitle>
-          <DialogDescription>{DESCRIPTION}</DialogDescription>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         {googleGateHref ? (
           <GoogleAccessGate href={googleGateHref} />

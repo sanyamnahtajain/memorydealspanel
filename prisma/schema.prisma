@@ -516,6 +516,14 @@ model Order {
   // so old orders render exactly as before. `subtotalPaise` stays PRE-discount.
   groupDiscountPaise Int?
   billingGroups      Json?
+  // Delivery disclosure FROZEN at placement (src/lib/delivery.ts); absent on
+  // orders placed before the feature or while it was off.
+  deliveryDisclosure Json?
+  // Set when placing this order AUTO-EXTENDED the customer's access (the
+  // +30-days reward). Lets the admin see it and ROLL IT BACK on cancellation
+  // (anti-abuse: junk orders to farm access). {days, previousExpiresAt,
+  // expiresAt, retractedAt?}
+  accessExtension    Json?
   placedAt      DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
@@ -556,6 +564,8 @@ model StoreSettings {
   // "Built with Slaby" branding placements (owner-toggleable). Tagged JSON
   // parsed defensively in src/lib/slaby/branding.ts; absent => everything OFF.
   slabyBranding      Json?
+  // Delivery rules (min charge disclosure) — src/lib/delivery.ts; absent => OFF.
+  deliveryRules      Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

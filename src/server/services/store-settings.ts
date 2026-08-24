@@ -7,6 +7,12 @@ import {
   type SlabyBrandingConfig,
   type SlabyBrandingInput,
 } from "@/lib/slaby/branding";
+import {
+  parseDeliveryRules,
+  resolveDeliveryDisclosure,
+  type DeliveryDisclosure,
+  type DeliveryRules,
+} from "@/lib/delivery";
 
 /**
  * Store settings service — reads and mutates the singleton `StoreSettings`
@@ -28,6 +34,7 @@ const SETTINGS_SELECT = {
   key: true,
   minOrderValuePaise: true,
   slabyBranding: true,
+  deliveryRules: true,
   updatedAt: true,
 } as const;
 
@@ -37,6 +44,8 @@ export interface StoreSettings {
   minOrderValuePaise: number | null;
   /** Raw JSON — parse with `parseSlabyBranding` (defensive, all-off default). */
   slabyBranding: unknown;
+  /** Raw JSON — parse with `parseDeliveryRules` (defensive, off default). */
+  deliveryRules: unknown;
   updatedAt: Date;
 }
 
@@ -131,6 +140,33 @@ export async function updateSlabyBranding(
     where: { key: SETTINGS_KEY },
     create: { key: SETTINGS_KEY, slabyBranding: input },
     update: { slabyBranding: input },
+    select: SETTINGS_SELECT,
+  });
+}
+
+/**
+ * The resolved delivery rules. DIRECT read (not the request-cached getter):
+ * order placement freezes the disclosure, so it must see the value as of now.
+ */
+export async function getDeliveryRules(): Promise<DeliveryRules> {
+  const row = await prisma.storeSettings.findUnique({
+    where: { key: SETTINGS_KEY },
+    select: { deliveryRules: true },
+  });
+  return parseDeliveryRules(row?.deliveryRules);
+}
+
+/** The disclosure the storefront/PDF must show, or null when off. */
+export async function getDeliveryDisclosure(): Promise<DeliveryDisclosure | null> {
+  return resolveDeliveryDisclosure(await getDeliveryRules());
+}
+
+/** Replace the delivery rules (validated by the action's zod schema). */
+export async function updateDeliveryRules(input: DeliveryRules): Promise<StoreSettings> {
+  return prisma.storeSettings.upsert({
+    where: { key: SETTINGS_KEY },
+    create: { key: SETTINGS_KEY, deliveryRules: input },
+    update: { deliveryRules: input },
     select: SETTINGS_SELECT,
   });
 }
