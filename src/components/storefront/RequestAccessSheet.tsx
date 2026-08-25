@@ -17,7 +17,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { motion, useReducedMotion } from "motion/react";
-import { Loader2Icon } from "lucide-react";
+import { Loader2Icon, ShieldCheckIcon } from "lucide-react";
 
 import { GoogleSignInBlock } from "@/components/auth/GoogleSignInBlock";
 
@@ -238,6 +238,8 @@ type SubmitState =
   | { phase: "submitting" }
   | { phase: "success"; duplicate: boolean }
   | { phase: "duplicate-approved" }
+  /** Google sign-in matched an existing customer — admin approval pending. */
+  | { phase: "link-requested"; duplicate: boolean }
   | { phase: "error"; message: string };
 
 interface RequestAccessFormProps {
@@ -301,11 +303,6 @@ function clearDraft(): void {
   } catch {
     /* ignore */
   }
-}
-
-/** True when the submit failed because the Google handoff was spent/expired. */
-function isExpiredGoogleError(message: string): boolean {
-  return /google sign-in expired/i.test(message);
 }
 
 export function RequestAccessForm({ onClose, google = null }: RequestAccessFormProps) {
@@ -380,6 +377,20 @@ export function RequestAccessForm({ onClose, google = null }: RequestAccessFormP
               turnstileToken: token,
             });
         if (result.ok) {
+          if ("signedIn" in result) {
+            // Their Google email WAS the customer's own, so they are already
+            // signed in. Take them to their account rather than showing a
+            // "request received" screen for a request that never happened.
+            clearDraft();
+            window.location.assign("/account");
+            return;
+          }
+          if ("linkRequested" in result) {
+            clearDraft();
+            setState({ phase: "link-requested", duplicate: result.duplicate });
+            return;
+          }
+          clearDraft();
           setState({ phase: "success", duplicate: result.duplicate });
         } else {
           setState({ phase: "error", message: result.error });
@@ -393,6 +404,10 @@ export function RequestAccessForm({ onClose, google = null }: RequestAccessFormP
     },
     [values, token, google],
   );
+
+  if (state.phase === "link-requested") {
+    return <LinkRequestedState duplicate={state.duplicate} onClose={onClose} />;
+  }
 
   if (state.phase === "success") {
     return (
@@ -582,6 +597,58 @@ function SuccessState({
       <Button variant="outline" onClick={onClose} className="mt-2 w-full">
         Done
       </Button>
+    </div>
+  );
+}
+
+/**
+ * Shown when a Google visitor turns out to BE an existing customer, but we
+ * could not prove it: they typed a known phone number, and a typed number is
+ * not proof. The admin approves the connection.
+ *
+ * The old behaviour here was a red error telling them to "sign in with the
+ * same Google account" — impossible advice, since the account they were
+ * holding IS the one they signed in with. This is not an error at all, so it
+ * does not look like one.
+ */
+function LinkRequestedState({
+  duplicate,
+  onClose,
+}: {
+  duplicate: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-3 py-4 text-center">
+      <span className="flex size-16 items-center justify-center rounded-full bg-primary/10 text-primary">
+        <ShieldCheckIcon className="size-8" aria-hidden />
+      </span>
+
+      <div className="flex flex-col gap-1">
+        <h3 className="text-base font-semibold text-foreground">
+          {duplicate ? "We are still checking" : "We know this number"}
+        </h3>
+        <p className="max-w-xs text-sm text-pretty text-muted-foreground">
+          {duplicate
+            ? "We already asked the shop to connect this Google sign-in to your account. We will tell you as soon as they say yes."
+            : "You already have an account with this number. We have asked the shop to connect this Google sign-in to it. We will tell you as soon as they say yes."}
+        </p>
+      </div>
+
+      <StatusChip variant="pending" label="Waiting for the shop" />
+
+      <p className="max-w-xs text-xs text-muted-foreground">
+        Have a password for this number? You can sign in with it right now.
+      </p>
+
+      <div className="mt-1 flex w-full flex-col gap-2">
+        <Button render={<Link href="/account/login" />} className="w-full">
+          Sign in with my number
+        </Button>
+        <Button variant="outline" onClick={onClose} className="w-full">
+          Done
+        </Button>
+      </div>
     </div>
   );
 }

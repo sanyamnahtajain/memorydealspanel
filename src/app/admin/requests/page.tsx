@@ -116,6 +116,9 @@ export default async function AdminRequestsPage({
         id: true,
         customerId: true,
         renewal: true,
+        // A "connect my Google sign-in" request — the admin is the one who
+        // authorises the link, so the queue must say so.
+        linkGoogleEmail: true,
         createdAt: true,
         customer: {
           select: {
@@ -135,6 +138,9 @@ export default async function AdminRequestsPage({
         id: true,
         customerId: true,
         renewal: true,
+        // A "connect my Google sign-in" request — the admin is the one who
+        // authorises the link, so the queue must say so.
+        linkGoogleEmail: true,
         createdAt: true,
         customer: {
           select: {
@@ -252,6 +258,7 @@ export default async function AdminRequestsPage({
     id: row.id,
     customerId: row.customerId,
     renewal: row.renewal,
+    linkGoogleEmail: row.linkGoogleEmail ?? null,
     businessName: row.customer.businessName,
     contactName: row.customer.contactName,
     phone: row.customer.phone,
@@ -264,6 +271,7 @@ export default async function AdminRequestsPage({
     id: row.id,
     customerId: row.customerId,
     renewal: row.renewal,
+    linkGoogleEmail: row.linkGoogleEmail ?? null,
     businessName: row.customer.businessName,
     contactName: row.customer.contactName,
     phone: row.customer.phone,

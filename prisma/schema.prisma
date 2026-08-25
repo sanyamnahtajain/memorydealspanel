@@ -280,6 +280,13 @@ model AccessRequest {
   // True when filed by an ALREADY-KNOWN customer re-requesting lapsed access
   // (owner request): the admin queue shows these as "Renewal".
   renewal    Boolean       @default(false)
+  // A "connect my Google sign-in" request. Set when someone signs in with
+  // Google and enters the phone number of an EXISTING customer whose account
+  // is not linked to that Google identity. A typed phone number proves
+  // nothing, so we never link on it automatically — the admin approves, and
+  // approval performs the link. Until then these stay unusable.
+  linkGoogleSub   String?
+  linkGoogleEmail String?
   reason     String?
   decidedAt  DateTime?
   createdAt  DateTime      @default(now())

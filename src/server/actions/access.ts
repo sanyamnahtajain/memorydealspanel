@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { z } from "zod";
 
+import { prisma } from "@/server/db";
 import { resolveViewer } from "@/server/auth/viewer";
 import { assertAdmin, isForbiddenError } from "@/server/dal/guard";
 import { assertPermission } from "@/server/auth/require-permission";
@@ -14,6 +15,7 @@ import {
   setGrantExpiry,
   rejectRequest,
   requestAccess as requestAccessService,
+  requestGoogleLink,
   requestRenewal,
   revokeGrant,
   type RequestAccessResult,
@@ -506,6 +508,19 @@ export async function bulkRejectAccessAction(
  * AFTER the consume refunds the token so fixing a field never forces a fresh
  * Google round-trip.
  */
+/**
+ * What a Google-authenticated request can end in. Wider than the service's
+ * `RequestAccessResult` because two of these outcomes are decisions the ACTION
+ * makes — it is the only layer holding both the verified Google identity and
+ * the existing customer.
+ */
+export type GoogleAccessResult =
+  | RequestAccessResult
+  /** Identity proven (Google email is the customer's own) — signed in. */
+  | { ok: true; customerId: string; signedIn: true }
+  /** Identity unproven — the admin was asked to connect the sign-in. */
+  | { ok: true; customerId: string; linkRequested: true; duplicate: boolean };
+
 export async function requestAccessViaGoogle(input: {
   form: {
     businessName: string;
@@ -515,7 +530,7 @@ export async function requestAccessViaGoogle(input: {
     city: string;
   };
   g: string;
-}): Promise<RequestAccessResult> {
+}): Promise<GoogleAccessResult> {
   const g = typeof input.g === "string" ? input.g : "";
   const handoff = g ? await consumeSignupHandoff(g) : null;
   if (!handoff) {
@@ -540,6 +555,44 @@ export async function requestAccessViaGoogle(input: {
 
   try {
     const ip = await clientIp();
+
+    // A Google visitor typing the phone number of an EXISTING customer used to
+    // hit a dead end: "this number is already approved — sign in with the same
+    // Google account", which is impossible advice when THIS is the Google
+    // account they have. Two outcomes now, and which one applies is decided by
+    // whether the identity is actually proven:
+    //
+    //  - the Google email matches the customer's own → both identifiers are
+    //    verified, so link and sign in right here, no request, no waiting;
+    //  - it does not → raise a request for the admin to approve, because a
+    //    typed phone number is not proof of anything.
+    const existing = await prisma.customer.findUnique({
+      where: { phone: parsed.data.phone },
+      select: { id: true, email: true, status: true },
+    });
+
+    if (existing && existing.status !== "BLOCKED") {
+      const sameEmail =
+        typeof existing.email === "string" &&
+        existing.email.toLowerCase() === handoff.email.toLowerCase();
+
+      if (sameEmail) {
+        await linkGoogleAccount(handoff.sub, existing.id, handoff.email);
+        await createSession({ kind: "customer", customerId: existing.id });
+        return { ok: true, customerId: existing.id, signedIn: true };
+      }
+
+      const link = await requestGoogleLink(existing.id, handoff.sub, handoff.email);
+      revalidatePath("/admin/requests");
+      revalidatePath("/admin/customers");
+      return {
+        ok: true,
+        customerId: existing.id,
+        linkRequested: true,
+        duplicate: link.duplicate,
+      };
+    }
+
     const result = await requestAccessService(parsed.data, "", ip, "google");
     if (!result.ok) {
       await refundSignupHandoff(g);

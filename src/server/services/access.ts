@@ -3,6 +3,7 @@ import type { AccessRequestInput } from "@/lib/schemas/customer";
 import { hashPassword } from "@/server/auth/password";
 import { revokeAllForCustomer } from "@/server/auth/session";
 import { prisma } from "@/server/db";
+import { linkGoogleAccount } from "./google-auth";
 import { notifyAdmins, notifyCustomer } from "@/server/notify/push";
 import { accessApprovedText } from "@/lib/notify/copy";
 import {
@@ -272,12 +273,36 @@ export async function approveRequest(
     data: { status: "APPROVED" },
   });
 
+  // Any open request that also asked to CONNECT a Google sign-in: approving is
+  // the admin vouching for that person, so it performs the link. This is the
+  // only path that links a Google account to an existing customer on the
+  // strength of a typed phone number — a human decides, never the form.
+  const openRequests = await prisma.accessRequest.findMany({
+    where: { customerId, status: { in: ["PENDING", "SNOOZED"] } },
+    select: { linkGoogleSub: true, linkGoogleEmail: true },
+  });
+
   await prisma.accessRequest.updateMany({
     // Approving resolves the open request whether it sat in the queue or
     // was parked in "Later" (SNOOZED).
     where: { customerId, status: { in: ["PENDING", "SNOOZED"] } },
     data: { status: "APPROVED", decidedAt: now },
   });
+
+  for (const request of openRequests) {
+    if (!request.linkGoogleSub) continue;
+    try {
+      await linkGoogleAccount(
+        request.linkGoogleSub,
+        customerId,
+        request.linkGoogleEmail ?? "",
+      );
+    } catch (error) {
+      // A failed link must not undo an approval that is already committed —
+      // the customer can still sign in by phone, and re-requesting relinks.
+      console.error("[access] google link on approve failed:", error);
+    }
+  }
 
   // Tell the buyer their prices are open. Fire-and-forget on purpose: the
   // approval is already committed, and `notifyCustomer` (which owns the
@@ -734,6 +759,62 @@ export async function requestRenewal(customerId: string): Promise<RenewalRequest
 
   await prisma.accessRequest.create({
     data: { customerId, status: "PENDING", renewal: true },
+  });
+  await notifyAdminsOfRenewal(customerId, customer.businessName, customer.phone);
+  return { ok: true, duplicate: false };
+}
+
+/**
+ * Someone signed in with Google and entered the phone number of an EXISTING
+ * customer whose account is not linked to that Google identity.
+ *
+ * WHY THIS IS NOT AN AUTOMATIC LOGIN. The Google identity is verified; the
+ * PHONE NUMBER IS NOT. It was simply typed into a form. Linking on it would
+ * mean anyone who knows an approved retailer's number could sign in with their
+ * own Google account and take over that retailer's account — their prices,
+ * their order history, their business details. `resolveGoogleCustomer` already
+ * links automatically on the two things that ARE proof: a previously linked
+ * Google account, and a verified email that matches the customer's own.
+ *
+ * So this raises a request the ADMIN approves instead. That fits how the shop
+ * already runs — every access request is approved by hand by someone who knows
+ * these customers — and it turns a dead end into one tap. Approval performs the
+ * link (see approveRequest), after which Google sign-in resolves by `sub` and
+ * the customer goes straight in forever.
+ */
+export async function requestGoogleLink(
+  customerId: string,
+  sub: string,
+  email: string,
+): Promise<{ ok: true; duplicate: boolean }> {
+  const customer = await prisma.customer.findUnique({
+    where: { id: customerId },
+    select: { businessName: true, phone: true },
+  });
+  if (!customer) return { ok: true, duplicate: false };
+
+  // An open request for this same Google account: say so rather than piling up
+  // duplicates in the admin queue.
+  const open = await prisma.accessRequest.findFirst({
+    where: {
+      customerId,
+      status: { in: ["PENDING", "SNOOZED"] },
+      linkGoogleSub: sub,
+    },
+    select: { id: true },
+  });
+  if (open) return { ok: true, duplicate: true };
+
+  await prisma.accessRequest.create({
+    data: {
+      customerId,
+      status: "PENDING",
+      // It IS a known customer coming back, so it rides the Renewal lane the
+      // admin queue already surfaces.
+      renewal: true,
+      linkGoogleSub: sub,
+      linkGoogleEmail: email,
+    },
   });
   await notifyAdminsOfRenewal(customerId, customer.businessName, customer.phone);
   return { ok: true, duplicate: false };

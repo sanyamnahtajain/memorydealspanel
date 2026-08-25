@@ -14,6 +14,7 @@ import {
   CheckIcon,
   CheckCheck as CheckCheckIcon,
   ListChecks as ListChecksIcon,
+  MailIcon,
   MapPinIcon,
   PhoneIcon,
   ReceiptIcon,
@@ -64,6 +65,13 @@ export interface PendingRequest {
   customerId: string;
   /** Filed by an already-known customer re-requesting lapsed access. */
   renewal: boolean;
+  /**
+   * Set when this request also asks to CONNECT a Google sign-in to an existing
+   * customer. Approving performs that link, so the admin must be able to see
+   * it — this is the moment a human vouches for an identity we could not
+   * prove. Never show it as a plain renewal.
+   */
+  linkGoogleEmail: string | null;
   businessName: string;
   contactName: string;
   /** Canonical +91… phone. */
@@ -692,7 +700,11 @@ function SwipeCard({
               </p>
             </div>
             <StatusChip variant="pending" />
-                {request.renewal ? (
+                {request.linkGoogleEmail ? (
+                  <span className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                    Connect Google
+                  </span>
+                ) : request.renewal ? (
                   <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
                     Renewal
                   </span>
@@ -701,6 +713,13 @@ function SwipeCard({
 
           <dl className="grid w-full grid-cols-1 gap-2 text-sm">
             <DetailRow icon={PhoneIcon} label="Phone" value={request.phone} />
+            {request.linkGoogleEmail ? (
+              <DetailRow
+                icon={MailIcon}
+                label="Connect Google"
+                value={request.linkGoogleEmail}
+              />
+            ) : null}
             {request.city && (
               <DetailRow icon={MapPinIcon} label="City" value={request.city} />
             )}

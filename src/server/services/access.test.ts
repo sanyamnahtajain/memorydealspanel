@@ -14,6 +14,7 @@ import {
   requestAccess,
   requestRenewal,
   retractAutoExtension,
+  requestGoogleLink,
   revokeGrant,
   setGrantExpiry,
   snoozeRequest,
@@ -725,5 +726,79 @@ describe("bulkSetExpiry — the selection bar", () => {
     });
     expect(grant?.expiresAt?.getTime()).toBe(target.getTime());
     expect(await computeCustomerPriceAccess(a)).toBe(true);
+  });
+});
+
+describe("requestGoogleLink — a known customer signing in with a new Google account", () => {
+  it("does NOT grant anything on its own", async () => {
+    // THE SECURITY BOUNDARY. The Google identity is verified; the phone number
+    // was merely typed into a form. If typing a number were enough, anyone who
+    // knew an approved retailer's number could sign in with their own Google
+    // account and take over that retailer's account. So this only ASKS.
+    const id = await makeCustomer("link-nogrant");
+    await approveRequest(id, { expiresInDays: 30, grantedBy: ADMIN });
+
+    await requestGoogleLink(id, "attacker-sub", "attacker@example.com");
+
+    const linked = await prisma.googleAccount.count({
+      where: { sub: "attacker-sub" },
+    });
+    expect(linked).toBe(0);
+  });
+
+  it("files one pending request the admin can see", async () => {
+    const id = await makeCustomer("link-request");
+    await approveRequest(id, { expiresInDays: 30, grantedBy: ADMIN });
+
+    const result = await requestGoogleLink(id, "sub-1", "person@example.com");
+
+    expect(result).toEqual({ ok: true, duplicate: false });
+    const request = await prisma.accessRequest.findFirst({
+      where: { customerId: id, status: "PENDING", linkGoogleSub: "sub-1" },
+      select: { renewal: true, linkGoogleEmail: true },
+    });
+    expect(request?.linkGoogleEmail).toBe("person@example.com");
+    // Rides the Renewal lane so it surfaces in the queue staff already watch.
+    expect(request?.renewal).toBe(true);
+  });
+
+  it("does not pile up duplicates when the customer tries again", async () => {
+    const id = await makeCustomer("link-dupe");
+    await approveRequest(id, { expiresInDays: 30, grantedBy: ADMIN });
+
+    await requestGoogleLink(id, "sub-2", "person@example.com");
+    const second = await requestGoogleLink(id, "sub-2", "person@example.com");
+
+    expect(second).toEqual({ ok: true, duplicate: true });
+    const count = await prisma.accessRequest.count({
+      where: { customerId: id, linkGoogleSub: "sub-2", status: "PENDING" },
+    });
+    expect(count).toBe(1);
+  });
+
+  it("APPROVING performs the link, so the next sign-in just works", async () => {
+    const id = await makeCustomer("link-approve");
+    await approveRequest(id, { expiresInDays: 30, grantedBy: ADMIN });
+    await requestGoogleLink(id, "sub-3", "person@example.com");
+
+    // The admin vouching for them is what authorises the link.
+    await approveRequest(id, { expiresInDays: 30, grantedBy: ADMIN });
+
+    const link = await prisma.googleAccount.findUnique({
+      where: { sub: "sub-3" },
+      select: { customerId: true },
+    });
+    expect(link?.customerId).toBe(id);
+    await prisma.googleAccount.deleteMany({ where: { sub: "sub-3" } });
+  });
+
+  it("rejecting leaves the accounts unconnected", async () => {
+    const id = await makeCustomer("link-reject");
+    await approveRequest(id, { expiresInDays: 30, grantedBy: ADMIN });
+    await requestGoogleLink(id, "sub-4", "person@example.com");
+
+    await rejectRequest(id, "not our customer");
+
+    expect(await prisma.googleAccount.count({ where: { sub: "sub-4" } })).toBe(0);
   });
 });
