@@ -46,7 +46,7 @@ describe("accessCopy", () => {
       priceAccess: true,
       expiresAt: days(3),
     };
-    const copy = accessCopy("expiring", snap);
+    const copy = accessCopy("expiring", snap, NOW);
     expect(copy.title).toBe("Your prices will stop in 3 days");
     expect(copy.body).toContain("30 more days");
   });

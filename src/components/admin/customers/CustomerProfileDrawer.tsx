@@ -95,6 +95,20 @@ export function CustomerProfileDrawer({
   const [profile, setProfile] = React.useState<CustomerProfile | null>(null);
 
   const customerId = customer?.id;
+
+  /**
+   * Re-read the access history. Called on open AND after every action —
+   * `router.refresh()` only re-renders the SERVER props; this panel's grant
+   * list is client state fetched once per customer, so without this an admin
+   * who changed the expiry kept looking at the old date and reasonably
+   * concluded the change had not worked.
+   */
+  const loadProfile = React.useCallback(async () => {
+    if (!customerId) return;
+    const res = await getCustomerProfileAction(customerId);
+    if (res.ok) setProfile(res.profile);
+  }, [customerId]);
+
   // Async history fetch only — the async setState in `.then` is allowed and
   // does not trigger the synchronous cascading-render lint.
   React.useEffect(() => {
@@ -117,6 +131,9 @@ export function CustomerProfileDrawer({
       if (res.ok) {
         toast.success(label);
         router.refresh();
+        // Server props refresh the header/status; the grant history is client
+        // state and needs its own re-read or it shows a stale expiry.
+        await loadProfile();
       } else {
         toast.error(res.error ?? "Something went wrong.");
       }

@@ -372,6 +372,55 @@ export async function customerIdsWithLiveGrant(
  * a fresh grant of `days` from now and re-approve the customer — this is the
  * renewal path that flips `priceAccess` back to true.
  */
+/**
+ * SET a customer's price-access expiry to an exact instant (or unlimited).
+ *
+ * This is what every admin expiry control actually means. The ExpiryDial shows
+ * a live "expires on <date>" preview, so the admin is choosing a DATE — not an
+ * amount to add. `extendGrant` adds days to the CURRENT expiry, which produced
+ * two bugs: the saved date never matched the previewed one for a customer who
+ * still had time left, and an expiry could only ever move later, so shortening
+ * one was impossible.
+ *
+ * `expiresAt: null` means never expires. A target in the past is allowed and
+ * ends access immediately — that is the only way to cut someone off at a
+ * chosen moment, and it is deliberate.
+ */
+export async function setGrantExpiry(
+  customerId: string,
+  expiresAt: Date | null,
+  grantedBy: string,
+): Promise<AccessGrantRecord> {
+  const now = new Date();
+  const live = await findLiveGrant(customerId, now);
+
+  const grant = live
+    ? await prisma.accessGrant.update({
+        where: { id: live.id },
+        data: { expiresAt },
+      })
+    : await prisma.accessGrant.create({
+        data: {
+          customerId,
+          approvedAt: now,
+          expiresAt,
+          // Explicit null so `findLiveGrant`'s `revokedAt: null` filter matches
+          // on MongoDB (an omitted optional field is absent, not null).
+          revokedAt: null,
+          grantedBy,
+        },
+      });
+
+  // Keep status honest: a date already in the past is not live access.
+  const stillLive = expiresAt === null || expiresAt.getTime() > now.getTime();
+  await prisma.customer.update({
+    where: { id: customerId },
+    data: { status: stillLive ? "APPROVED" : "EXPIRED" },
+  });
+
+  return grant;
+}
+
 export async function extendGrant(
   customerId: string,
   days: number,

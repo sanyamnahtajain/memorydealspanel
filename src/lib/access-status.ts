@@ -142,10 +142,20 @@ const COPY: Record<AccessState, AccessCopy> = {
 };
 
 /** Copy for a state, with `{days}` filled from the snapshot when relevant. */
-export function accessCopy(state: AccessState, snap?: AccessSnapshot): AccessCopy {
+export function accessCopy(
+  state: AccessState,
+  snap?: AccessSnapshot,
+  /**
+   * Clock to count from, matching `resolveAccessState(snap, now)`. Defaults to
+   * the real time. Without this the day count could not be pinned in a test:
+   * one pinned an expiry to a fixed date, let this read the wall clock, and
+   * silently started failing the day real time drifted past that date.
+   */
+  now: Date = new Date(),
+): AccessCopy {
   const base = COPY[state];
   if (state !== "expiring" || !snap?.expiresAt) return base;
-  const days = Math.max(0, daysUntil(snap.expiresAt));
+  const days = Math.max(0, daysUntil(snap.expiresAt, now));
   const human = days === 0 ? "less than a day" : days === 1 ? "1 day" : `${days} days`;
   return { ...base, title: base.title.replace("{days}", human) };
 }

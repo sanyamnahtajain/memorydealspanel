@@ -14,6 +14,7 @@ import {
   requestRenewal,
   retractAutoExtension,
   revokeGrant,
+  setGrantExpiry,
   snoozeRequest,
   unsnoozeRequest,
   unblockCustomer,
@@ -571,6 +572,116 @@ describe("retractAutoExtension (cancel-order rollback — anti-abuse)", () => {
       ok: false,
       reason: "NO_FINITE_GRANT",
     });
+    expect(await computeCustomerPriceAccess(id)).toBe(true);
+  });
+});
+
+
+describe("setGrantExpiry — the admin expiry control", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  /** The saved expiry, to the minute (avoids clock jitter in comparisons). */
+  async function liveExpiry(customerId: string): Promise<Date | null> {
+    const grant = await prisma.accessGrant.findFirst({
+      where: { customerId, revokedAt: null },
+      orderBy: { approvedAt: "desc" },
+      select: { expiresAt: true },
+    });
+    return grant?.expiresAt ?? null;
+  }
+
+  it("saves the exact date the admin picked", async () => {
+    const id = await makeCustomer("set-exact");
+    await approveRequest(id, { expiresInDays: 30, grantedBy: ADMIN });
+
+    const target = new Date(Date.now() + 5 * DAY);
+    await setGrantExpiry(id, target, ADMIN);
+
+    // The whole bug: this used to ADD 5 days to the existing 30, landing on
+    // day 35 while the dial had promised day 5.
+    const saved = await liveExpiry(id);
+    expect(saved?.getTime()).toBe(target.getTime());
+    expect(await computeCustomerPriceAccess(id)).toBe(true);
+  });
+
+  it("can SHORTEN an expiry, which was impossible before", async () => {
+    const id = await makeCustomer("set-shorter");
+    await approveRequest(id, { expiresInDays: 90, grantedBy: ADMIN });
+
+    const target = new Date(Date.now() + 2 * DAY);
+    await setGrantExpiry(id, target, ADMIN);
+
+    const saved = await liveExpiry(id);
+    expect(saved?.getTime()).toBe(target.getTime());
+  });
+
+  it("ends access immediately when the date is in the past", async () => {
+    const id = await makeCustomer("set-past");
+    await approveRequest(id, { expiresInDays: 30, grantedBy: ADMIN });
+
+    await setGrantExpiry(id, new Date(Date.now() - DAY), ADMIN);
+
+    // Cutting someone off at a chosen moment must actually cut them off, and
+    // the status has to agree with the gate.
+    expect(await computeCustomerPriceAccess(id)).toBe(false);
+    const customer = await prisma.customer.findUnique({
+      where: { id },
+      select: { status: true },
+    });
+    expect(customer?.status).toBe("EXPIRED");
+  });
+
+  it("makes a grant never-expiring with null", async () => {
+    const id = await makeCustomer("set-never");
+    await approveRequest(id, { expiresInDays: 7, grantedBy: ADMIN });
+
+    await setGrantExpiry(id, null, ADMIN);
+
+    expect(await liveExpiry(id)).toBeNull();
+    expect(await computeCustomerPriceAccess(id)).toBe(true);
+  });
+
+  it("creates a grant for a customer who has none", async () => {
+    // The Renewals tab points this at lapsed customers, who hold no live grant.
+    const id = await makeCustomer("set-fresh");
+    expect(await computeCustomerPriceAccess(id)).toBe(false);
+
+    const target = new Date(Date.now() + 10 * DAY);
+    await setGrantExpiry(id, target, ADMIN);
+
+    expect((await liveExpiry(id))?.getTime()).toBe(target.getTime());
+    expect(await computeCustomerPriceAccess(id)).toBe(true);
+  });
+
+  it("revives a customer whose access had lapsed", async () => {
+    const id = await makeCustomer("set-revive");
+    await approveRequest(id, { expiresInDays: 30, grantedBy: ADMIN });
+    await setGrantExpiry(id, new Date(Date.now() - DAY), ADMIN);
+    expect(await computeCustomerPriceAccess(id)).toBe(false);
+
+    await setGrantExpiry(id, new Date(Date.now() + 30 * DAY), ADMIN);
+
+    expect(await computeCustomerPriceAccess(id)).toBe(true);
+    const customer = await prisma.customer.findUnique({
+      where: { id },
+      select: { status: true },
+    });
+    expect(customer?.status).toBe("APPROVED");
+  });
+
+  it("does not resurrect a REVOKED grant — it issues a new one", async () => {
+    const id = await makeCustomer("set-revoked");
+    await approveRequest(id, { expiresInDays: 30, grantedBy: ADMIN });
+    await revokeGrant(id);
+    expect(await computeCustomerPriceAccess(id)).toBe(false);
+
+    await setGrantExpiry(id, new Date(Date.now() + 7 * DAY), ADMIN);
+
+    // The revoked row must stay revoked for the audit trail.
+    const revoked = await prisma.accessGrant.count({
+      where: { customerId: id, revokedAt: { not: null } },
+    });
+    expect(revoked).toBe(1);
     expect(await computeCustomerPriceAccess(id)).toBe(true);
   });
 });

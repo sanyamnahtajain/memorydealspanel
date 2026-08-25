@@ -11,7 +11,7 @@ import { PERMISSIONS } from "@/lib/permissions";
 import { writeAudit } from "@/server/security/audit";
 import {
   approveRequest,
-  extendGrant,
+  setGrantExpiry,
   rejectRequest,
   requestAccess as requestAccessService,
   requestRenewal,
@@ -100,6 +100,22 @@ function resolveDays(expiry: ExpiryInput): number | null {
   }
   if (expiry.presetDays !== undefined) return expiry.presetDays;
   return DEFAULT_ACCESS_EXPIRY_DAYS;
+}
+
+/**
+ * Resolve an ExpiryInput to the exact instant access should END (null =
+ * never). This mirrors the ExpiryDial's own "expires on <date>" preview —
+ * `previewExpiryDate` counts from NOW — so what the admin is shown is exactly
+ * what gets saved.
+ */
+function resolveExpiresAt(expiry: ExpiryInput): Date | null {
+  if (expiry.expiresAt !== undefined) {
+    return expiry.expiresAt === null ? null : new Date(expiry.expiresAt);
+  }
+  const days = expiry.presetDays ?? DEFAULT_ACCESS_EXPIRY_DAYS;
+  const target = new Date();
+  target.setDate(target.getDate() + days);
+  return target;
 }
 
 const approveSchema = z.object({
@@ -284,15 +300,20 @@ export async function extendAccessAction(
     await assertPermission(viewer, PERMISSIONS.CUSTOMERS_APPROVE);
 
     const { customerId, expiry } = approveSchema.parse(input);
-    const days = resolveDays(expiry);
-    // A never-expiring extension is an approve (unlimited grant).
-    if (days === null) {
+    const expiresAt = resolveExpiresAt(expiry);
+
+    // SET, not add. The dial the admin just used previews an absolute "expires
+    // on <date>"; adding days to whatever expiry they already had would save a
+    // different date than the one on screen, and would make shortening an
+    // expiry impossible. See setGrantExpiry.
+    if (expiresAt === null) {
+      // Never-expiring: an approve with an unlimited grant.
       await approveRequest(customerId, {
         expiresInDays: null,
         grantedBy: viewer.adminId,
       });
     } else {
-      await extendGrant(customerId, days, viewer.adminId);
+      await setGrantExpiry(customerId, expiresAt, viewer.adminId);
     }
 
     await writeAudit({
@@ -301,7 +322,7 @@ export async function extendAccessAction(
       action: "access.extend",
       entity: "Customer",
       entityId: customerId,
-      diff: { days },
+      diff: { expiresAt: expiresAt?.toISOString() ?? null },
     });
 
     revalidate();
