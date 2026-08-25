@@ -146,7 +146,7 @@ const GSTIN_SHAPE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
 /** Pragmatic email shape — the server's zod check stays authoritative. */
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function toForm(source: CustomerProfile | CustomerRowData): FormValues {
+function toForm(source: CustomerProfile | CustomerDetailSeed): FormValues {
   return {
     businessName: source.businessName ?? "",
     contactName: source.contactName ?? "",
@@ -232,9 +232,35 @@ function formatDateObject(date: Date): string {
 /* component                                                           */
 /* ------------------------------------------------------------------ */
 
+/**
+ * What the caller already knows about the customer.
+ *
+ * Only the id is required. Everything else is a HINT used to paint the modal
+ * before the profile finishes loading — the server profile is the truth and
+ * overwrites all of it. That is what lets a surface which holds only part of
+ * a customer open this modal: the access-requests queue, for instance, knows
+ * the customerId, business name and phone but nothing about notes, email or
+ * price access.
+ *
+ * `CustomerRowData` from the customers table satisfies this shape as-is.
+ */
+export interface CustomerDetailSeed {
+  id: string;
+  businessName?: string;
+  contactName?: string;
+  phone?: string;
+  email?: string | null;
+  gstNumber?: string | null;
+  city?: string | null;
+  status?: CustomerStatus;
+  notes?: string | null;
+  priceAccess?: boolean;
+  expiresAt?: string | null;
+}
+
 export interface CustomerDetailModalProps {
-  /** The row that was tapped. `null` renders nothing. */
-  customer: CustomerRowData | null;
+  /** The customer to show. `null` renders nothing. */
+  customer: CustomerDetailSeed | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -586,8 +612,15 @@ export function CustomerDetailModal({
   /* ---------------- derived view state ---------------- */
 
   const view = profile ?? customer;
-  const status = view.status;
-  const priceAccess = profile ? profile.priceAccess : customer.priceAccess;
+  // A seed need not carry these — the requests queue knows a customerId and a
+  // name, not a status or a join date. They render as soon as the profile
+  // lands; until then we show a safe placeholder rather than crash.
+  const status: CustomerStatus = profile?.status ?? customer.status ?? "PENDING";
+  const lastLoginAt = profile?.lastLoginAt ?? null;
+  const createdAt = profile?.createdAt ?? null;
+  // The seed may not carry it (a request row does not know), so default to
+  // the safe answer until the profile arrives.
+  const priceAccess = profile ? profile.priceAccess : (customer.priceAccess ?? false);
   const isBlocked = status === "BLOCKED";
   const canApprove =
     status === "PENDING" || status === "REJECTED" || status === "EXPIRED";
@@ -860,8 +893,7 @@ export function CustomerDetailModal({
       <section className="space-y-2">
         <h3 className="text-sm font-semibold">History</h3>
         <p className="text-xs text-muted-foreground">
-          Last login {formatDate(view.lastLoginAt)} · joined{" "}
-          {formatDate(view.createdAt)}
+          Last login {formatDate(lastLoginAt)} · joined {formatDate(createdAt)}
         </p>
         {profile ? (
           <>

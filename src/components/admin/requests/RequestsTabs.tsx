@@ -35,8 +35,14 @@ import { unsnoozeAccessAction } from "@/server/actions/access";
 import { EmptyState, StatusChip, Pager } from "@/components/common";
 import {
   ApprovalSwipeDeck,
+  pendingRequestSeed,
   type PendingRequest,
 } from "@/components/admin/requests/ApprovalSwipeDeck";
+import { ViewCustomerButton } from "@/components/admin/requests/ViewCustomerButton";
+import {
+  CustomerDetailModal,
+  type CustomerDetailSeed,
+} from "@/components/admin/customers/CustomerDetailModal";
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -507,6 +513,10 @@ function SnoozedList({
 }) {
   const router = useRouter();
   const [pendingId, setPendingId] = React.useState<string | null>(null);
+  // One profile modal for the whole list, driven by the selected seed.
+  const [detailFor, setDetailFor] = React.useState<CustomerDetailSeed | null>(
+    null,
+  );
 
   if (requests.length === 0) {
     return (
@@ -534,38 +544,55 @@ function SnoozedList({
   }
 
   return (
-    <ul className="flex flex-col gap-2">
-      {requests.map((request) => (
-        <li
-          key={request.id}
-          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-3.5"
-        >
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-foreground">
-              {request.businessName}
-            </p>
-            <p className="truncate text-xs text-muted-foreground">
-              {request.contactName} · {request.phone}
-              {request.city ? ` · ${request.city}` : ""}
-              {request.gstNumber ? ` · GST ${request.gstNumber}` : ""}
-            </p>
-            <p className="mt-0.5 text-[0.7rem] text-muted-foreground">
-              Requested {dateFormatter.format(new Date(request.createdAt))}
-            </p>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={pendingId === request.id}
-            onClick={() => void moveBack(request)}
-            className="shrink-0"
+    <>
+      <ul className="flex flex-col gap-2">
+        {requests.map((request) => (
+          <li
+            key={request.id}
+            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-3.5"
           >
-            <Undo2 aria-hidden className="size-3.5" />
-            Move back to queue
-          </Button>
-        </li>
-      ))}
-    </ul>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-foreground">
+                {request.businessName}
+              </p>
+              <p className="truncate text-xs text-muted-foreground">
+                {request.contactName} · {request.phone}
+                {request.city ? ` · ${request.city}` : ""}
+                {request.gstNumber ? ` · GST ${request.gstNumber}` : ""}
+              </p>
+              <p className="mt-0.5 text-[0.7rem] text-muted-foreground">
+                Requested {dateFormatter.format(new Date(request.createdAt))}
+              </p>
+            </div>
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <ViewCustomerButton
+                businessName={request.businessName}
+                onClick={() => setDetailFor(pendingRequestSeed(request))}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={pendingId === request.id}
+                onClick={() => void moveBack(request)}
+                className="shrink-0"
+              >
+                <Undo2 aria-hidden className="size-3.5" />
+                {pendingId === request.id ? "Moving…" : "Move back to queue"}
+              </Button>
+            </div>
+          </li>
+        ))}
+      </ul>
+
+      <CustomerDetailModal
+        key={detailFor?.id ?? "closed"}
+        customer={detailFor}
+        open={detailFor !== null}
+        onOpenChange={(open) => {
+          if (!open) setDetailFor(null);
+        }}
+      />
+    </>
   );
 }
 
@@ -579,6 +606,24 @@ function relativeDays(iso: string): { label: string; days: number } {
   if (days > 0) return { label: `in ${days} day${days === 1 ? "" : "s"}`, days };
   if (days === 0) return { label: "today", days };
   return { label: `${-days} day${days === -1 ? "" : "s"} ago`, days };
+}
+
+/**
+ * What a renewal row knows about its customer, in `CustomerDetailModal`'s seed
+ * shape. Only the id matters; the rest paints the modal until the real profile
+ * lands. A renewal carries no GSTIN or email, so those are simply absent.
+ */
+function renewalSeed(item: RenewalItem): CustomerDetailSeed {
+  return {
+    id: item.customerId,
+    businessName: item.businessName,
+    contactName: item.contactName,
+    phone: item.phone,
+    city: item.city,
+    status: item.state === "expired" ? "EXPIRED" : "APPROVED",
+    priceAccess: item.state === "expiring",
+    expiresAt: item.expiresAt,
+  };
 }
 
 /**
@@ -600,6 +645,10 @@ function RenewalsList({
     days: DEFAULT_ACCESS_EXPIRY_DAYS,
   });
   const [busy, startTransition] = React.useTransition();
+  // One profile modal for the whole list, driven by the selected seed.
+  const [detailFor, setDetailFor] = React.useState<CustomerDetailSeed | null>(
+    null,
+  );
 
   // Reset the dial per customer (render-phase, keyed on identity).
   const [dialogFor, setDialogFor] = React.useState<string | null>(null);
@@ -683,14 +732,20 @@ function RenewalsList({
                   ) : null}
                 </div>
               </div>
-              <Button
-                size="sm"
-                className="shrink-0"
-                onClick={() => setRenewing(item)}
-              >
-                <RefreshCcw aria-hidden className="size-3.5" />
-                Renew
-              </Button>
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <ViewCustomerButton
+                  businessName={item.businessName}
+                  onClick={() => setDetailFor(renewalSeed(item))}
+                />
+                <Button
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => setRenewing(item)}
+                >
+                  <RefreshCcw aria-hidden className="size-3.5" />
+                  Renew
+                </Button>
+              </div>
             </li>
           );
         })}
@@ -720,6 +775,15 @@ function RenewalsList({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <CustomerDetailModal
+        key={detailFor?.id ?? "closed"}
+        customer={detailFor}
+        open={detailFor !== null}
+        onOpenChange={(open) => {
+          if (!open) setDetailFor(null);
+        }}
+      />
     </div>
   );
 }

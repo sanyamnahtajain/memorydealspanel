@@ -35,6 +35,11 @@ import {
 } from "@/components/ui/dialog";
 import { EmptyState, StatusChip, useIsMobile } from "@/components/common";
 import { springs } from "@/components/motion/tokens";
+import { ViewCustomerButton } from "@/components/admin/requests/ViewCustomerButton";
+import {
+  CustomerDetailModal,
+  type CustomerDetailSeed,
+} from "@/components/admin/customers/CustomerDetailModal";
 import {
   ExpiryDial,
   expiryValueToInput,
@@ -89,6 +94,22 @@ function defaultExpiry(): ExpiryValue {
   return { kind: "days", days: DEFAULT_ACCESS_EXPIRY_DAYS };
 }
 
+/**
+ * What a request row already knows about its customer, in the shape
+ * `CustomerDetailModal` seeds itself from. Only the id is load-bearing — the
+ * rest just paints the modal while the full profile loads.
+ */
+export function pendingRequestSeed(request: PendingRequest): CustomerDetailSeed {
+  return {
+    id: request.customerId,
+    businessName: request.businessName,
+    contactName: request.contactName,
+    phone: request.phone,
+    gstNumber: request.gstNumber,
+    city: request.city,
+  };
+}
+
 /* ------------------------------------------------------------------ */
 /* Deck                                                                */
 /* ------------------------------------------------------------------ */
@@ -121,6 +142,21 @@ export function ApprovalSwipeDeck({ requests, searching = false }: ApprovalSwipe
 
   // Approve flow: which request is awaiting an expiry choice.
   const [approving, setApproving] = React.useState<PendingRequest | null>(null);
+
+  /**
+   * Which customer profile is open, if any. ONE modal for the whole deck —
+   * both the swipe card and the desktop list drive this same piece of state.
+   *
+   * Opening it is pure view state: it touches neither `queue` nor
+   * `pendingCommits`, so a decision sitting in its 4.5s Undo window keeps its
+   * timer and commits exactly once, whatever an admin does in the modal.
+   */
+  const [detailFor, setDetailFor] = React.useState<CustomerDetailSeed | null>(
+    null,
+  );
+  const viewCustomer = React.useCallback((request: PendingRequest) => {
+    setDetailFor(pendingRequestSeed(request));
+  }, []);
 
   /**
    * Decisions in flight: each waits out the Undo window, then commits.
@@ -436,6 +472,7 @@ export function ApprovalSwipeDeck({ requests, searching = false }: ApprovalSwipe
           onApprove={(request) => setApproving(request)}
           onReject={handleReject}
           onSnooze={handleSnooze}
+          onViewCustomer={viewCustomer}
         />
       ) : (
         <RequestList
@@ -443,8 +480,19 @@ export function ApprovalSwipeDeck({ requests, searching = false }: ApprovalSwipe
           onApprove={(request) => setApproving(request)}
           onReject={handleReject}
           onSnooze={handleSnooze}
+          onViewCustomer={viewCustomer}
         />
       )}
+
+      {/* One profile modal for the whole deck, driven by the selected seed. */}
+      <CustomerDetailModal
+        key={detailFor?.id ?? "closed"}
+        customer={detailFor}
+        open={detailFor !== null}
+        onOpenChange={(open) => {
+          if (!open) setDetailFor(null);
+        }}
+      />
 
       <ApproveDialog
         request={approving}
@@ -495,11 +543,13 @@ function SwipeDeck({
   onApprove,
   onReject,
   onSnooze,
+  onViewCustomer,
 }: {
   requests: PendingRequest[];
   onApprove: (request: PendingRequest) => void;
   onReject: (request: PendingRequest, reason?: string) => void;
   onSnooze: (request: PendingRequest) => void;
+  onViewCustomer: (request: PendingRequest) => void;
 }) {
   // Top card is the last element so later cards stack visually beneath it.
   const visible = requests.slice(0, 3);
@@ -521,6 +571,7 @@ function SwipeDeck({
                 onApprove={() => onApprove(request)}
                 onReject={() => setRejecting(request)}
                 onSnooze={() => onSnooze(request)}
+                onViewCustomer={() => onViewCustomer(request)}
               />
             ))}
         </AnimatePresence>
@@ -556,6 +607,7 @@ function SwipeCard({
   onApprove,
   onReject,
   onSnooze,
+  onViewCustomer,
 }: {
   request: PendingRequest;
   depth: number;
@@ -563,6 +615,7 @@ function SwipeCard({
   onApprove: () => void;
   onReject: () => void;
   onSnooze: () => void;
+  onViewCustomer: () => void;
 }) {
   const reduced = useReducedMotion();
   const [expanded, setExpanded] = React.useState(false);
@@ -666,8 +719,21 @@ function SwipeCard({
           </p>
         </button>
 
+        {/* OUTSIDE the expand toggle above: that whole card body is a <button>,
+            and a button inside a button is invalid HTML and swallows keyboard
+            activation. This is a sibling, never a child. */}
         {interactive && (
-          <div className="mt-4 flex gap-2">
+          <div className="mt-3 flex border-t border-border pt-2">
+            <ViewCustomerButton
+              businessName={request.businessName}
+              onClick={onViewCustomer}
+              className="-ml-2"
+            />
+          </div>
+        )}
+
+        {interactive && (
+          <div className="mt-3 flex gap-2">
             <Button
               variant="destructive"
               className="flex-1"
@@ -702,11 +768,13 @@ function RequestList({
   onApprove,
   onReject,
   onSnooze,
+  onViewCustomer,
 }: {
   requests: PendingRequest[];
   onApprove: (request: PendingRequest) => void;
   onReject: (request: PendingRequest, reason?: string) => void;
   onSnooze: (request: PendingRequest) => void;
+  onViewCustomer: (request: PendingRequest) => void;
 }) {
   const [rejecting, setRejecting] = React.useState<PendingRequest | null>(null);
 
@@ -759,7 +827,14 @@ function RequestList({
                   )}
                 </div>
               </div>
-              <div className="flex shrink-0 items-center gap-2">
+              {/* Plain <li> content — nothing here wraps the row in a button,
+                  so this control nests inside nothing. */}
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <ViewCustomerButton
+                  businessName={request.businessName}
+                  onClick={() => onViewCustomer(request)}
+                  className="mr-1"
+                />
                 <Button
                   variant="destructive"
                   size="sm"
