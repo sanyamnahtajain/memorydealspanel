@@ -12,7 +12,7 @@ import type { AuditPreviewEntry } from "@/server/services/audit-query";
 /**
  * EntityAuditList — a client-side change-history timeline for a single entity
  * instance. Unlike the async server-component {@link AuditLogPreview}, this can
- * live inside a client surface (e.g. the CustomerProfileDrawer): it lazily
+ * live inside a client surface (e.g. the CustomerDetailModal): it lazily
  * fetches the recent audit entries through the admin-only
  * {@link getEntityAuditAction} server action whenever `entityId` changes and
  * renders them with the same visual language.

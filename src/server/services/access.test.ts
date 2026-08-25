@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { hashPassword } from "@/server/auth/password";
 import { prisma } from "@/server/db";
 import { defaultInMemoryStore, setPushStore } from "@/server/notify/push";
+import { bulkSetExpiry } from "./customers";
 import {
   approveRequest,
   autoExtendOnOrder,
@@ -683,5 +684,46 @@ describe("setGrantExpiry — the admin expiry control", () => {
     });
     expect(revoked).toBe(1);
     expect(await computeCustomerPriceAccess(id)).toBe(true);
+  });
+});
+
+describe("bulkSetExpiry — the selection bar", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  it("gives every selected customer the SAME date, whatever they had before", async () => {
+    // The bug this pins: adding days gave each customer a different result
+    // computed from their own current expiry, and none of them the date the
+    // shared dial had just previewed.
+    const a = await makeCustomer("bulk-a");
+    const b = await makeCustomer("bulk-b");
+    await approveRequest(a, { expiresInDays: 5, grantedBy: ADMIN });
+    await approveRequest(b, { expiresInDays: 80, grantedBy: ADMIN });
+
+    const target = new Date(Date.now() + 30 * DAY);
+    const result = await bulkSetExpiry([a, b], target, ADMIN);
+    expect(result.succeeded).toHaveLength(2);
+
+    for (const id of [a, b]) {
+      const grant = await prisma.accessGrant.findFirst({
+        where: { customerId: id, revokedAt: null },
+        select: { expiresAt: true },
+      });
+      expect(grant?.expiresAt?.getTime()).toBe(target.getTime());
+    }
+  });
+
+  it("can shorten a whole selection at once", async () => {
+    const a = await makeCustomer("bulk-short");
+    await approveRequest(a, { expiresInDays: 90, grantedBy: ADMIN });
+
+    const target = new Date(Date.now() + 3 * DAY);
+    await bulkSetExpiry([a], target, ADMIN);
+
+    const grant = await prisma.accessGrant.findFirst({
+      where: { customerId: a, revokedAt: null },
+      select: { expiresAt: true },
+    });
+    expect(grant?.expiresAt?.getTime()).toBe(target.getTime());
+    expect(await computeCustomerPriceAccess(a)).toBe(true);
   });
 });

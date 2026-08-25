@@ -21,7 +21,7 @@ import {
   bulkExtendAccessAction,
   bulkRevokeAccessAction,
 } from "@/server/actions/access";
-import { CustomerProfileDrawer } from "./CustomerProfileDrawer";
+import { CustomerDetailModal } from "./CustomerDetailModal";
 import type { CustomerRowData } from "@/app/admin/customers/page";
 import type { CustomerStatus } from "@/lib/schemas/shared";
 
@@ -79,7 +79,7 @@ export function CustomerTable({
   const isMobile = useIsMobile();
 
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
-  const [drawerFor, setDrawerFor] = React.useState<CustomerRowData | null>(null);
+  const [detailFor, setDetailFor] = React.useState<CustomerRowData | null>(null);
   const [query, setQuery] = React.useState(search);
   const [bulkExpiry, setBulkExpiry] = React.useState<ExpiryValue>({ kind: "days", days: 30 });
   const [busy, setBusy] = React.useState(false);
@@ -199,7 +199,7 @@ export function CustomerTable({
             <li key={c.id}>
               <button
                 type="button"
-                onClick={() => setDrawerFor(c)}
+                onClick={() => setDetailFor(c)}
                 className="flex w-full items-center gap-3 rounded-lg border border-border bg-card p-3 text-left"
               >
                 <input
@@ -241,7 +241,7 @@ export function CustomerTable({
               {rows.map((c) => (
                 <tr
                   key={c.id}
-                  onClick={() => setDrawerFor(c)}
+                  onClick={() => setDetailFor(c)}
                   className="cursor-pointer border-t border-border hover:bg-muted/40"
                 >
                   <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
@@ -315,12 +315,12 @@ export function CustomerTable({
         )}
       </AnimatePresence>
 
-      <CustomerProfileDrawer
-        key={drawerFor?.id ?? "closed"}
-        customer={drawerFor}
-        open={drawerFor !== null}
+      <CustomerDetailModal
+        key={detailFor?.id ?? "closed"}
+        customer={detailFor}
+        open={detailFor !== null}
         onOpenChange={(open) => {
-          if (!open) setDrawerFor(null);
+          if (!open) setDetailFor(null);
         }}
       />
     </div>

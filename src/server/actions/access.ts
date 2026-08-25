@@ -22,7 +22,7 @@ import {
 } from "@/server/services/access";
 import {
   bulkApprove,
-  bulkExtend,
+  bulkSetExpiry,
   bulkReject,
   bulkRevoke,
   type BulkResult,
@@ -420,14 +420,16 @@ export async function bulkExtendAccessAction(
     await assertPermission(viewer, PERMISSIONS.CUSTOMERS_APPROVE);
 
     const { customerIds, expiry } = bulkSchema.parse(input);
-    const days = resolveDays(expiry);
+    const expiresAt = resolveExpiresAt(expiry);
+    // SET, like the single-customer path — the same dial previews the same
+    // absolute date here, so the two must not disagree.
     const result =
-      days === null
+      expiresAt === null
         ? await bulkApprove(customerIds, {
             expiresInDays: null,
             grantedBy: viewer.adminId,
           })
-        : await bulkExtend(customerIds, days, viewer.adminId);
+        : await bulkSetExpiry(customerIds, expiresAt, viewer.adminId);
 
     await writeAudit({
       actorType: ACTOR,
@@ -435,7 +437,7 @@ export async function bulkExtendAccessAction(
       action: "access.bulkExtend",
       entity: "Customer",
       entityId: customerIds[0]!,
-      diff: { customerIds, days },
+      diff: { customerIds, expiresAt: expiresAt?.toISOString() ?? null },
     });
 
     revalidate();

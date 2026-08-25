@@ -6,7 +6,7 @@ import { prisma } from "@/server/db";
 import {
   approveRequest,
   computeCustomerPriceAccess,
-  extendGrant,
+  setGrantExpiry,
   rejectRequest,
   revokeGrant,
 } from "./access";
@@ -418,12 +418,21 @@ export async function bulkApprove(
 }
 
 /** Extend/renew many customers' access by the same number of days. */
-export async function bulkExtend(
+/**
+ * SET the expiry on many customers at once.
+ *
+ * Uses setGrantExpiry, not extendGrant, for the same reason the single-customer
+ * path does: the ExpiryDial driving this bar previews an absolute "expires on
+ * <date>", so adding days to each customer's own current expiry would save a
+ * different date for every one of them — and none of them the date on screen.
+ * Setting also makes a bulk SHORTEN possible, which adding never could.
+ */
+export async function bulkSetExpiry(
   ids: string[],
-  days: number,
+  expiresAt: Date | null,
   grantedBy: string,
 ): Promise<BulkResult> {
-  return runBulk(ids, (id) => extendGrant(id, days, grantedBy));
+  return runBulk(ids, (id) => setGrantExpiry(id, expiresAt, grantedBy));
 }
 
 /** Revoke access for many customers (revokes grants + sessions, EXPIRED). */

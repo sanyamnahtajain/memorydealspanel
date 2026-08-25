@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { isValidGstin } from "@/lib/gstin";
 import { prisma } from "@/server/db";
 import { resolveViewer } from "@/server/auth/viewer";
 import { assertAdmin, isForbiddenError } from "@/server/dal/guard";
@@ -184,7 +185,18 @@ const updateCustomerSchema = z
       .nullable()
       .optional(),
     gstNumber: z
-      .union([gstinSchema, z.literal("")])
+      .union([
+        // The CHECKSUM-checked GSTIN, matching what a customer is already held
+        // to when they edit this same field on their own profile
+        // (customers-profile-schema.ts) and what the tax profile enforces.
+        // The bare `gstinSchema` regex used at signup accepts numbers that
+        // fail the check digit, which left the admin able to save a GSTIN the
+        // customer themselves would have been refused.
+        gstinSchema.refine(isValidGstin, {
+          message: "That GSTIN is not valid — check the digits.",
+        }),
+        z.literal(""),
+      ])
       .transform((v) => (v === "" ? null : v))
       .nullable()
       .optional(),
