@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { AlertTriangle, Info, X } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
@@ -52,7 +53,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /**
  * `storage` fires for cross-document changes only; this component's own
  * `dismiss()` drives an immediate local override, so the listener exists to
- * keep the subscription contract honest (same pattern as ExpiryBanner).
+ * keep the subscription contract honest.
  */
 function subscribeToStorage(onStoreChange: () => void): () => void {
   if (typeof window === "undefined") return () => {};
@@ -86,6 +87,9 @@ const TONE_CLASSES: Record<"warning" | "info", string> = {
 export function AccessStatusBanner() {
   const { snapshot, refresh } = useAccessStatus();
   const reduced = useReducedMotion();
+  const pathname = usePathname() ?? "/";
+  // Exactly /account — deeper pages (orders, cart) still get the banner.
+  const onAccountPage = pathname === "/account";
   const [locallyDismissed, setLocallyDismissed] = React.useState(false);
   const [renewOpen, setRenewOpen] = React.useState(false);
 
@@ -102,6 +106,14 @@ export function AccessStatusBanner() {
 
   // No snapshot yet (enhancement — render nothing), or nothing to say.
   if (!snapshot || !bannerState || storageHidden || locallyDismissed) {
+    return null;
+  }
+
+  // The account page IS the status page: it already shows the same message as
+  // a full card with the same action. Stacking this banner on top of it meant
+  // a customer whose access was ending saw the identical sentence twice
+  // before reaching their own account details.
+  if (onAccountPage) {
     return null;
   }
 

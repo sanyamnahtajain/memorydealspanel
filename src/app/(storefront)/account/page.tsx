@@ -9,7 +9,6 @@ import { StorefrontShell } from "@/components/shell/StorefrontShell";
 import { AccountLinksPanel } from "./AccountLinksPanel";
 import { FadeUp } from "@/components/motion/primitives";
 import { AccountStatus } from "@/components/storefront/AccountStatus";
-import { ExpiryBanner } from "@/components/storefront/ExpiryBanner";
 import { PreferencesPanel } from "@/components/preferences/PreferencesPanel";
 import { AccountLogoutButton } from "./AccountLogoutButton";
 import { AccountRenewalButton } from "./AccountRenewalButton";
@@ -44,7 +43,7 @@ function formatExpiry(date: Date): string {
  * price-gate verdict the DAL uses — then renders the customer's current status
  * (Pending / Approved+expiry / Rejected / Expired / Blocked) with the right
  * CTA. Approved customers whose grant is close to lapsing also see a
- * dismissible {@link ExpiryBanner}. Admins and anonymous visitors are
+ * AccountStatus card. Admins and anonymous visitors are
  * redirected away — this page is customer-only.
  *
  * PRICE GATE: this page shows NO prices. It reads only status + grant expiry.
@@ -143,13 +142,12 @@ export default async function AccountPage({
   return (
     <StorefrontShell cartCount={cartCount}>
       <div className="mx-auto w-full max-w-lg space-y-4 py-8 sm:py-12">
-        {hasLivePrices && grantExpiry ? (
-          <FadeUp>
-            <ExpiryBanner expiresAt={grantExpiry} />
-          </FadeUp>
-        ) : null}
-
-        <FadeUp delay={hasLivePrices ? 0.05 : 0}>
+        {/* No expiry banner here. The AccountStatus card below carries the
+            same sentence, the same "ending soon" state and the same action —
+            three copies of one message (shell banner + this + the card) was
+            what a customer met on their own account page. The shell banner is
+            suppressed on /account for the same reason. */}
+        <FadeUp>
           <div className="space-y-6 rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-sm ring-1 ring-foreground/5 sm:p-7">
             <div className="space-y-1">
               <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
