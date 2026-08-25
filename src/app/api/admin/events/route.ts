@@ -6,6 +6,7 @@ import {
   ADMIN_EVENT_NAME,
   ADMIN_EVENTS_HEARTBEAT_MS,
   ADMIN_EVENTS_POLL_MS,
+  resolveResumeCursor,
   type AdminEventDTO,
 } from "@/lib/admin-events";
 
@@ -24,6 +25,16 @@ import {
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Keep each stream alive longer than the default so reconnects stay rare.
+ *
+ * Deliberately 60, not higher: Vercel caps this PER PLAN and a value above the
+ * cap fails the deployment outright. 60s is accepted on every plan, so this
+ * cannot break a deploy. A shorter-lived stream only means more reconnects,
+ * and the Last-Event-ID resume below now makes those lossless anyway.
+ */
+export const maxDuration = 60;
+
 const encoder = new TextEncoder();
 
 export async function GET(request: Request): Promise<Response> {
@@ -32,8 +43,22 @@ export async function GET(request: Request): Promise<Response> {
     return new Response("Admin access required.", { status: 403 });
   }
 
-  // Only events that happen AFTER connect — history lives in the bell.
-  let cursor = new Date();
+  /**
+   * RESUME WHERE WE LEFT OFF — do not "simplify" this back to `new Date()`.
+   *
+   * This stream does not live forever: a serverless host kills it at the
+   * function's max duration, and any network blip drops it too. The browser
+   * then reconnects (see the `retry:` hint below), which used to restart the
+   * cursor at the moment of reconnect — so every notification created during
+   * the gap was skipped for good. No toast, no ring, and no `router.refresh()`,
+   * so a new access request simply did not appear until an admin reloaded the
+   * page by hand. That is the "requests take time to show up" complaint.
+   *
+   * EventSource replays the last `id:` we sent as the `Last-Event-ID` header on
+   * reconnect, so we resume from exactly there and the gap closes.
+   */
+  const cursorStart = resolveResumeCursor(request.headers.get("last-event-id"));
+  let cursor = cursorStart;
   let closed = false;
 
   const stream = new ReadableStream<Uint8Array>({
@@ -72,7 +97,14 @@ export async function GET(request: Request): Promise<Response> {
                 payload: (row.payload ?? {}) as Record<string, unknown>,
                 createdAt: row.createdAt.toISOString(),
               };
-              send(`event: ${ADMIN_EVENT_NAME}\ndata: ${JSON.stringify(dto)}\n\n`);
+              // The id IS the cursor: `createdAt`, which is what we resume
+              // from. EventSource echoes the most recent one back to us as
+              // Last-Event-ID after a drop.
+              send(
+                `id: ${dto.createdAt}\n` +
+                  `event: ${ADMIN_EVENT_NAME}\n` +
+                  `data: ${JSON.stringify(dto)}\n\n`,
+              );
             }
           } catch {
             // Transient DB hiccup — the next tick retries; never kill the stream.
