@@ -11,14 +11,12 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { renderPriceSlot } from "@/components/storefront/priceSlot";
 import type { ProductCardItem } from "@/components/storefront/ProductCardGrid";
 import {
-  HomeHero,
   HowItWorks,
-  ValueProps,
   BrandShowcase,
-  HomeCTA,
   FeaturedRail,
   SectionHeading,
 } from "@/components/storefront/home";
+import { BuyAgainRail } from "@/components/storefront/home/BuyAgainRail";
 import { APP_NAME } from "@/lib/constants";
 
 export const metadata: Metadata = {
@@ -50,11 +48,19 @@ export default async function HomePage() {
     priceSlot: renderPriceSlot(product, ANON_VIEWER),
   }));
 
-  // Category names seed the hero's "popular" search chips.
-  const suggestions = categories.slice(0, 5).map((c) => c.name);
-
   return (
     <StorefrontShell topNotice="Prices are subject to change without prior notice — please confirm current rates before placing your order.">
+      {/* "Buy again" — the signed-in customer's own top re-orders, first on
+          the page. DO NOT move this into the server render: home is PUBLIC
+          ISR (revalidate=300) and must never read cookies or embed anything
+          per-viewer. BuyAgainRail is a client component that fetches the
+          gated /api/buy-again in the BROWSER and renders NOTHING for anon /
+          admin / empty — the personalisation happens client-side so the
+          cached shell stays public. It sits OUTSIDE <HomeSections> because
+          that wrapper gives every child a stagger slot + space-y gap, which
+          would shift the page for logged-out visitors even when the rail is
+          empty. */}
+      <BuyAgainRail />
       <HomeSections>
         {/* Shop by brand — leverages the brand master; surfaced first. */}
         {brands.length > 0 ? (
@@ -107,18 +113,6 @@ export default async function HomePage() {
           <HowItWorks />
         </section>
 
-        {/* Why us — trust. */}
-        <section aria-labelledby="home-why">
-          <SectionHeading id="home-why" title={`Why ${APP_NAME}`} />
-          <ValueProps />
-        </section>
-
-        {/* Pitch + integrated search + CTAs — moved below the catalogue so the
-            brand/category grids lead the page. */}
-        <HomeHero suggestions={suggestions} />
-
-        {/* Closing call-to-action. */}
-        <HomeCTA />
       </HomeSections>
     </StorefrontShell>
   );

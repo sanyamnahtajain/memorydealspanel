@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import type { AccessSnapshot } from "@/lib/access-status";
+import type { AccessStatusSnapshot } from "@/components/access/useAccessStatus";
 import { prisma } from "@/server/db";
 import { resolveViewer } from "@/server/auth/viewer";
 import { canSeePrices, isCustomer } from "@/server/types/viewer";
@@ -21,7 +21,7 @@ export const dynamic = "force-dynamic";
 
 const NO_STORE_HEADERS = { "Cache-Control": "private, no-store" } as const;
 
-function json(snapshot: AccessSnapshot): NextResponse {
+function json(snapshot: AccessStatusSnapshot): NextResponse {
   return NextResponse.json({ snapshot }, { headers: NO_STORE_HEADERS });
 }
 
@@ -34,7 +34,7 @@ export async function GET(): Promise<NextResponse> {
   }
 
   const now = new Date();
-  const [liveGrants, openRequest] = await Promise.all([
+  const [liveGrants, openRequest, orderCount] = await Promise.all([
     prisma.accessGrant.findMany({
       where: {
         customerId: viewer.customerId,
@@ -49,6 +49,14 @@ export async function GET(): Promise<NextResponse> {
         status: { in: ["PENDING", "SNOOZED"] },
       },
       select: { id: true },
+    }),
+    // Trust strip: how many orders this shop has placed. A COUNT only — no
+    // amounts, so it stays inside the "no prices without canSeePrices" law.
+    prisma.order.count({
+      where: {
+        customerId: viewer.customerId,
+        status: { not: "CANCELLED" },
+      },
     }),
   ]);
 
@@ -67,5 +75,6 @@ export async function GET(): Promise<NextResponse> {
     priceAccess: canSeePrices(viewer),
     expiresAt,
     hasOpenRequest: openRequest !== null,
+    orderCount,
   });
 }

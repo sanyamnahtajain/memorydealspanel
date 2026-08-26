@@ -15,6 +15,7 @@ import { Logo } from "@/components/brand/Logo"
 import { IndependenceBadge } from "@/components/brand/IndependenceBadge"
 import { StorefrontFooter } from "@/components/shell/StorefrontFooter"
 import { AccessStatusBanner } from "@/components/access/AccessStatusBanner"
+import { TrustStrip } from "@/components/access/TrustStrip"
 import { SlabyPromoCard } from "@/components/slaby/SlabyPromoCard"
 import { WishlistBadge } from "@/components/storefront/wishlist/WishlistBadge"
 import { CartBadge } from "@/components/storefront/cart/CartBadge"
@@ -254,6 +255,9 @@ export function StorefrontShell({
 
       {/* ——— Access status strip (renders nothing for anon/active) ——— */}
       <AccessStatusBanner />
+      {/* Healthy-state counterpart: renders ONLY for "active", so the two
+          share this slot and never show together. */}
+      <TrustStrip />
 
       {/* ——— Content ——— */}
       {/* Bottom padding clears the FIXED mobile tab bar (~3.5rem + safe

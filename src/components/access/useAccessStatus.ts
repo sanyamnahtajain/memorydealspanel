@@ -16,8 +16,21 @@ import type { AccessSnapshot } from "@/lib/access-status";
  * succeeds so every mounted consumer repaints from the new truth).
  */
 
-let cached: AccessSnapshot | null = null;
-let inflight: Promise<AccessSnapshot | null> | null = null;
+/**
+ * What /api/access-status actually returns: the shared access snapshot plus
+ * client-surface extras. Kept here (not in lib/access-status) because only
+ * these client consumers care — `resolveAccessState` ignores the extras.
+ */
+export interface AccessStatusSnapshot extends AccessSnapshot {
+  /**
+   * Non-cancelled orders this customer has placed. Optional for backward
+   * compatibility with older cached payloads — absent means 0. NOT monetary.
+   */
+  orderCount?: number;
+}
+
+let cached: AccessStatusSnapshot | null = null;
+let inflight: Promise<AccessStatusSnapshot | null> | null = null;
 
 /** Mounted consumers, notified whenever the cached snapshot changes. */
 const listeners = new Set<() => void>();
@@ -26,12 +39,12 @@ function notify(): void {
   for (const listener of listeners) listener();
 }
 
-function load(): Promise<AccessSnapshot | null> {
+function load(): Promise<AccessStatusSnapshot | null> {
   if (cached) return Promise.resolve(cached);
   if (!inflight) {
     inflight = fetch("/api/access-status")
       .then((res) => (res.ok ? res.json() : null))
-      .then((json: { snapshot?: AccessSnapshot } | null) => {
+      .then((json: { snapshot?: AccessStatusSnapshot } | null) => {
         const snapshot = json?.snapshot;
         if (!snapshot || typeof snapshot.signedIn !== "boolean") {
           inflight = null; // allow a retry on the next mount
@@ -51,13 +64,15 @@ function load(): Promise<AccessSnapshot | null> {
 
 export interface UseAccessStatusReturn {
   /** `null` until the (shared) fetch resolves — render nothing meanwhile. */
-  snapshot: AccessSnapshot | null;
+  snapshot: AccessStatusSnapshot | null;
   /** Drop the cache and refetch; every mounted consumer updates. */
   refresh: () => void;
 }
 
 export function useAccessStatus(): UseAccessStatusReturn {
-  const [snapshot, setSnapshot] = React.useState<AccessSnapshot | null>(cached);
+  const [snapshot, setSnapshot] = React.useState<AccessStatusSnapshot | null>(
+    cached,
+  );
 
   React.useEffect(() => {
     const update = () => setSnapshot(cached);
