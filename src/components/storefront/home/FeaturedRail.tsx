@@ -48,7 +48,19 @@ const itemVariants: Variants = {
  */
 const PRIORITY_IMAGE_COUNT = 4;
 
-export function FeaturedRail({ items }: { items: ProductCardItem[] }) {
+export function FeaturedRail({
+  items,
+  priorityImageCount = PRIORITY_IMAGE_COUNT,
+}: {
+  items: ProductCardItem[];
+  /**
+   * How many leading cards get eager, high-priority images. Defaults to the
+   * LCP-friendly count for a rail near the top of the page; pass 0 for a rail
+   * that sits far below the fold (e.g. "New & featured" now that "Best
+   * sellers" is the first rail on home).
+   */
+  priorityImageCount?: number;
+}) {
   const reduced = useReducedMotion();
 
   return (
@@ -66,7 +78,7 @@ export function FeaturedRail({ items }: { items: ProductCardItem[] }) {
         >
           <FeaturedCard
             item={item}
-            priorityImage={index < PRIORITY_IMAGE_COUNT}
+            priorityImage={index < priorityImageCount}
           />
         </motion.li>
       ))}
