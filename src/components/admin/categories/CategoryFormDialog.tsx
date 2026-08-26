@@ -250,7 +250,7 @@ function CategoryFormBody({
     } finally {
       setSaving(false);
     }
-  }, [name, image, status, hsn, gstPercent, showTaxDefaults, onSubmit, onRequestClose]);
+  }, [name, image, status, hsn, gstPercent, allocationOn, showTaxDefaults, onSubmit, onRequestClose]);
 
   const fields = (
     <div className="flex flex-col gap-4 px-4 md:px-0">
