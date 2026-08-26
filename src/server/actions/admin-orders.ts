@@ -22,6 +22,7 @@ import {
   orderVolumeByCustomer,
   setAdminNote,
   setOrderStatus,
+  setOrderTracking,
   type OrderDetail,
   type OrderListItem,
   type CustomerOrderVolume,
@@ -29,6 +30,11 @@ import {
 import type { OrderAccessExtension } from "@/server/services/admin-orders";
 import { retractOrderAccessExtension } from "@/server/services/admin-orders";
 import type { DeliveryDisclosure } from "@/lib/delivery";
+import {
+  trackingInputSchema,
+  trackingPushBody,
+  type OrderTracking,
+} from "@/lib/tracking";
 import {
   toOrderBillingView,
   type OrderBillingView,
@@ -154,6 +160,8 @@ export interface OrderDetailDTO extends OrderRowDTO {
   deliveryChargePaise: number;
   /** The +N-days access grant this order triggered (anti-abuse view), or null. */
   accessExtension: OrderAccessExtension | null;
+  /** Courier tracking saved on this order, or null when not attached yet. */
+  tracking: OrderTracking | null;
 }
 
 function toRowDTO(item: OrderListItem): OrderRowDTO {
@@ -240,6 +248,7 @@ function toDetailDTO(detail: OrderDetail): OrderDetailDTO {
     delivery: detail.delivery,
     deliveryChargePaise: detail.deliveryChargePaise,
     accessExtension: detail.accessExtension,
+    tracking: detail.tracking,
   };
 }
 
@@ -278,6 +287,11 @@ const setStatusSchema = z.object({
 const adminNoteSchema = z.object({
   id: objectIdSchema,
   note: z.string().trim().max(2000).nullable(),
+});
+
+const setTrackingSchema = z.object({
+  id: objectIdSchema,
+  tracking: trackingInputSchema,
 });
 
 /* ------------------------------------------------------------------ */
@@ -487,6 +501,67 @@ export async function setOrderAdminNoteAction(
 
     revalidate();
     return { ok: true, id };
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/* courier tracking                                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Attach (or edit) the courier tracking record on an order. The FIRST save
+ * with usable tracking also pushes "Your order is on the way" to the buyer;
+ * later edits update the record silently.
+ */
+export async function setOrderTrackingAction(
+  input: z.input<typeof setTrackingSchema>,
+): Promise<ActionResult<{ id: string; tracking: OrderTracking }>> {
+  return guarded<{ id: string; tracking: OrderTracking }>(async () => {
+    const viewer = await resolveViewer();
+    assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.CUSTOMERS_EDIT);
+
+    const { id, tracking } = setTrackingSchema.parse(input);
+    const result = await setOrderTracking(id, tracking);
+    if (!result.ok) {
+      return { ok: false, error: "Order not found." };
+    }
+
+    const saved: OrderTracking = {
+      courierName: tracking.courierName ?? null,
+      trackingId: tracking.trackingId ?? null,
+      url: tracking.url ?? null,
+    };
+
+    await writeAudit({
+      actorType: ACTOR,
+      actorId: viewer.adminId,
+      action: "order.tracking",
+      entity: "Order",
+      entityId: id,
+      diff: {
+        courierName: saved.courierName,
+        trackingId: saved.trackingId,
+        url: saved.url,
+      },
+    });
+
+    // First tracking on this order → tell the buyer their parcel shipped.
+    // Fire-and-forget: the record is already committed and a push failure
+    // must never fail the admin's save (same pattern as the status push).
+    if (result.firstTime) {
+      void notifyCustomer(result.customerId, "order.status", {
+        title: "Your order is on the way",
+        body: trackingPushBody(saved),
+        url: `/account/orders/${result.orderNumber}`,
+        tag: `order.tracking:${result.orderNumber}`,
+      }).catch((error) => {
+        console.error("[actions/admin-orders] tracking push failed:", error);
+      });
+    }
+
+    revalidate();
+    return { ok: true, id, tracking: saved };
   });
 }
 

@@ -61,6 +61,7 @@ export default async function AdminOrderDetailPage({
     delivery: detail.delivery,
     deliveryChargePaise: detail.deliveryChargePaise,
     accessExtension: detail.accessExtension,
+    tracking: detail.tracking,
     placedAt: detail.placedAt.toISOString(),
     updatedAt: detail.updatedAt.toISOString(),
     customer: detail.customer

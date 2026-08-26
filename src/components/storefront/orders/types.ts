@@ -88,6 +88,17 @@ export interface OrderHistoryTax {
   hsnSummary: OrderHistoryHsnRow[];
 }
 
+/**
+ * Courier tracking the wholesaler attached after dispatch. NOT a price —
+ * never gated; null until the admin adds it (and for every legacy order).
+ */
+export interface OrderHistoryTracking {
+  courierName: string | null;
+  trackingId: string | null;
+  /** Always a validated https link when present. */
+  url: string | null;
+}
+
 export interface OrderHistoryDetail {
   orderNumber: string;
   status: OrderStatus;
@@ -118,4 +129,6 @@ export interface OrderHistoryDetail {
    * exactly as they always have.
    */
   deliveryChargePaise: number;
+  /** Courier tracking, or null when the parcel hasn't shipped (not gated). */
+  tracking: OrderHistoryTracking | null;
 }

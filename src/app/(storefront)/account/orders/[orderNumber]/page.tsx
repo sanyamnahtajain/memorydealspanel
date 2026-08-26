@@ -129,6 +129,14 @@ export default async function OrderDetailPage({
     billing: priced ? toOrderBillingView(order.billing, order.orderNumber) : null,
     delivery: order.delivery,
     deliveryChargePaise: order.deliveryChargePaise,
+    // Courier tracking is not a price — never gated. Null until it ships.
+    tracking: order.tracking
+      ? {
+          courierName: order.tracking.courierName,
+          trackingId: order.tracking.trackingId,
+          url: order.tracking.url,
+        }
+      : null,
   };
 
   const cartCount = await cartCountForViewer(viewer);

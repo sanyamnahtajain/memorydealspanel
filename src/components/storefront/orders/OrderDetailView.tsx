@@ -18,7 +18,15 @@
 import * as React from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { ImageOff, RotateCcw, XCircle, LockIcon } from "lucide-react";
+import {
+  ImageOff,
+  RotateCcw,
+  XCircle,
+  LockIcon,
+  TruckIcon,
+  CopyIcon,
+  ExternalLinkIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { formatPaise } from "@/lib/money";
@@ -37,7 +45,11 @@ import { DeliveryNotice } from "./DeliveryNotice";
 import { DeliveryChargeRow } from "@/components/orders/DeliveryChargeRow";
 import { OrderBucketSections } from "@/components/orders/billing/OrderBucketSections";
 import { BillingTotalsRows } from "@/components/orders/billing/BillingTotalsRows";
-import type { OrderHistoryDetail, OrderHistoryLine } from "./types";
+import type {
+  OrderHistoryDetail,
+  OrderHistoryLine,
+  OrderHistoryTracking,
+} from "./types";
 import {
   cancelOrderAction,
   reorderAction,
@@ -271,6 +283,9 @@ export function OrderDetailView({ detail }: { detail: OrderHistoryDetail }) {
 
         {/* Timeline */}
         <aside className="space-y-3">
+          {/* Courier tracking (not a price — never gated). */}
+          {detail.tracking ? <TrackingCard tracking={detail.tracking} /> : null}
+
           <h3 className="text-sm font-semibold text-foreground">Progress</h3>
           <div className="rounded-2xl border border-border bg-card p-4">
             <OrderStatusTimeline status={detail.status} />
@@ -279,6 +294,66 @@ export function OrderDetailView({ detail }: { detail: OrderHistoryDetail }) {
             Last updated {formatDateTime(detail.updatedAt)}
           </p>
         </aside>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * TrackingCard — "Track your parcel": courier name, the tracking number with
+ * a Copy button (clipboard + toast, with the number kept selectable as the
+ * fallback), and the courier link in a new tab. Simple English throughout.
+ */
+function TrackingCard({ tracking }: { tracking: OrderHistoryTracking }) {
+  const copyTrackingId = React.useCallback(async () => {
+    if (!tracking.trackingId) return;
+    try {
+      await navigator.clipboard.writeText(tracking.trackingId);
+      toast.success("Tracking number copied.");
+    } catch {
+      // No clipboard access — the number stays selectable below.
+      toast.error("Couldn't copy. Press and hold the number to copy it.");
+    }
+  }, [tracking.trackingId]);
+
+  return (
+    <div className="space-y-3">
+      <h3 className="text-sm font-semibold text-foreground">
+        Track your parcel
+      </h3>
+      <div className="space-y-2 rounded-2xl border border-border bg-card p-4">
+        <p className="flex items-center gap-2 text-sm font-medium text-foreground">
+          <TruckIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          {tracking.courierName ?? "Your parcel is on the way"}
+        </p>
+        {tracking.trackingId ? (
+          <div className="flex items-center justify-between gap-2 rounded-lg bg-muted/50 px-2.5 py-1.5">
+            <span className="min-w-0 break-all text-sm text-foreground select-all tabular-nums">
+              {tracking.trackingId}
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="shrink-0"
+              onClick={copyTrackingId}
+              aria-label="Copy tracking number"
+            >
+              <CopyIcon aria-hidden />
+              Copy
+            </Button>
+          </div>
+        ) : null}
+        {tracking.url ? (
+          <a
+            href={tracking.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+          >
+            See where your parcel is
+            <ExternalLinkIcon className="size-3.5" aria-hidden />
+          </a>
+        ) : null}
       </div>
     </div>
   );

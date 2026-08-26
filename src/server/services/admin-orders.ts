@@ -18,6 +18,11 @@ import {
   type DeliveryDisclosure,
 } from "@/lib/delivery";
 import { retractAutoExtension } from "@/server/services/access";
+import {
+  parseStoredTracking,
+  type OrderTracking,
+  type OrderTrackingWrite,
+} from "@/lib/tracking";
 
 /**
  * Order service layer — reads and status management over the `Order`
@@ -281,6 +286,11 @@ export interface OrderDetail extends OrderListItem {
   deliveryChargePaise: number;
   /** The "+N days" access extension this order granted, when it did. */
   accessExtension: OrderAccessExtension | null;
+  /**
+   * Courier tracking the admin attached after dispatch, or null for every
+   * order the parcel hasn't shipped on (and every legacy order).
+   */
+  tracking: OrderTracking | null;
 }
 
 /** The full set of Order GST columns needed to rebuild the frozen snapshot. */
@@ -458,6 +468,7 @@ export async function getOrder(id: string): Promise<OrderDetail | null> {
       deliveryDisclosure: true,
       deliveryChargePaise: true,
       accessExtension: true,
+      tracking: true,
     },
   });
   if (!row) return null;
@@ -473,6 +484,7 @@ export async function getOrder(id: string): Promise<OrderDetail | null> {
     delivery: parseStoredDeliveryDisclosure(row.deliveryDisclosure),
     deliveryChargePaise: frozenDeliveryChargePaise(row.deliveryChargePaise),
     accessExtension: parseOrderAccessExtension(row.accessExtension),
+    tracking: parseStoredTracking(row.tracking),
   };
 }
 
@@ -517,6 +529,46 @@ export async function setOrderStatus(
     from: current.status,
     customerId: current.customerId,
     orderNumber: current.orderNumber,
+  };
+}
+
+/**
+ * Save the courier tracking record onto an order. The input is the already-
+ * validated {@link OrderTrackingWrite} shape (validation lives with the schema
+ * in `@/lib/tracking`; authorization/audit in the action layer).
+ *
+ * Returns `firstTime: true` when the order had no usable tracking before this
+ * save — that's the (only) save that pushes a notification to the buyer, so an
+ * admin fixing a typo never re-pings the customer.
+ */
+export async function setOrderTracking(
+  id: string,
+  tracking: OrderTrackingWrite,
+): Promise<
+  | { ok: true; customerId: string; orderNumber: string; firstTime: boolean }
+  | { ok: false; reason: "not-found" }
+> {
+  const current = await prisma.order.findUnique({
+    where: { id },
+    select: { customerId: true, orderNumber: true, tracking: true },
+  });
+  if (!current) return { ok: false, reason: "not-found" };
+  const firstTime = parseStoredTracking(current.tracking) === null;
+  await prisma.order.update({
+    where: { id },
+    data: {
+      tracking: {
+        ...(tracking.courierName ? { courierName: tracking.courierName } : {}),
+        ...(tracking.trackingId ? { trackingId: tracking.trackingId } : {}),
+        ...(tracking.url ? { url: tracking.url } : {}),
+      } satisfies Prisma.InputJsonValue,
+    },
+  });
+  return {
+    ok: true,
+    customerId: current.customerId,
+    orderNumber: current.orderNumber,
+    firstTime,
   };
 }
 
@@ -719,6 +771,7 @@ export async function getCustomerOrderByNumber(
       deliveryDisclosure: true,
       deliveryChargePaise: true,
       accessExtension: true,
+      tracking: true,
     },
   });
   if (!row) return null;
@@ -739,5 +792,6 @@ export async function getCustomerOrderByNumber(
     delivery: parseStoredDeliveryDisclosure(row.deliveryDisclosure),
     deliveryChargePaise: frozenDeliveryChargePaise(row.deliveryChargePaise),
     accessExtension: parseOrderAccessExtension(row.accessExtension),
+    tracking: parseStoredTracking(row.tracking),
   };
 }

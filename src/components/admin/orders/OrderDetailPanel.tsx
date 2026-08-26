@@ -14,9 +14,31 @@
 import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { ImageOff, PhoneIcon, UserIcon, MapPinIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
+import {
+  ImageOff,
+  PhoneIcon,
+  UserIcon,
+  MapPinIcon,
+  TruckIcon,
+  ExternalLinkIcon,
+  PencilIcon,
+  MessageCircle,
+} from "lucide-react";
+import { toast } from "sonner";
 
+import { APP_NAME } from "@/lib/constants";
 import { formatPaise } from "@/lib/money";
+import type { OrderTracking } from "@/lib/tracking";
+import {
+  buildWhatsAppLink,
+  normaliseWhatsAppNumber,
+  orderStatusMessageLines,
+} from "@/lib/whatsapp-link";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
+import { Tooltip } from "@/components/ui/tooltip";
 import { StatusChip } from "@/components/common/StatusChip";
 import {
   ORDER_STATUS_LABEL,
@@ -31,7 +53,11 @@ import { AccessExtensionNotice } from "./AccessExtensionNotice";
 import { DeliveryNotice } from "@/components/storefront/orders/DeliveryNotice";
 import { DeliveryChargeRow } from "@/components/orders/DeliveryChargeRow";
 import { BillingTotalsRows } from "@/components/orders/billing/BillingTotalsRows";
-import type { OrderDetailDTO, OrderLineDTO } from "@/server/actions/admin-orders";
+import {
+  setOrderTrackingAction,
+  type OrderDetailDTO,
+  type OrderLineDTO,
+} from "@/server/actions/admin-orders";
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString("en-IN", {
@@ -72,7 +98,10 @@ export function OrderDetailPanel({ order }: { order: OrderDetailDTO }) {
             {order.itemCount === 1 ? "item" : "items"}
           </p>
         </div>
-        <OrderCsvButton order={order} />
+        <div className="flex items-center gap-2">
+          <WhatsAppCustomerButton order={order} />
+          <OrderCsvButton order={order} />
+        </div>
       </div>
 
       {/* Anti-abuse: this order granted access time — visible + retractable. */}
@@ -215,12 +244,260 @@ export function OrderDetailPanel({ order }: { order: OrderDetailDTO }) {
             </p>
           </div>
 
+          {/* Courier tracking */}
+          <div className="rounded-2xl border border-border bg-card p-4">
+            <DeliveryTrackingCard orderId={order.id} tracking={order.tracking} />
+          </div>
+
           {/* Admin note */}
           <div className="rounded-2xl border border-border bg-card p-4">
             <AdminNoteEditor orderId={order.id} note={order.adminNote} />
           </div>
         </aside>
       </div>
+    </div>
+  );
+}
+
+/** WhatsApp-green accent over the outline button, in both admin themes. */
+const WHATSAPP_BUTTON_CLASSES =
+  "border-emerald-600/40 text-emerald-700 hover:bg-emerald-600/10 hover:text-emerald-700 dark:border-emerald-300/40 dark:text-emerald-300 dark:hover:bg-emerald-300/10 dark:hover:text-emerald-300";
+
+/**
+ * WhatsAppCustomerButton — one tap from this order to a pre-filled WhatsApp
+ * message to ITS customer ("Namaste …, your order MD-XXX is confirmed…").
+ *
+ * The message is minted at render time from the CURRENT status + tracking, so
+ * once staff save tracking and the panel refreshes, the same button's message
+ * carries the courier details automatically. Pure deep link — no server
+ * action, nothing stored. The customer's phone is already in this admin-only
+ * DTO (it's their login); if it's somehow missing we render a disabled button
+ * with a tooltip, never a dead link.
+ */
+function WhatsAppCustomerButton({ order }: { order: OrderDetailDTO }) {
+  const phone = order.customer?.phone ?? "";
+  const hasPhone = normaliseWhatsAppNumber(phone) !== "";
+
+  if (!order.customer || !hasPhone) {
+    return (
+      <Tooltip content="This customer has no phone number to message.">
+        {/* Wrapper span: a disabled button swallows pointer events, so the
+            tooltip needs a live (and focusable) trigger around it. */}
+        <span className="inline-flex" tabIndex={0}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled
+            className={WHATSAPP_BUTTON_CLASSES}
+          >
+            <MessageCircle aria-hidden />
+            WhatsApp customer
+          </Button>
+        </span>
+      </Tooltip>
+    );
+  }
+
+  const href = buildWhatsAppLink(
+    phone,
+    orderStatusMessageLines({
+      appName: APP_NAME,
+      contactName: order.customer.contactName || order.customer.businessName,
+      orderNumber: order.orderNumber,
+      status: order.status,
+      tracking: order.tracking,
+    }),
+  );
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      className={WHATSAPP_BUTTON_CLASSES}
+      render={
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={`WhatsApp ${order.customer.businessName} about order ${order.orderNumber}`}
+        />
+      }
+    >
+      <MessageCircle aria-hidden />
+      WhatsApp customer
+    </Button>
+  );
+}
+
+/**
+ * DeliveryTrackingCard — attach/edit the courier tracking on this order.
+ *
+ * Shows the saved values with an Edit affordance once set; otherwise the form.
+ * One Save via the guarded server action; the FIRST save also notifies the
+ * buyer that their parcel is on the way (handled server-side).
+ */
+function DeliveryTrackingCard({
+  orderId,
+  tracking,
+}: {
+  orderId: string;
+  tracking: OrderTracking | null;
+}) {
+  const router = useRouter();
+  const [editing, setEditing] = React.useState(false);
+  const [courierName, setCourierName] = React.useState(tracking?.courierName ?? "");
+  const [trackingId, setTrackingId] = React.useState(tracking?.trackingId ?? "");
+  const [url, setUrl] = React.useState(tracking?.url ?? "");
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const showForm = editing || !tracking;
+  const canSave = trackingId.trim() !== "" || url.trim() !== "";
+
+  const save = React.useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await setOrderTrackingAction({
+        id: orderId,
+        tracking: { courierName, trackingId, url },
+      });
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      toast.success("Tracking saved. The customer can see it on their order.");
+      setEditing(false);
+      router.refresh();
+    } catch {
+      setError("Couldn't save the tracking. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }, [courierName, orderId, router, trackingId, url]);
+
+  const startEdit = React.useCallback(() => {
+    setCourierName(tracking?.courierName ?? "");
+    setTrackingId(tracking?.trackingId ?? "");
+    setUrl(tracking?.url ?? "");
+    setError(null);
+    setEditing(true);
+  }, [tracking]);
+
+  return (
+    <div className="space-y-2">
+      <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+        <TruckIcon className="size-4 text-muted-foreground" aria-hidden />
+        Delivery tracking
+      </h2>
+      {showForm ? (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">
+            The customer sees this on their order page. Add a tracking number
+            or a link (or both).
+          </p>
+          <div className="space-y-1">
+            <label
+              htmlFor={`tracking-courier-${orderId}`}
+              className="text-xs font-medium text-muted-foreground"
+            >
+              Courier name
+            </label>
+            <Input
+              id={`tracking-courier-${orderId}`}
+              value={courierName}
+              maxLength={60}
+              onChange={(e) => setCourierName(e.target.value)}
+              placeholder="e.g. Bluedart"
+            />
+          </div>
+          <div className="space-y-1">
+            <label
+              htmlFor={`tracking-id-${orderId}`}
+              className="text-xs font-medium text-muted-foreground"
+            >
+              Tracking number
+            </label>
+            <Input
+              id={`tracking-id-${orderId}`}
+              value={trackingId}
+              maxLength={64}
+              onChange={(e) => setTrackingId(e.target.value)}
+              placeholder="e.g. AWB12345678"
+            />
+          </div>
+          <div className="space-y-1">
+            <label
+              htmlFor={`tracking-url-${orderId}`}
+              className="text-xs font-medium text-muted-foreground"
+            >
+              Tracking link
+            </label>
+            <Input
+              id={`tracking-url-${orderId}`}
+              type="url"
+              inputMode="url"
+              value={url}
+              maxLength={2048}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://…"
+              aria-invalid={error !== null || undefined}
+            />
+          </div>
+          {error ? (
+            <p role="alert" className="text-xs font-medium text-destructive">
+              {error}
+            </p>
+          ) : null}
+          <div className="flex items-center justify-end gap-2 pt-1">
+            {tracking ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => {
+                  setEditing(false);
+                  setError(null);
+                }}
+              >
+                Cancel
+              </Button>
+            ) : null}
+            <Button size="sm" onClick={save} disabled={!canSave || busy}>
+              {busy ? <Spinner size="sm" label="" /> : null}
+              Save tracking
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-1.5 text-sm">
+          {tracking?.courierName ? (
+            <p className="font-medium text-foreground">{tracking.courierName}</p>
+          ) : null}
+          {tracking?.trackingId ? (
+            <p className="text-muted-foreground select-all tabular-nums">
+              {tracking.trackingId}
+            </p>
+          ) : null}
+          {tracking?.url ? (
+            <a
+              href={tracking.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+            >
+              Open tracking page
+              <ExternalLinkIcon className="size-3" aria-hidden />
+            </a>
+          ) : null}
+          <div className="pt-1">
+            <Button size="sm" variant="outline" onClick={startEdit}>
+              <PencilIcon aria-hidden />
+              Edit
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
