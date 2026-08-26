@@ -87,6 +87,38 @@ export function minOrderableQty(
 }
 
 /**
+ * The next pack-aligned quantity STRICTLY ABOVE `qty` — the "+" / "+pack"
+ * stepper action. From an off-pack value it lands on the next multiple
+ * (15 → 20 at pack 10), so one tap always repairs alignment upward.
+ * Junk/negative input yields one pack.
+ */
+export function stepQtyUp(
+  qty: number,
+  pack: number | null | undefined,
+): number {
+  const p = normalisePack(pack);
+  if (!Number.isFinite(qty) || qty < 0) return p;
+  const q = Math.trunc(qty);
+  return Math.min(Math.floor(q / p) * p + p, MAX_QTY_PER_LINE);
+}
+
+/**
+ * The previous pack-aligned quantity STRICTLY BELOW `qty` — the "−" stepper
+ * action. Off-pack values land on the multiple below (15 → 10 at pack 10);
+ * stepping below one pack yields 0, which callers treat as "remove the row".
+ */
+export function stepQtyDown(
+  qty: number,
+  pack: number | null | undefined,
+): number {
+  const p = normalisePack(pack);
+  if (!Number.isFinite(qty)) return 0;
+  const q = Math.trunc(qty);
+  if (q <= p) return 0;
+  return Math.ceil(q / p) * p - p;
+}
+
+/**
  * Clamp a requested quantity into the valid window for a unit. Non-finite
  * input lands on the minimum. Result is ALWAYS on-pack, ≥ the pack-aligned
  * MOQ, and ≤ the pack-aligned cap.

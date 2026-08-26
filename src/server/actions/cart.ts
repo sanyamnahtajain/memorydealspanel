@@ -19,6 +19,11 @@ import {
   updateQuantitySchema,
   cartLineRefSchema,
 } from "@/lib/schemas/cart";
+import {
+  perModelRules,
+  resolveEffectiveAllocation,
+  validatePerModelQuantities,
+} from "@/lib/allocation";
 
 /**
  * Cart server actions — the transport seam between the storefront and the
@@ -103,6 +108,65 @@ async function requireApprovedCustomer(): Promise<
   return { ok: true, viewer };
 }
 
+/**
+ * Per-model pack/minimum rules for a breakdown (the ONE piece of allocation
+ * validation the service layer doesn't cover — its `settleBreakdownTotal`
+ * checks only the TOTAL). Validating the INPUT split alone is sufficient even
+ * though the service merges adds into an existing line: multiples sum to
+ * multiples and per-model totals only grow. Returns a typed refusal, or null
+ * to proceed. Non-allocation products pass through untouched (the service
+ * ignores stray breakdowns).
+ */
+async function perModelBreakdownRefusal(data: {
+  productId: string;
+  variantId?: string;
+  breakdown?: { modelId: string; qty: number }[];
+}): Promise<CartActionResult | null> {
+  const breakdown = data.breakdown;
+  if (!breakdown || breakdown.length === 0) return null;
+
+  const product = await prisma.product.findUnique({
+    where: { id: data.productId },
+    select: {
+      packMultiple: true,
+      allocation: true,
+      category: { select: { defaultAllocation: true } },
+    },
+  });
+  if (!product) return null; // the service refuses with the proper error
+
+  const allocation = resolveEffectiveAllocation(
+    product.allocation,
+    product.category?.defaultAllocation,
+  );
+  if (!allocation?.required) return null;
+
+  let packMultiple = product.packMultiple;
+  if (data.variantId) {
+    // Mirror the service's resolveUnit: variant pack overrides the product's.
+    const variant = await prisma.productVariant.findFirst({
+      where: { id: data.variantId, productId: data.productId },
+      select: { packMultiple: true },
+    });
+    packMultiple = variant?.packMultiple ?? product.packMultiple;
+  }
+
+  const rules = perModelRules(allocation.minPerModel, packMultiple);
+  if (rules.pack === 1 && rules.min <= 1) return null; // nothing to enforce
+
+  const models = await prisma.deviceModel.findMany({
+    where: { id: { in: breakdown.map((e) => e.modelId) } },
+    select: { id: true, name: true },
+  });
+  const nameById = new Map(models.map((m) => [m.id, m.name]));
+  const issues = validatePerModelQuantities(
+    breakdown.map((e) => ({ ...e, name: nameById.get(e.modelId) })),
+    rules,
+  );
+  if (issues.length === 0) return null;
+  return { ok: false, reason: "breakdown", message: issues[0].message };
+}
+
 /** Map a service CartError code onto a client-facing refusal reason. */
 function reasonForCartError(error: CartError): CartActionReason {
   switch (error.code) {
@@ -151,6 +215,9 @@ export async function addToCartAction(input: unknown): Promise<CartActionResult>
     };
   }
 
+  const refusal = await perModelBreakdownRefusal(parsed.data);
+  if (refusal) return refusal;
+
   try {
     const result = await addToCart(viewer, parsed.data);
     revalidateCart();
@@ -188,6 +255,9 @@ export async function updateCartQuantityAction(
       message: "Too many changes too quickly. Please wait a moment.",
     };
   }
+
+  const refusal = await perModelBreakdownRefusal(parsed.data);
+  if (refusal) return refusal;
 
   try {
     const result = await updateQuantity(viewer, parsed.data);

@@ -93,6 +93,7 @@ export default async function CartPage() {
     packMultiple: l.packMultiple,
     maxQty: l.maxQty,
     allocationRequired: l.allocationRequired,
+    minPerModel: l.minPerModel,
     breakdown: l.breakdown,
     allowRequirementNotes: l.allowRequirementNotes,
     note: l.note,

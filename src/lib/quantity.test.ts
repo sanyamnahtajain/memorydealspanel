@@ -7,6 +7,8 @@ import {
   maxOrderableQty,
   minOrderableQty,
   normalisePack,
+  stepQtyDown,
+  stepQtyUp,
 } from "./quantity";
 
 describe("normalisePack", () => {
@@ -113,5 +115,40 @@ describe("admin maxQty cap (default 200)", () => {
       expect(maxOrderableQty(null, junk)).toBe(DEFAULT_MAX_QTY);
     }
     expect(maxOrderableQty(null, MAX_QTY_PER_LINE * 5)).toBe(MAX_QTY_PER_LINE);
+  });
+});
+
+describe("stepQtyUp / stepQtyDown — the pack-sized stepper", () => {
+  it("steps by the pack from an aligned value", () => {
+    expect(stepQtyUp(10, 10)).toBe(20);
+    expect(stepQtyDown(20, 10)).toBe(10);
+  });
+
+  it("repairs an off-pack value onto the nearest multiple in the direction pressed", () => {
+    expect(stepQtyUp(15, 10)).toBe(20);
+    expect(stepQtyDown(15, 10)).toBe(10);
+    expect(stepQtyDown(11, 10)).toBe(10);
+  });
+
+  it("stepping below one pack yields 0 (callers remove the row)", () => {
+    expect(stepQtyDown(10, 10)).toBe(0);
+    expect(stepQtyDown(5, 10)).toBe(0);
+    expect(stepQtyDown(1, 1)).toBe(0);
+  });
+
+  it("no pack means plain ±1", () => {
+    expect(stepQtyUp(3, null)).toBe(4);
+    expect(stepQtyDown(3, null)).toBe(2);
+  });
+
+  it("starts at one pack from zero or junk", () => {
+    expect(stepQtyUp(0, 10)).toBe(10);
+    expect(stepQtyUp(-4, 10)).toBe(10);
+    expect(stepQtyUp(NaN, 10)).toBe(10);
+    expect(stepQtyDown(NaN, 10)).toBe(0);
+  });
+
+  it("never exceeds the absolute per-line ceiling", () => {
+    expect(stepQtyUp(MAX_QTY_PER_LINE, 10)).toBe(MAX_QTY_PER_LINE);
   });
 });

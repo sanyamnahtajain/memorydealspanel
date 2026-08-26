@@ -31,8 +31,16 @@ import { MAX_CART_NOTE_LENGTH, MAX_QTY_PER_LINE } from "@/lib/schemas/cart";
 import { Button } from "@/components/ui/button";
 import { CartLineRow } from "@/components/storefront/cart/CartLineRow";
 import { DeliveryNotice } from "@/components/storefront/orders/DeliveryNotice";
-import { DeliveryChargeRow } from "@/components/orders/DeliveryChargeRow";
-import type { DeliveryDisclosure } from "@/lib/delivery";
+import {
+  DELIVERY_MINIMUM_CAVEAT,
+  deliveryDisclosureCopy,
+  type DeliveryDisclosure,
+} from "@/lib/delivery";
+import {
+  gstDisclosureLabel,
+  movLineText,
+  noteDisclosureLabel,
+} from "./summary-copy";
 import { BucketCard } from "@/components/storefront/billing/BucketCard";
 import {
   closestNextTier,
@@ -100,6 +108,11 @@ export interface CartLineData {
   maxQty: number;
   /** Whether this product requires a per-model split (hides the stepper). */
   allocationRequired: boolean;
+  /**
+   * Per-model minimum from the allocation config, or null. Display only — it
+   * lets the split editor flag violations inline, exactly as the server will.
+   */
+  minPerModel: number | null;
   /** Resolved split for display/edit, when the line carries one. */
   breakdown: { modelId: string; name: string; qty: number }[] | null;
   /** Whether this product accepts a requirement note + photos. */
@@ -547,10 +560,12 @@ export function CartView({
         )}
       </div>
 
-      {/* Summary (mobile, inline). The note + full GST breakdown that the
-          desktop sidebar shows — placing itself is done from the sticky bar,
-          so the Place-order button is hidden here. Bottom padding clears the
-          fixed bar (+ tab nav on phones). */}
+      {/* Summary (mobile, inline) — the ONE summary on phones: the GST
+          breakdown, delivery detail and note field start folded behind
+          chevron rows (the delivery-minimum caveat and the "no payment now"
+          line stay visible without opening anything). Placing is done from
+          the sticky bar, so the Place-order button is hidden here. Bottom
+          padding clears the fixed bar (+ tab nav on phones). */}
       <div className="mt-2 pb-36 md:pb-24 lg:hidden">
         <div className="rounded-xl border border-border bg-card p-4">
           <Summary
@@ -601,6 +616,7 @@ export function CartView({
             billing={billing}
             movShortfallPaise={movShortfallPaise}
             minOrderValuePaise={minOrderValuePaise}
+            expandDetails
           />
         </div>
       </aside>
@@ -680,6 +696,12 @@ interface SummaryProps {
   minOrderValuePaise?: number | null;
   /** Hide the internal Place-order button (mobile uses the sticky bar's). */
   hidePlaceButton?: boolean;
+  /**
+   * Open the disclosure rows (GST breakdown, delivery detail, note field) by
+   * default. The desktop sidebar has the room, so it passes true; phones start
+   * collapsed and the buyer opens what they need.
+   */
+  expandDetails?: boolean;
   /** Live billing-group mirror (bucket discounts), or null when gated / none. */
   billing?: BucketedCart | null;
 }
@@ -705,6 +727,7 @@ function Summary({
   onApplyCoupon,
   onRemoveCoupon,
   hidePlaceButton = false,
+  expandDetails = false,
   billing = null,
 }: SummaryProps) {
   const [codeInput, setCodeInput] = React.useState("");
@@ -765,17 +788,49 @@ function Summary({
           </div>
         ) : null}
 
+        {/* GST — one "Incl. ₹X GST" row; the full breakdown (taxable value,
+            CGST/SGST or IGST, round-off) folds behind the chevron. */}
         {showTax ? (
-          <TaxLines tax={tax} />
+          <SummaryDisclosureRow
+            label={gstDisclosureLabel(tax.totalTaxPaise)}
+            defaultOpen={expandDetails}
+          >
+            <TaxLines tax={tax} />
+            {tax.supplyType === null ? (
+              <p className="mt-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-[0.7rem] leading-relaxed text-amber-700 dark:text-amber-300">
+                GST is shown combined. Add your GSTIN in the note (or your
+                profile) so we can split it into CGST/SGST or IGST on the
+                proforma.
+              </p>
+            ) : null}
+          </SummaryDisclosureRow>
         ) : null}
 
         {/* Delivery — a real line in the money, added after every discount and
-            after GST. Its caveat travels with it: this is a MINIMUM. */}
-        <DeliveryChargeRow
-          chargePaise={deliveryChargePaise}
-          inDefinitionList
-          className="border-t border-border pt-2"
-        />
+            after GST. Owner rule: the MINIMUM caveat stays on the collapsed
+            face, always visible; the chevron folds only the longer wording. */}
+        {showDelivery ? (
+          <SummaryDisclosureRow
+            label="Delivery (minimum)"
+            sublabel={DELIVERY_MINIMUM_CAVEAT}
+            value={`+${formatPaise(deliveryChargePaise)}`}
+            defaultOpen={expandDetails}
+            className="border-t border-border pt-2"
+          >
+            <p className="text-[0.7rem] leading-relaxed text-muted-foreground">
+              {
+                deliveryDisclosureCopy(formatPaise(deliveryChargePaise), {
+                  charged: true,
+                }).detail
+              }
+            </p>
+            {deliveryDisclosure?.note ? (
+              <p className="text-[0.7rem] leading-relaxed text-muted-foreground">
+                {deliveryDisclosure.note}
+              </p>
+            ) : null}
+          </SummaryDisclosureRow>
+        ) : null}
 
         <div className="mt-1 flex items-center justify-between border-t border-border pt-2">
           <dt className="font-semibold text-foreground">
@@ -787,37 +842,16 @@ function Summary({
         </div>
       </dl>
 
-      {showTax && tax.supplyType === null ? (
-        <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-[0.7rem] leading-relaxed text-amber-700 dark:text-amber-300">
-          GST is shown combined. Add your GSTIN in the note (or your profile) so
-          we can split it into CGST/SGST or IGST on the proforma.
-        </p>
-      ) : null}
-
+      {/* ONE minimum-order-value line (the mobile sticky bar carries its own).
+          The server re-checks the minimum at placement — this only explains
+          the disabled button. */}
       {movShortfallPaise != null && minOrderValuePaise != null ? (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-2">
-          <p className="text-[0.75rem] font-medium leading-relaxed text-amber-700 dark:text-amber-300">
-            Add {formatPaise(movShortfallPaise)} more to place your order
-          </p>
-          <p className="text-[0.7rem] text-amber-700/80 dark:text-amber-300/80">
-            Minimum order value is {formatPaise(minOrderValuePaise)}.
-          </p>
-          <div
-            className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-amber-500/20"
-            role="progressbar"
-            aria-valuemin={0}
-            aria-valuemax={minOrderValuePaise}
-            aria-valuenow={Math.max(0, minOrderValuePaise - movShortfallPaise)}
-            aria-label="Progress toward the minimum order value"
-          >
-            <div
-              className="h-full rounded-full bg-amber-500"
-              style={{
-                width: `${Math.min(100, Math.round(((minOrderValuePaise - movShortfallPaise) / minOrderValuePaise) * 100))}%`,
-              }}
-            />
-          </div>
-        </div>
+        <p
+          role="status"
+          className="text-[0.75rem] font-medium leading-relaxed text-amber-700 dark:text-amber-300"
+        >
+          {movLineText(movShortfallPaise, minOrderValuePaise)}
+        </p>
       ) : null}
 
       {priced && canOrder && suggestions.length > 0 ? (
@@ -916,38 +950,26 @@ function Summary({
         </p>
       ) : null}
 
+      {/* Owner-mandated reassurance — always visible, never folded away. */}
       <p className="text-[0.7rem] leading-relaxed text-muted-foreground">
         No payment is taken now. Placing an order sends a purchase request; our
         team confirms availability and pricing with you directly.
       </p>
 
-      <div>
-        <label
-          htmlFor="order-note"
-          className="mb-1 block text-xs font-medium text-foreground"
-        >
-          Note for the seller{" "}
-          <span className="font-normal text-muted-foreground">(optional)</span>
-        </label>
-        <textarea
-          id="order-note"
-          value={note}
-          onChange={(e) => onNote(e.target.value.slice(0, MAX_CART_NOTE_LENGTH))}
-          maxLength={MAX_CART_NOTE_LENGTH}
-          rows={3}
-          disabled={!canOrder}
-          placeholder="Delivery preferences, GST details, anything else…"
-          className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
-        />
-        <p className="mt-1 text-right text-[0.65rem] text-muted-foreground tabular-nums">
-          {note.length}/{MAX_CART_NOTE_LENGTH}
-        </p>
-      </div>
+      {/* Note for the seller — folded behind a chevron row on phones; the
+          field itself (and the typed note) is shared with the other Summary
+          instance, so nothing is lost by collapsing it here. */}
+      <NoteDisclosure
+        note={note}
+        onNote={onNote}
+        canOrder={canOrder}
+        defaultOpen={expandDetails}
+      />
 
-      {/* Delivery terms — every buyer sees this before placing. When the
-          charge is in the total the copy says so, and still calls it a
-          minimum that can rise with weight, size and PIN code. */}
-      <DeliveryNotice delivery={deliveryDisclosure} charged={showDelivery} />
+      {/* Delivery terms with NO charge in the total (disclosed-only mode) —
+          the owner-mandated notice still shows in full. When the charge is a
+          money row above, that row carries the minimum caveat instead. */}
+      {!showDelivery ? <DeliveryNotice delivery={deliveryDisclosure} /> : null}
 
       {!hidePlaceButton ? (
         <Button onClick={onPlace} disabled={!canPlace} className="w-full">
@@ -959,6 +981,162 @@ function Summary({
           Place order
         </Button>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * One collapsible row inside the Summary's definition list: a chevron toggle
+ * on the term, the amount pinned right, an always-visible caveat under the
+ * label when one is owner-mandated, and the detail folded beneath. Phones
+ * start collapsed (`defaultOpen` false); the desktop sidebar opens it.
+ */
+function SummaryDisclosureRow({
+  label,
+  sublabel,
+  value,
+  defaultOpen,
+  className,
+  children,
+}: {
+  label: string;
+  /** Always-visible sub-line under the label — NEVER folded away. */
+  sublabel?: string;
+  /** Right-aligned amount on the collapsed face, when the row carries one. */
+  value?: string;
+  defaultOpen: boolean;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const reduced = useReducedMotion();
+  const [open, setOpen] = React.useState(defaultOpen);
+  const panelId = React.useId();
+  return (
+    <div className={className}>
+      <div className="flex items-start justify-between gap-3">
+        <dt className="min-w-0 text-muted-foreground">
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            aria-expanded={open}
+            aria-controls={panelId}
+            className="inline-flex items-center gap-1 rounded text-left transition-colors hover:text-foreground"
+          >
+            {label}
+            <ChevronDown
+              className={cn(
+                "size-3 shrink-0 transition-transform",
+                open && "rotate-180",
+              )}
+              aria-hidden
+            />
+          </button>
+          {sublabel ? (
+            <span className="mt-0.5 block text-[0.7rem] leading-relaxed text-muted-foreground/80">
+              {sublabel}
+            </span>
+          ) : null}
+        </dt>
+        {value != null ? (
+          <dd className="shrink-0 font-semibold tabular-nums text-foreground">
+            {value}
+          </dd>
+        ) : null}
+      </div>
+      <AnimatePresence initial={false}>
+        {open ? (
+          <motion.div
+            id={panelId}
+            key="panel"
+            initial={reduced ? false : { opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={reduced ? { opacity: 0 } : { opacity: 0, height: 0 }}
+            transition={{ duration: reduced ? 0 : 0.18 }}
+            className="overflow-hidden"
+          >
+            <div className="flex flex-col gap-1 pt-1.5 pl-3 text-[0.75rem]">
+              {children}
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/**
+ * The order-note field behind a chevron row. The note text lives in CartView
+ * (shared by both Summary instances), so folding the row never loses a typed
+ * note — and the collapsed label says so ("— added").
+ */
+function NoteDisclosure({
+  note,
+  onNote,
+  canOrder,
+  defaultOpen,
+}: {
+  note: string;
+  onNote: (v: string) => void;
+  canOrder: boolean;
+  defaultOpen: boolean;
+}) {
+  const reduced = useReducedMotion();
+  const [open, setOpen] = React.useState(defaultOpen);
+  const panelId = React.useId();
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-controls={panelId}
+        className="flex w-full items-center justify-between gap-2 rounded text-left text-xs font-medium text-foreground"
+      >
+        <span>
+          {noteDisclosureLabel(note)}{" "}
+          {note.trim() === "" ? (
+            <span className="font-normal text-muted-foreground">(optional)</span>
+          ) : null}
+        </span>
+        <ChevronDown
+          className={cn(
+            "size-3.5 shrink-0 text-muted-foreground transition-transform",
+            open && "rotate-180",
+          )}
+          aria-hidden
+        />
+      </button>
+      <AnimatePresence initial={false}>
+        {open ? (
+          <motion.div
+            id={panelId}
+            key="panel"
+            initial={reduced ? false : { opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={reduced ? { opacity: 0 } : { opacity: 0, height: 0 }}
+            transition={{ duration: reduced ? 0 : 0.18 }}
+            className="overflow-hidden"
+          >
+            <div className="pt-1.5">
+              <textarea
+                value={note}
+                onChange={(e) =>
+                  onNote(e.target.value.slice(0, MAX_CART_NOTE_LENGTH))
+                }
+                maxLength={MAX_CART_NOTE_LENGTH}
+                rows={3}
+                disabled={!canOrder}
+                aria-label="Note for the seller"
+                placeholder="Delivery preferences, GST details, anything else…"
+                className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
+              />
+              <p className="mt-1 text-right text-[0.65rem] text-muted-foreground tabular-nums">
+                {note.length}/{MAX_CART_NOTE_LENGTH}
+              </p>
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 }

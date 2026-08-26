@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { clampQuantity } from "@/lib/quantity";
+import { perModelRules, validatePerModelQuantities } from "@/lib/allocation";
 import { addToCartAction } from "@/server/actions/cart";
 import { broadcastCartCount } from "@/components/storefront/cart/CartBadge";
 import { broadcastLineAdded } from "@/components/storefront/cart/cart-events";
@@ -28,6 +29,7 @@ export function AllocationAddToCart({
   productId,
   moq,
   packMultiple,
+  minPerModel,
   canAdd,
   isCustomer = false,
   outOfStock = false,
@@ -36,6 +38,8 @@ export function AllocationAddToCart({
   productId: string;
   moq?: number | null;
   packMultiple?: number | null;
+  /** Per-model minimum from the allocation config, when defined. */
+  minPerModel?: number | null;
   canAdd: boolean;
   isCustomer?: boolean;
   outOfStock?: boolean;
@@ -79,8 +83,15 @@ export function AllocationAddToCart({
   }
 
   const total = rows.reduce((acc, r) => acc + r.qty, 0);
+  // Per-model pack/minimum rules — the builder shows the same issues inline.
+  const rowsOk =
+    validatePerModelQuantities(rows, perModelRules(minPerModel, packMultiple))
+      .length === 0;
   const ready =
-    total > 0 && clampQuantity(total, moq, packMultiple) === total && !pending;
+    total > 0 &&
+    clampQuantity(total, moq, packMultiple) === total &&
+    rowsOk &&
+    !pending;
 
   function handleAdd() {
     if (!ready) return;
@@ -134,6 +145,7 @@ export function AllocationAddToCart({
         productId={productId}
         moq={moq}
         packMultiple={packMultiple}
+        minPerModel={minPerModel}
         disabled={pending}
       />
       <Button

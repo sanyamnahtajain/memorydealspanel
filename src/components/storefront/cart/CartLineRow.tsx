@@ -178,6 +178,7 @@ export function CartLineRow({
                 variantId={line.variantId}
                 moq={line.moq}
                 packMultiple={line.packMultiple}
+                minPerModel={line.minPerModel}
                 initial={(line.breakdown ?? []).map((b) => ({
                   modelId: b.modelId,
                   name: b.name,

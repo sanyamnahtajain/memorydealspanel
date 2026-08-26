@@ -14,6 +14,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { clampQuantity } from "@/lib/quantity";
+import { perModelRules, validatePerModelQuantities } from "@/lib/allocation";
 import { updateCartQuantityAction } from "@/server/actions/cart";
 import { broadcastCartCount } from "@/components/storefront/cart/CartBadge";
 import {
@@ -31,6 +32,7 @@ export function EditBreakdownSheet({
   variantId,
   moq,
   packMultiple,
+  minPerModel,
   initial,
   disabled = false,
   onSaved,
@@ -39,6 +41,8 @@ export function EditBreakdownSheet({
   variantId: string | null;
   moq: number;
   packMultiple: number;
+  /** Per-model minimum from the allocation config, when defined. */
+  minPerModel?: number | null;
   initial: AllocationRow[];
   disabled?: boolean;
   /** Reconcile the parent's optimistic state with the server's quantity. */
@@ -55,8 +59,15 @@ export function EditBreakdownSheet({
   }
 
   const total = rows.reduce((acc, r) => acc + r.qty, 0);
+  // Per-model pack/minimum rules — the builder shows the same issues inline.
+  const rowsOk =
+    validatePerModelQuantities(rows, perModelRules(minPerModel, packMultiple))
+      .length === 0;
   const ready =
-    total > 0 && clampQuantity(total, moq, packMultiple) === total && !saving;
+    total > 0 &&
+    clampQuantity(total, moq, packMultiple) === total &&
+    rowsOk &&
+    !saving;
 
   async function handleSave() {
     if (!ready) return;
@@ -109,6 +120,7 @@ export function EditBreakdownSheet({
           productId={productId}
           moq={moq}
           packMultiple={packMultiple}
+          minPerModel={minPerModel}
           disabled={saving}
         />
         <Button
