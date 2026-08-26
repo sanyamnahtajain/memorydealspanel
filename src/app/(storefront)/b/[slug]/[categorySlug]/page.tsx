@@ -168,7 +168,16 @@ export default async function BrandCategoryPage({
         </div>
       </FadeUp>
 
-      <DiscoveryFilters facets={facets} resultCount={firstPage.total}>
+      {/* CONTEXT RULE ("if I am on a brand page, why am I seeing other
+          brands"): the brand here is CONTEXT, not a choice — so the Brand
+          facet group is blanked (BrandFacet renders nothing when empty).
+          The DAL's brandFacet deliberately ignores brandIds scoping (see its
+          comment) because /search must keep sibling brands visible; on this
+          page that behaviour would list the whole category's brands. */}
+      <DiscoveryFilters
+        facets={{ ...facets, brand: { buckets: [] } }}
+        resultCount={firstPage.total}
+      >
         <StorefrontListing
           initialItems={items}
           loadMore={loadMore}

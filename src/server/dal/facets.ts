@@ -131,6 +131,12 @@ export interface SpecFacet {
  * the facet. Brand names are resolved with a single follow-up `findMany`.
  */
 export async function brandFacet(scope?: FacetScope): Promise<BrandFacetBucket[]> {
+  // `brandId: { not: null }` REPLACES any brandIds narrowing from the scope —
+  // deliberately: on /search and /c pages scope.brandIds is the user's own
+  // brand SELECTION, and a self-narrowed brand facet would collapse to the
+  // ticked brands and hide the siblings. Pages where the brand is CONTEXT
+  // (the /b/… routes) must not render this facet at all — they blank the
+  // brand group instead of relying on scoping here.
   const grouped = await prisma.product.groupBy({
     by: ["brandId"],
     where: { ...scopedWhere(scope), brandId: { not: null } },
