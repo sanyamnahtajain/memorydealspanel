@@ -31,6 +31,13 @@ import type {
   SortSpec,
 } from "./types";
 import { isColumnEditable } from "./types";
+import {
+  buildRowHaystack,
+  cellMatchesTokens,
+  rowMatchesTokens,
+  tokenizeQuery,
+  type RowHaystack,
+} from "./data/search";
 import { useGridSelection } from "./core/useGridSelection";
 import { useAutosave, type RowStatus } from "./engine/useAutosave";
 import { useUndoRedo } from "./engine/useUndoRedo";
@@ -298,29 +305,38 @@ export function useGridController<Row extends GridRow>(
   // the last result on screen until the new one is ready).
   const deferredSearch = React.useDeferredValue(search);
 
-  // Precomputed per-row search haystack: every cell's text, lowercased once and
-  // joined, keyed by row id. Rebuilt ONLY when the data or columns change — so
-  // each keystroke is a cheap `Map.get(...).includes(q)` instead of re-reading
-  // and re-lowercasing every cell across the whole catalog on every character.
+  // Precomputed per-row search haystack (plain text for per-cell highlights,
+  // squashed text for the filter — see grid/data/search.ts for the matching
+  // semantics and the complaint they answer). Rebuilt ONLY when the data or
+  // columns change, so each keystroke is a few cheap `includes` calls instead
+  // of re-reading every cell across the whole catalog per character.
   const rowHaystack = React.useMemo(() => {
-    const map = new Map<string, string>();
+    const map = new Map<string, RowHaystack>();
     for (const row of allRows) {
-      let text = "";
-      // "\n" separates cells so a query cannot match across a cell boundary
-      // (preserving the original per-column `.some()` semantics).
-      for (const col of columns) text += cellText(row, col).toLowerCase() + "\n";
-      map.set(row.id, text);
+      map.set(
+        row.id,
+        buildRowHaystack(columns.map((col) => cellText(row, col))),
+      );
     }
     return map;
   }, [allRows, columns]);
 
+  // The query, tokenised once per (deferred) keystroke — every word must
+  // match somewhere in the row, in any order, punctuation ignored.
+  const searchTokens = React.useMemo(
+    () => tokenizeQuery(deferredSearch),
+    [deferredSearch],
+  );
+
   // Filtered + sorted rows (the visible order the user navigates).
   const searchFilteredRows = React.useMemo(() => {
     const byFilter = applyFilters(allRows, filters, columns);
-    const q = deferredSearch.trim().toLowerCase();
-    if (!q) return byFilter;
-    return byFilter.filter((row) => (rowHaystack.get(row.id) ?? "").includes(q));
-  }, [allRows, filters, columns, deferredSearch, rowHaystack]);
+    if (searchTokens.length === 0) return byFilter;
+    return byFilter.filter((row) => {
+      const haystack = rowHaystack.get(row.id);
+      return haystack ? rowMatchesTokens(haystack, searchTokens) : false;
+    });
+  }, [allRows, filters, columns, searchTokens, rowHaystack]);
 
   const viewRows = React.useMemo(
     () => applySort(searchFilteredRows, sort, columns),
@@ -680,21 +696,22 @@ export function useGridController<Row extends GridRow>(
   }, []);
 
   const searchMatches = React.useMemo<CellCoord[]>(() => {
-    const q = deferredSearch.trim().toLowerCase();
-    if (!q) return [];
+    if (searchTokens.length === 0) return [];
     const out: CellCoord[] = [];
     // Only scans the ALREADY search-filtered rows (viewRows), so this stays
-    // small; derived from the same deferred query as the filter above so the
-    // highlighted cells always match the rows actually on screen.
+    // small; derived from the same tokens as the filter above so the
+    // highlighted cells always agree with the rows actually on screen. A cell
+    // lights up when it holds ANY of the query's words — the row as a whole
+    // already matched all of them.
     for (const row of viewRows) {
       for (const col of viewColumns) {
-        if (cellText(row, col).toLowerCase().includes(q)) {
+        if (cellMatchesTokens(cellText(row, col), searchTokens)) {
           out.push({ rowId: row.id, colKey: col.key });
         }
       }
     }
     return out;
-  }, [deferredSearch, viewRows, viewColumns]);
+  }, [searchTokens, viewRows, viewColumns]);
 
   const gotoMatch = React.useCallback(
     (index: number) => {

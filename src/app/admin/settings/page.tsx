@@ -5,6 +5,7 @@ import {
   BellRing,
   Building2,
   Database,
+  KeyRound,
   Layers,
   Sparkles,
   Truck,
@@ -87,6 +88,21 @@ export default async function AdminSettingsPage() {
           description="The minimum delivery charge customers are told about on the cart, orders and bills."
         >
           <DeliverySettingsForm initial={parseDeliveryRules(storeSettings.deliveryRules)} />
+        </SettingsSection>
+
+        {/* Shop code — the entry gate for new customers (see lib/entry-gate). */}
+        <SettingsSection
+          icon={KeyRound}
+          title="Shop code"
+          description="The code new customers must enter before they can ask for prices."
+        >
+          <Link
+            href="/admin/settings/entry-gate"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-primary underline-offset-4 hover:underline"
+          >
+            Manage the shop code
+            <ArrowRight className="size-4" aria-hidden />
+          </Link>
         </SettingsSection>
 
         {/* Notifications — which alerts reach staff phones, plus the composer. */}

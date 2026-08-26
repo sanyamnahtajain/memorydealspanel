@@ -1,5 +1,4 @@
 export { StorefrontListing } from "./StorefrontListing";
-export { ViewModeSwitcher } from "./ViewModeSwitcher";
 export { ProductGridView } from "./ProductGridView";
 export { ProductCompactView } from "./ProductCompactView";
 export { ProductTableView } from "./ProductTableView";

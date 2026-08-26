@@ -1,4 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
+
+import { ENTRY_GATE_COOKIE, getEntryGateCached } from "@/server/auth/entry-gate";
 import {
   buildContentSecurityPolicy,
   securityHeaders,
@@ -75,7 +77,7 @@ function makeNonce(): string {
   return crypto.randomUUID().replace(/-/g, "");
 }
 
-export function middleware(request: NextRequest): NextResponse {
+export async function proxy(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
   const host = (request.headers.get("host") ?? "").toLowerCase();
   const nonce = makeNonce();
@@ -131,6 +133,64 @@ export function middleware(request: NextRequest): NextResponse {
       // Preserve where the admin was headed so the login flow could restore it.
       loginUrl.searchParams.set("next", pathname);
       return withSecurityHeaders(NextResponse.redirect(loginUrl), nonce);
+    }
+  }
+
+  // ── Entry gate: the shop-code wall over the whole storefront ──────────────
+  // (Owner request.) When ON, a visitor with neither a session nor a passed-
+  // gate cookie sees the shop-code screen at WHATEVER URL they hit — the
+  // rewrite keeps their URL, so after entering the code a reload lands them
+  // exactly where they were going.
+  //
+  // Who never sees it:
+  //  - anyone with a session cookie (signed-in customers and admins) — the
+  //    cookie's PRESENCE is checked here, not its validity, because a DB
+  //    lookup per request is what middleware must never do. A forged cookie
+  //    therefore skips only this wall and reaches the public catalog; every
+  //    price and every action still validates the real session behind it.
+  //  - sign-in and auth routes, so an existing customer on a NEW device can
+  //    still log in without the code;
+  //  - /admin (its own fence), /api (each route self-authenticates, and the
+  //    intake actions enforce the gate server-side themselves), and PWA
+  //    plumbing (manifest, sw, offline) so an installed app keeps booting.
+  //
+  // Only GET navigations are walled: POSTs are server actions and route
+  // handlers, which carry their own checks — rewriting them would break the
+  // gate screen's own submit.
+  // While the wall is up a stranger sees exactly TWO screens (owner request):
+  // the shop-code wall and the bare /gate/signin page. Even /account/login is
+  // walled — it renders the full storefront shell, and the wall must not leak
+  // navigation or catalogue structure. The bare page carries Google sign-in;
+  // /auth/* stays open for its OAuth round trip.
+  const gateExempt =
+    onAdminHost ||
+    isAdminArea ||
+    pathname === "/gate" ||
+    pathname.startsWith("/gate/") ||
+    pathname === "/offline" ||
+    pathname.startsWith("/auth/") ||
+    pathname.startsWith("/api/") ||
+    pathname.startsWith("/manifest") ||
+    pathname === "/sw.js";
+
+  if (request.method === "GET" && !gateExempt && !request.cookies.has(SESSION_COOKIE)) {
+    try {
+      const { gate, token } = await getEntryGateCached();
+      if (gate.enabled) {
+        const presented = request.cookies.get(ENTRY_GATE_COOKIE)?.value ?? "";
+        if (presented !== token) {
+          const url = request.nextUrl.clone();
+          url.pathname = "/gate";
+          url.searchParams.set("next", pathname + request.nextUrl.search);
+          return withSecurityHeaders(
+            NextResponse.rewrite(url, { request: { headers: requestHeaders } }),
+            nonce,
+          );
+        }
+      }
+    } catch (error) {
+      // Fail OPEN — the wall filters noise; it must never lock the shop.
+      console.error("[middleware] entry gate check failed:", error);
     }
   }
 

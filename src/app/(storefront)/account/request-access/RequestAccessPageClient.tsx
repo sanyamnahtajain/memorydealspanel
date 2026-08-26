@@ -7,6 +7,7 @@ import { StorefrontShell } from "@/components/shell/StorefrontShell";
 import { PageHeader } from "@/components/common";
 import { FadeUp } from "@/components/motion/primitives";
 import { GoogleAccessGate, RequestAccessForm } from "@/components/storefront/RequestAccessSheet";
+import { ShopCodeGate } from "@/components/storefront/ShopCodeGate";
 
 /**
  * Standalone "request price access" page — the same F-C7 form the "See price"
@@ -29,17 +30,29 @@ import { GoogleAccessGate, RequestAccessForm } from "@/components/storefront/Req
 export function RequestAccessPageClient({
   google = null,
   googleGateHref = null,
+  gateRequired = false,
 }: {
   google?: { token: string; email: string; name: string | null } | null;
   /** Google-only storefront: when set (configured + no valid token yet), show
    *  the Continue-with-Google gate instead of the password form. */
   googleGateHref?: string | null;
+  /** Shop code (entry gate): when true, this device must enter the shop code
+   *  before it sees the Google gate or the form. */
+  gateRequired?: boolean;
 }) {
   const router = useRouter();
 
   // Captured once, on mount. Later prop changes cannot flip the form away.
   const [gateHref] = React.useState(googleGateHref);
   const [handoff] = React.useState(google);
+
+  // The shop-code decision is latched for the same reason: entering the code
+  // sets a cookie and re-renders the route, and following the fresh prop
+  // (now false) would remount this subtree mid-transition. Instead we keep
+  // the first answer and flip local state when the visitor passes.
+  const [needsShopCode] = React.useState(gateRequired);
+  const [shopCodePassed, setShopCodePassed] = React.useState(false);
+  const showShopCode = needsShopCode && !shopCodePassed;
 
   return (
     <StorefrontShell>
@@ -52,7 +65,11 @@ export function RequestAccessPageClient({
         />
         <FadeUp>
           <div className="mt-6 rounded-xl border border-border bg-card p-5 md:p-6">
-            {gateHref ? (
+            {/* The shop code is the outermost door — only past it do the
+                Google gate / form appear. */}
+            {showShopCode ? (
+              <ShopCodeGate onPassed={() => setShopCodePassed(true)} />
+            ) : gateHref ? (
               <GoogleAccessGate href={gateHref} />
             ) : (
               <RequestAccessForm onClose={() => router.push("/account")} google={handoff} />

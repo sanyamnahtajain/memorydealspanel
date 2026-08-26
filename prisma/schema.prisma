@@ -599,6 +599,9 @@ model StoreSettings {
   slabyBranding      Json?
   // Delivery rules (min charge disclosure) — src/lib/delivery.ts; absent => OFF.
   deliveryRules      Json?
+  // Entry gate (shop code required before requesting access) —
+  // src/lib/entry-gate.ts; absent => OFF.
+  entryGate          Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

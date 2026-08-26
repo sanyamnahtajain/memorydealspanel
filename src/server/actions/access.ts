@@ -37,6 +37,7 @@ import {
   refundSignupHandoff,
 } from "@/server/services/google-auth";
 import { createSession } from "@/server/auth/session";
+import { hasPassedEntryGate } from "@/server/auth/entry-gate";
 import { objectIdSchema } from "@/lib/schemas/shared";
 import {
   ACCESS_EXPIRY_PRESETS_DAYS,
@@ -229,6 +230,17 @@ export async function requestAccessAction(
   }
 
   try {
+    // ENTRY GATE (owner request): new intake only. The server enforces it —
+    // the gate screen in the UI is just the front door, and skipping it via a
+    // direct action call must not skip the check. Existing customers never
+    // reach this action; they sign in.
+    if (!(await hasPassedEntryGate())) {
+      return {
+        ok: false,
+        error: "Please enter the shop code first. Ask The Memory Deals for it.",
+      };
+    }
+
     const ip = await clientIp();
     const result = await requestAccessService(
       parsed.data.form,
@@ -554,6 +566,18 @@ export async function requestAccessViaGoogle(input: {
   }
 
   try {
+    // ENTRY GATE: same rule as the password path. A Google sign-in that
+    // resolved to an EXISTING customer never reaches this action (the
+    // callback signs them in directly), so this only ever gates new intake
+    // and unproven link requests — both of which land in the admin queue.
+    if (!(await hasPassedEntryGate())) {
+      await refundSignupHandoff(g);
+      return {
+        ok: false,
+        error: "Please enter the shop code first. Ask The Memory Deals for it.",
+      };
+    }
+
     const ip = await clientIp();
 
     // A Google visitor typing the phone number of an EXISTING customer used to

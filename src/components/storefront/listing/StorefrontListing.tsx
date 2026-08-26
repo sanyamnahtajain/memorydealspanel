@@ -4,7 +4,6 @@
  * StorefrontListing — the headline listing experience.
  *
  * Orchestrates:
- *   - the {@link ViewModeSwitcher} (grid / compact / table), seeded from
  *     `usePreferences().defaultViewMode` and persisting changes back to it;
  *   - {@link ListingControls} — a stock filter + sort, custom controls
  *     (inline on desktop, bottom Sheet on mobile), URL-param persisted;
@@ -34,7 +33,6 @@ import {
   usePreferences,
   type ViewMode,
 } from "@/components/preferences/PreferencesProvider";
-import { ViewModeSwitcher } from "./ViewModeSwitcher";
 import { ListingControls } from "./ListingControls";
 import { LoadMoreButton } from "./LoadMoreButton";
 import { ProductGridView } from "./ProductGridView";
@@ -106,9 +104,13 @@ export function StorefrontListing({
   const urlView = searchParams.get("view");
   const urlSort = searchParams.get("sort");
 
-  const [viewMode, setViewMode] = React.useState<ViewMode>(() =>
-    isViewMode(urlView) ? urlView : prefs.defaultViewMode,
-  );
+  // The listing renders as the grid, always (owner request — the floating
+  // grid/compact/table switcher was noise on the storefront). The compact and
+  // table renderers below survive for a ?view= deep link, but no control
+  // offers them, and a persisted preference from before this change is
+  // deliberately ignored so nobody is stranded in a view they can no longer
+  // leave.
+  const viewMode: ViewMode = isViewMode(urlView) ? urlView : "grid";
   const [sort, setSort] = React.useState<SortKey>(() => {
     if (isSortKey(urlSort)) {
       // Never honour a price sort from the URL for a gated viewer.
@@ -164,10 +166,6 @@ export function StorefrontListing({
     [router, pathname, searchParams],
   );
 
-  const changeView = (mode: ViewMode) => {
-    setViewMode(mode);
-    writeUrl({ view: mode });
-  };
   const changeSort = (value: SortKey) => {
     // Guard: never apply a price sort for a gated viewer.
     if ((value === "price-asc" || value === "price-desc") && !canSeePrices) return;
@@ -242,9 +240,6 @@ export function StorefrontListing({
           >
             {formatCount(resultCount, total)}
           </p>
-          <div className="ml-auto">
-            <ViewModeSwitcher value={viewMode} onChange={changeView} />
-          </div>
         </div>
         <ListingControls
           sort={sort}

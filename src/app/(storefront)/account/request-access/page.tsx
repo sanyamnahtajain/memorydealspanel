@@ -1,4 +1,5 @@
 import { googleOAuthConfigured, peekSignupHandoff } from "@/server/services/google-auth";
+import { getEntryGate, hasPassedEntryGate } from "@/server/auth/entry-gate";
 import { RequestAccessPageClient } from "./RequestAccessPageClient";
 
 export const dynamic = "force-dynamic";
@@ -20,8 +21,14 @@ export default async function RequestAccessPage({
   const token = typeof sp.g === "string" ? sp.g : "";
   const peek = token ? await peekSignupHandoff(token) : null;
   const googleConfigured = googleOAuthConfigured();
+  // The shop code is the OUTERMOST door: when the gate is on and this device
+  // has not entered the code yet, the client shows the code screen before the
+  // Google gate / form. Server actions enforce it regardless.
+  const gate = await getEntryGate();
+  const gateRequired = gate.enabled && !(await hasPassedEntryGate(gate));
   return (
     <RequestAccessPageClient
+      gateRequired={gateRequired}
       google={peek ? { token, email: peek.email, name: peek.name } : null}
       // With Google configured but no (valid) token yet, the client renders
       // the Google gate instead of the password form. An expired token lands

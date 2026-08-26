@@ -2,12 +2,10 @@
 
 import * as React from "react"
 import {
-  Columns3,
   LayoutGrid,
   Rows3,
   Rows4,
   Sparkles,
-  Table as TableIcon,
 } from "lucide-react"
 import { motion, useReducedMotion, type Transition } from "motion/react"
 
@@ -19,7 +17,6 @@ import {
   usePreferences,
   type Density,
   type PageSize,
-  type ViewMode,
 } from "./PreferencesProvider"
 
 const SNAPPY_SPRING: Transition = {
@@ -206,17 +203,6 @@ const DENSITY_OPTIONS: ReadonlyArray<SegmentOption<Density>> = [
   },
 ]
 
-const VIEW_OPTIONS: ReadonlyArray<SegmentOption<ViewMode>> = [
-  { value: "grid", label: "Grid", icon: LayoutGrid, tooltip: "Card grid" },
-  {
-    value: "compact",
-    label: "Compact",
-    icon: Columns3,
-    tooltip: "Dense cards",
-  },
-  { value: "table", label: "Table", icon: TableIcon, tooltip: "Data table" },
-]
-
 const PAGE_SIZE_OPTIONS: ReadonlyArray<SegmentOption<PageSize>> = PAGE_SIZES.map(
   (size) => ({ value: size, label: String(size) })
 )
@@ -238,8 +224,6 @@ export function PreferencesPanel({ className }: PreferencesPanelProps) {
   const {
     density,
     setDensity,
-    defaultViewMode,
-    setDefaultViewMode,
     reduceMotion,
     setReduceMotion,
     pageSize,
@@ -260,19 +244,6 @@ export function PreferencesPanel({ className }: PreferencesPanelProps) {
               options={DENSITY_OPTIONS}
               value={density}
               onChange={setDensity}
-            />
-          }
-        />
-
-        <Field
-          title="Default view"
-          description="The layout the catalogue opens to."
-          control={
-            <Segmented
-              ariaLabel="Default view"
-              options={VIEW_OPTIONS}
-              value={defaultViewMode}
-              onChange={setDefaultViewMode}
             />
           }
         />

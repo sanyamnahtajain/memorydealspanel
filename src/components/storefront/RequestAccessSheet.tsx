@@ -41,13 +41,16 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { Spinner } from "@/components/ui/spinner";
 import { StatusChip } from "@/components/common/StatusChip";
 import { RequestApprovedNudge } from "@/components/notify/RequestApprovedNudge";
 import { CelebrationOverlay } from "@/components/common/CelebrationOverlay";
 import { CityField } from "@/components/storefront/CityField";
 import { useIsMobile } from "@/components/common/use-is-mobile";
+import { ShopCodeGate } from "@/components/storefront/ShopCodeGate";
 import { accessRequestSchema } from "@/lib/schemas/customer";
 import { requestAccess, requestAccessViaGoogle } from "@/server/actions/access";
+import { entryGateStatusAction } from "@/server/actions/entry-gate";
 import { cn } from "@/lib/utils";
 
 /* ------------------------------------------------------------------ */
@@ -666,6 +669,9 @@ const FORM_DESCRIPTION =
 const GOOGLE_TITLE = "Sign in to see prices";
 const GOOGLE_DESCRIPTION =
   "Approved retailers see live wholesale pricing across the catalog.";
+const SHOP_CODE_TITLE = "Enter the shop code";
+const SHOP_CODE_DESCRIPTION =
+  "The Memory Deals gives this code to its business customers. Ask them for it on WhatsApp or in the shop.";
 
 export interface RequestAccessSheetProps {
   open: boolean;
@@ -704,9 +710,62 @@ export function RequestAccessSheet({
   // Remount the form on each open so a previous success/error doesn't linger.
   const formKey = open ? "open" : "closed";
 
-  // Per-variant header: the Google gate is a sign-in, not a form.
-  const title = googleGateHref ? GOOGLE_TITLE : FORM_TITLE;
-  const description = googleGateHref ? GOOGLE_DESCRIPTION : FORM_DESCRIPTION;
+  /* Shop code (entry gate). The sheet fetches nothing server-side, so on
+   * first open we ask the server whether THIS device still needs the code.
+   * `null` = answer not in yet (show the spinner); the answer is latched for
+   * the sheet's lifetime — passing the code flips it to false locally, and
+   * the server actions enforce the gate regardless of what we render. */
+  const [shopCodeNeeded, setShopCodeNeeded] = React.useState<boolean | null>(
+    null,
+  );
+  const checkStartedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!open || checkStartedRef.current) return;
+    checkStartedRef.current = true;
+    entryGateStatusAction()
+      .then((res) => setShopCodeNeeded(res.ok ? res.required : false))
+      // Fail open: this screen only reduces queue noise, and the submit
+      // action refuses on its own if the code was really required.
+      .catch(() => setShopCodeNeeded(false));
+  }, [open]);
+
+  const checkingShopCode = shopCodeNeeded === null;
+  const showShopCode = shopCodeNeeded === true;
+
+  // Per-variant header: the Google gate is a sign-in, not a form. While the
+  // status check runs we keep the usual header — it only swaps to the
+  // shop-code copy once we know the code is actually needed.
+  const title = showShopCode
+    ? SHOP_CODE_TITLE
+    : googleGateHref
+      ? GOOGLE_TITLE
+      : FORM_TITLE;
+  const description = showShopCode
+    ? SHOP_CODE_DESCRIPTION
+    : googleGateHref
+      ? GOOGLE_DESCRIPTION
+      : FORM_DESCRIPTION;
+
+  // ShopCodeGate hides its own heading here — the sheet/dialog header above
+  // already carries the title and explanation.
+  const body = checkingShopCode ? (
+    <div
+      role="status"
+      aria-live="polite"
+      className="flex min-h-40 items-center justify-center py-6 text-muted-foreground"
+    >
+      <Spinner size="lg" label="Checking" />
+    </div>
+  ) : showShopCode ? (
+    <ShopCodeGate
+      showHeading={false}
+      onPassed={() => setShopCodeNeeded(false)}
+    />
+  ) : googleGateHref ? (
+    <GoogleAccessGate href={googleGateHref} />
+  ) : (
+    <RequestAccessForm key={formKey} onClose={close} />
+  );
 
   if (isMobile) {
     return (
@@ -725,11 +784,7 @@ export function RequestAccessSheet({
             <SheetDescription>{description}</SheetDescription>
           </SheetHeader>
           <div className="px-4 pb-4">
-            {googleGateHref ? (
-              <GoogleAccessGate href={googleGateHref} />
-            ) : (
-              <RequestAccessForm key={formKey} onClose={close} />
-            )}
+            {body}
             <RequestAccessSlabyBadge />
           </div>
         </SheetContent>
@@ -744,11 +799,7 @@ export function RequestAccessSheet({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
-        {googleGateHref ? (
-          <GoogleAccessGate href={googleGateHref} />
-        ) : (
-          <RequestAccessForm key={formKey} onClose={close} />
-        )}
+        {body}
         <RequestAccessSlabyBadge />
       </DialogContent>
     </Dialog>
