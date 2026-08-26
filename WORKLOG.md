@@ -13,6 +13,7 @@ themselves carry the deep detail; this file is the map.
 
 | Commit | What it is |
 |---|---|
+| (next) | **PDP redesign** — premium-quiet restyle: floating heart, anchor price panel with trust row, collapsible sections, "Shops also ordered", spring sticky bar; price gate re-verified independently (anon page carries zero rupee amounts). |
 | `f57ef0f` | Tests for the context-scoped facet assembly. |
 | `56f1467` | **Tempered-glass ordering**: pack multiples + per-model minimums enforced lib→server→UI, paste mode for 100-model orders, single cart summary, one MOV message. 65 tests. |
 | `5616849` | **Context-scoped filters** (brand pages never show a brand facet; category pages show only their brands) + **cursor pagination** killing the silent 100-product listing cap (proven with a 130-product walk), search-facet caching, LCP image priority. |
@@ -69,23 +70,14 @@ serial suite (1216 tests at last count, +132 today):
    100; page 5 comes back short and the client says "done"). Never fired
    only because the test catalog holds 54 products.
 
-### In flight right now
+### In flight / remaining
 
-- **PDP redesign** — aryathreads/CRED/supermoney direction; gate-law
-  enforced; existing motion tokens only.
-- **Perf wave 1** — cursor pagination (kills the 100-product cap), search
-  facet caching, first-viewport image priority, card animation cost.
-- **Flow cuts 1** — ORDER_FLOW proposals 3/4/5: single cart summary, one
-  minimum-order message, per-model minimums surfaced in the builder UIs
-  *before* submit.
+Everything above is committed. Remaining, small and unblocked:
 
-### Queued behind the in-flight work
-
-- **Perf wave 2** (PDP double-query, list payload trimming, hero fetch
-  priority) — the files are mid-redesign.
-- **Flow cut 1** (add-to-cart in the PDP sticky bar) — same reason.
-- **Flow cut 2** (coupon auto-apply) — money-visible; **needs the owner's
-  explicit yes** before anyone builds it.
+- **Perf wave 2** — PDP double-query, list payload trimming, hero
+  fetchPriority (PERF_REPORT findings 4, 5 and the deferred hero line).
+- **Flow cut 1** — add-to-cart in the PDP sticky bar (ORDER_FLOW proposal 1).
+- **Flow cut 2** — coupon auto-apply; **needs the owner's explicit yes**.
 
 ### Decisions that need the owner
 
