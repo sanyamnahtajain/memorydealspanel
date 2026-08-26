@@ -92,3 +92,44 @@ describe("CategoryFormDialog — allocation default toggle", () => {
     });
   });
 });
+
+describe("CategoryFormDialog — pack-of default", () => {
+  it("submits the typed pack when the breakdown toggle is ON", async () => {
+    const onSubmit = vi.fn(async (_values: unknown) => null);
+    renderDialog(onSubmit, { allocationDefaultOn: true });
+
+    fireEvent.change(screen.getByLabelText(/packs of/i), {
+      target: { value: "10" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      allocationDefaultOn: true,
+      allocationPackMultiple: 10,
+    });
+  });
+
+  it("blank pack submits null; garbage pack blocks the save with a message", async () => {
+    const onSubmit = vi.fn(async (_values: unknown) => null);
+    renderDialog(onSubmit, { allocationDefaultOn: true });
+
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      allocationPackMultiple: null,
+    });
+
+    fireEvent.change(screen.getByLabelText(/packs of/i), {
+      target: { value: "ten" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
+    expect(await screen.findByText(/whole number of pieces/i)).toBeInTheDocument();
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it("the pack field is hidden while the toggle is OFF", () => {
+    renderDialog(vi.fn(async (_v: unknown) => null), { allocationDefaultOn: false });
+    expect(screen.queryByLabelText(/packs of/i)).not.toBeInTheDocument();
+  });
+});

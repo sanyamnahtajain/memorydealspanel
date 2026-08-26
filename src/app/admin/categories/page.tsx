@@ -89,6 +89,8 @@ export default async function AdminCategoriesPage() {
       defaultHsnCode: child.defaultHsnCode ?? null,
       defaultGstRateBps: child.defaultGstRateBps ?? null,
       defaultAllocationOn: parseAllocation(child.defaultAllocation)?.required ?? false,
+      defaultAllocationPack:
+        parseAllocation(child.defaultAllocation)?.packMultiple ?? null,
     }));
     // Direct products + products in sub-categories, for the parent summary.
     const childProductTotal = children.reduce(
@@ -109,6 +111,8 @@ export default async function AdminCategoriesPage() {
       defaultHsnCode: root.defaultHsnCode ?? null,
       defaultGstRateBps: root.defaultGstRateBps ?? null,
       defaultAllocationOn: parseAllocation(root.defaultAllocation)?.required ?? false,
+      defaultAllocationPack:
+        parseAllocation(root.defaultAllocation)?.packMultiple ?? null,
     };
   });
 

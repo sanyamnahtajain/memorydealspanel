@@ -36,6 +36,8 @@ export interface CategoryChild {
   defaultGstRateBps: number | null;
   /** Whether products here require a per-model breakdown by default. */
   defaultAllocationOn: boolean;
+  /** Category-level pack multiple for that breakdown (null = none). */
+  defaultAllocationPack: number | null;
 }
 
 export interface CategoryNode extends Omit<CategoryChild, "parentId"> {
@@ -268,7 +270,16 @@ export function CategoryManager({
         : {};
       // Allocation default is independent of the GST kill-switch.
       const defaultAllocation = values.allocationDefaultOn
-        ? { kind: "DEVICE_MODEL" as const, required: true, modelIds: [] }
+        ? {
+            kind: "DEVICE_MODEL" as const,
+            required: true,
+            modelIds: [],
+            // The category-wide "packs of N per model" default; a product's
+            // own packMultiple overrides it (effectivePerModelPack).
+            ...(values.allocationPackMultiple != null
+              ? { packMultiple: values.allocationPackMultiple }
+              : {}),
+          }
         : null;
 
       if (dialog.mode === "edit") {
@@ -462,6 +473,7 @@ export function CategoryManager({
                     ? null
                     : dialog.target.defaultGstRateBps / 100,
                 allocationDefaultOn: dialog.target.defaultAllocationOn,
+                allocationPackMultiple: dialog.target.defaultAllocationPack,
               }
             : undefined
         }

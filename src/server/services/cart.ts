@@ -31,6 +31,7 @@ function r2PublicBase(): string {
   return publicBaseOrEmpty();
 }
 import {
+  effectivePerModelPack,
   resolveEffectiveAllocation,
   type Allocation,
 } from "@/lib/allocation";
@@ -788,7 +789,13 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
       variantLabel: variantLbl,
       quantity: row.quantity,
       moq,
-      packMultiple,
+      // For an allocation line the pack that matters is the PER-MODEL pack —
+      // the category-level config default unless the product overrides it.
+      packMultiple: unit?.allocation?.required
+        ? normalisePack(
+            effectivePerModelPack(unit.allocation.packMultiple, packMultiple),
+          )
+        : packMultiple,
       maxQty,
       allowRequirementNotes: unitFlagAllowNotes,
       note: sanitizeNote(row.note),

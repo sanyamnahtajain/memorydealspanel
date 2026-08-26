@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  effectivePerModelPack,
   parseAllocation,
   perModelIssueText,
   perModelRules,
@@ -71,6 +72,7 @@ describe("toPublicAllocation", () => {
       required: true,
       restricted: true,
       minPerModel: 20,
+      packMultiple: null,
     });
   });
 
@@ -316,5 +318,51 @@ describe("custom (typed) breakdown lines — schema", () => {
     if (parsed.success) {
       expect(parsed.data.breakdown![0]).toEqual({ modelId: MODEL_A, qty: 10 });
     }
+  });
+});
+
+describe("config-level packMultiple (category default)", () => {
+  it("parses and surfaces the config pack; legacy configs read null", () => {
+    const parsed = parseAllocation({
+      kind: "DEVICE_MODEL",
+      required: true,
+      modelIds: [],
+      packMultiple: 10,
+    });
+    expect(parsed?.packMultiple).toBe(10);
+    expect(toPublicAllocation(parsed)?.packMultiple).toBe(10);
+
+    const legacy = parseAllocation({
+      kind: "DEVICE_MODEL",
+      required: true,
+      modelIds: [],
+    });
+    expect(legacy?.packMultiple ?? null).toBeNull();
+    expect(toPublicAllocation(legacy)?.packMultiple).toBeNull();
+  });
+
+  it("a corrupt pack degrades to null without switching the config off", () => {
+    const parsed = parseAllocation({
+      kind: "DEVICE_MODEL",
+      required: true,
+      modelIds: [],
+      packMultiple: "ten",
+    });
+    expect(parsed?.required).toBe(true);
+    expect(parsed?.packMultiple ?? null).toBeNull();
+  });
+
+  it("effectivePerModelPack: the product's own pack (> 1) always wins", () => {
+    expect(effectivePerModelPack(10, 5)).toBe(5);
+    expect(effectivePerModelPack(10, null)).toBe(10);
+    expect(effectivePerModelPack(10, 1)).toBe(10);
+    expect(effectivePerModelPack(null, 5)).toBe(5);
+    expect(effectivePerModelPack(null, null)).toBeNull();
+    expect(effectivePerModelPack(null, 1)).toBe(1);
+  });
+
+  it("category pack 10 composes into rules: min one pack, steps of 10", () => {
+    const rules = perModelRules(null, effectivePerModelPack(10, null));
+    expect(rules).toEqual({ pack: 10, min: 10 });
   });
 });

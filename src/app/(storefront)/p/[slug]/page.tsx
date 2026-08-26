@@ -56,6 +56,7 @@ import {
 } from "@/server/contact";
 import { ProductPriceArea } from "./ProductPriceArea";
 import { RequirementPrompt } from "@/components/storefront/requirements/RequirementPrompt";
+import { effectivePerModelPack } from "@/lib/allocation";
 import { prisma } from "@/server/db";
 import { publicBaseOrEmpty } from "@/server/storage/r2";
 import {
@@ -363,6 +364,14 @@ export default async function ProductDetailPage({ params }: PageParams) {
   // needs the selected variant + its MOQ), so the non-variant hero owns it here.
   const canAdd = showPrices && !showVariantHero;
 
+  // The pack that governs per-model quantities: the product's own pack wins,
+  // else the allocation config's (category-default) pack — see
+  // effectivePerModelPack. Also what the "Pack of" pill shows, so the fact a
+  // buyer reads matches the rule the builder enforces.
+  const effectivePack = product.allocation?.required
+    ? effectivePerModelPack(product.allocation.packMultiple, product.packMultiple)
+    : product.packMultiple;
+
   // Sticky-bar one-tap add (ORDER_FLOW proposal 1): the same gate as the
   // inline AddToCartButton — a PRICED viewer on a non-variant product — and
   // only when the flow is genuinely one tap: an allocation product's flow is
@@ -469,7 +478,7 @@ export default async function ProductDetailPage({ params }: PageParams) {
 
                   {/* MOQ / pack facts as small labelled pills (same data the
                       old sentence carried). */}
-                  {product.moq || product.packMultiple ? (
+                  {product.moq || effectivePack ? (
                     <div className="mt-4 flex flex-wrap gap-2">
                       {product.moq ? (
                         <InfoPill
@@ -478,11 +487,11 @@ export default async function ProductDetailPage({ params }: PageParams) {
                           value={`${product.moq} units`}
                         />
                       ) : null}
-                      {product.packMultiple ? (
+                      {effectivePack ? (
                         <InfoPill
                           icon={<LayersGlyph />}
                           label="Pack of"
-                          value={String(product.packMultiple)}
+                          value={String(effectivePack)}
                         />
                       ) : null}
                     </div>
@@ -497,7 +506,7 @@ export default async function ProductDetailPage({ params }: PageParams) {
                       <AllocationAddToCart
                         productId={product.id}
                         moq={product.moq}
-                        packMultiple={product.packMultiple}
+                        packMultiple={effectivePack}
                         // Per-model minimum from the allocation config — the
                         // builder seeds rows at the pack-aligned minimum and
                         // shows the same inline errors the server would send.

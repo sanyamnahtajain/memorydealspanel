@@ -20,6 +20,7 @@ import {
   cartLineRefSchema,
 } from "@/lib/schemas/cart";
 import {
+  effectivePerModelPack,
   perModelRules,
   resolveEffectiveAllocation,
   validatePerModelQuantities,
@@ -154,7 +155,10 @@ async function perModelBreakdownRefusal(data: {
     packMultiple = variant?.packMultiple ?? product.packMultiple;
   }
 
-  const rules = perModelRules(allocation.minPerModel, packMultiple);
+  const rules = perModelRules(
+    allocation.minPerModel,
+    effectivePerModelPack(allocation.packMultiple, packMultiple),
+  );
   if (rules.pack === 1 && rules.min <= 1) return null; // nothing to enforce
 
   // Custom (typed) lines carry their own name; only master rows need lookup.

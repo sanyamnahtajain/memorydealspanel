@@ -38,6 +38,12 @@ export interface CategoryFormValues {
   defaultGstRatePercent: number | null;
   /** Default per-model breakdown requirement for products in this category. */
   allocationDefaultOn: boolean;
+  /**
+   * Category-level pack multiple for the per-model breakdown ("all tempered
+   * come in packs of 10"). Null = no pack default. Only meaningful while
+   * allocationDefaultOn is true; a product's own pack overrides it.
+   */
+  allocationPackMultiple: number | null;
 }
 
 interface CategoryFormDialogProps {
@@ -167,6 +173,11 @@ function CategoryFormBody({
   const [allocationOn, setAllocationOn] = React.useState(
     initial?.allocationDefaultOn ?? false,
   );
+  const [allocationPack, setAllocationPack] = React.useState(
+    initial?.allocationPackMultiple != null
+      ? String(initial.allocationPackMultiple)
+      : "",
+  );
   const [error, setError] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
@@ -229,6 +240,17 @@ function CategoryFormBody({
     const defaultHsnCode =
       showTaxDefaults && hsn.trim() !== "" ? hsn.trim() : null;
 
+    // Pack default: blank = none; otherwise a whole number of pieces ≥ 1.
+    let allocationPackMultiple: number | null = null;
+    if (allocationOn && allocationPack.trim() !== "") {
+      const pack = Number(allocationPack);
+      if (!Number.isInteger(pack) || pack < 1 || pack > 100000) {
+        setError("Pack of… must be a whole number of pieces (1 or more).");
+        return;
+      }
+      allocationPackMultiple = pack;
+    }
+
     setSaving(true);
     setError(null);
     try {
@@ -239,6 +261,7 @@ function CategoryFormBody({
         defaultHsnCode,
         defaultGstRatePercent,
         allocationDefaultOn: allocationOn,
+        allocationPackMultiple,
       });
       if (result) {
         setError(result);
@@ -250,7 +273,7 @@ function CategoryFormBody({
     } finally {
       setSaving(false);
     }
-  }, [name, image, status, hsn, gstPercent, allocationOn, showTaxDefaults, onSubmit, onRequestClose]);
+  }, [name, image, status, hsn, gstPercent, allocationOn, allocationPack, showTaxDefaults, onSubmit, onRequestClose]);
 
   const fields = (
     <div className="flex flex-col gap-4 px-4 md:px-0">
@@ -385,6 +408,27 @@ function CategoryFormBody({
           aria-label="Require per-model breakdown by default"
         />
       </label>
+
+      {allocationOn ? (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="category-allocation-pack">
+            Packs of (pcs per model, optional)
+          </Label>
+          <Input
+            id="category-allocation-pack"
+            inputMode="numeric"
+            placeholder="e.g. 10"
+            value={allocationPack}
+            onChange={(e) => setAllocationPack(e.target.value)}
+            disabled={busy}
+          />
+          <p className="text-xs text-muted-foreground">
+            Every model&apos;s quantity steps in packs of this many (10 → 10,
+            20, 30…), which is also the per-model minimum. A product&apos;s own
+            pack multiple overrides it.
+          </p>
+        </div>
+      ) : null}
 
       {showTaxDefaults ? (
         <div className="grid grid-cols-2 gap-3">

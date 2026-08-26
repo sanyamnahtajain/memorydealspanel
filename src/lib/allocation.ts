@@ -41,6 +41,19 @@ export const allocationSchema = z.object({
     .max(MAX_QTY_PER_LINE)
     .nullish()
     .catch(null),
+  /**
+   * OPTIONAL pack multiple carried BY THE CONFIG — the category-level
+   * "all tempered come in packs of 10" default. Same legacy-safe parsing
+   * rules as minPerModel above. Resolution against the product's own
+   * packMultiple lives in {@link effectivePerModelPack}.
+   */
+  packMultiple: z
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_QTY_PER_LINE)
+    .nullish()
+    .catch(null),
 });
 
 export type Allocation = z.infer<typeof allocationSchema>;
@@ -81,6 +94,8 @@ export interface PublicAllocation {
   restricted: boolean;
   /** Per-model minimum quantity, when the config defines one. */
   minPerModel: number | null;
+  /** Config-level pack multiple (category default), when defined. */
+  packMultiple: number | null;
 }
 
 export function toPublicAllocation(
@@ -92,7 +107,32 @@ export function toPublicAllocation(
     required: allocation.required,
     restricted: allocation.modelIds.length > 0,
     minPerModel: allocation.minPerModel ?? null,
+    packMultiple: allocation.packMultiple ?? null,
   };
+}
+
+/**
+ * The pack multiple that governs PER-MODEL quantities for one product:
+ *
+ *   1. the product's OWN packMultiple wins when it says anything (> 1) —
+ *      "this tempered comes in packs of 5" overrides the category's 10;
+ *   2. otherwise the allocation config's packMultiple (the category-level
+ *      "packs of 10" default) applies;
+ *   3. otherwise whatever the product had (1/null ⇒ no pack constraint).
+ *
+ * A product that must escape the category pack entirely sets its own
+ * allocation config (which replaces the category default wholesale in
+ * resolveEffectiveAllocation) — so every override direction stays possible.
+ */
+export function effectivePerModelPack(
+  allocationPack: number | null | undefined,
+  productPack: number | null | undefined,
+): number | null {
+  if (typeof productPack === "number" && productPack > 1) return productPack;
+  if (typeof allocationPack === "number" && allocationPack > 1) {
+    return allocationPack;
+  }
+  return productPack ?? null;
 }
 
 /* ------------------------------------------------------------------ */
