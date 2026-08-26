@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 
 import { APP_NAME } from "@/lib/constants";
 import { getEntryGate, hasPassedEntryGate } from "@/server/auth/entry-gate";
+import { getSlabyBranding } from "@/server/services/store-settings";
+import { slabyPlacementOn } from "@/lib/slaby/branding";
 import { GatePageClient } from "./GatePageClient";
 
 /**
@@ -43,5 +45,10 @@ export default async function GatePage({
     redirect(destination);
   }
 
-  return <GatePageClient destination={destination} />;
+  // Slaby branding (owner request) — rides the existing "Sign-in page"
+  // toggle: the gate screens are sign-in-adjacent, and one switch in the
+  // branding settings governs all of them together.
+  const slaby = slabyPlacementOn(await getSlabyBranding(), "login");
+
+  return <GatePageClient destination={destination} showSlaby={slaby} />;
 }

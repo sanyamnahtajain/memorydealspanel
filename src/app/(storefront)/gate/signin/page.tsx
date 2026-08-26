@@ -8,6 +8,9 @@ import { googleOAuthConfigured } from "@/server/services/google-auth";
 import { resolveViewer } from "@/server/auth/viewer";
 import { isCustomer } from "@/server/types/viewer";
 import { GoogleSignInBlock } from "@/components/auth/GoogleSignInBlock";
+import { SlabyBadge } from "@/components/slaby/SlabyMark";
+import { getSlabyBranding } from "@/server/services/store-settings";
+import { slabyPlacementOn } from "@/lib/slaby/branding";
 
 /**
  * The BARE sign-in page for existing customers, reached from the shop-code
@@ -34,6 +37,7 @@ export default async function GateSignInPage() {
   if (isCustomer(viewer)) redirect("/account");
 
   const googleReady = googleOAuthConfigured();
+  const slaby = slabyPlacementOn(await getSlabyBranding(), "login");
 
   return (
     <main className="flex min-h-dvh flex-col items-center justify-center gap-6 bg-background px-4 py-10">
@@ -67,6 +71,8 @@ export default async function GateSignInPage() {
           </p>
         )}
       </div>
+
+      {slaby ? <SlabyBadge placement="login" prefix="Secured by" /> : null}
 
       <p className="max-w-xs text-center text-xs text-muted-foreground">
         New here, or use a phone number to sign in?{" "}

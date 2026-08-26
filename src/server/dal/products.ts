@@ -201,6 +201,10 @@ const PUBLIC_FIELDS = {
   images: true,
   createdAt: true,
   updatedAt: true,
+  // NON-MONETARY boolean: lets listing cards show the "Choose options"
+  // quick-pick affordance for variant products WITHOUT joining any variant row
+  // (and therefore without any variant price) into a list payload.
+  hasVariants: true,
   // GST override columns + category defaults. NON-MONETARY (HSN / bps /
   // treatment) — safe for the gated path; they feed the effective-tax resolver
   // that produces the amount-free public "incl./+ X% GST" metadata.
@@ -378,6 +382,48 @@ export async function getBySlugForViewer(
 }
 
 // ---------------------------------------------------------------------------
+// getByIdForViewer
+// ---------------------------------------------------------------------------
+
+export function getByIdForViewer(
+  viewer: import("@/server/types/viewer").AdminViewer,
+  id: string,
+): Promise<PricedProduct | null>;
+export function getByIdForViewer(
+  viewer: import("@/server/types/viewer").AnonViewer,
+  id: string,
+): Promise<PublicProduct | null>;
+export function getByIdForViewer(
+  viewer: ViewerContext,
+  id: string,
+): Promise<PublicProduct | PricedProduct | null>;
+/**
+ * Detail read keyed by product ID — the exact same gated projections as
+ * {@link getBySlugForViewer} (variant rows included; money only for priced
+ * viewers). Used by the variant quick-pick sheet action, whose caller (a
+ * listing card) holds the id, not the slug. The caller must validate `id` as
+ * an ObjectId first — Mongo rejects malformed ids with a thrown error.
+ */
+export async function getByIdForViewer(
+  viewer: ViewerContext,
+  id: string,
+): Promise<PublicProduct | PricedProduct | null> {
+  const ctx = await loadTaxContext();
+  if (canSeePrices(viewer)) {
+    const row = await prisma.product.findFirst({
+      where: { ...VISIBLE_WHERE, id },
+      select: PRICED_DETAIL_SELECT,
+    });
+    return row ? toPricedProduct(row, pricedTaxOpts(row, ctx)) : null;
+  }
+  const row = await prisma.product.findFirst({
+    where: { ...VISIBLE_WHERE, id },
+    select: PUBLIC_DETAIL_SELECT,
+  });
+  return row ? toPublicProduct(row, publicTaxOpts(row, ctx)) : null;
+}
+
+// ---------------------------------------------------------------------------
 // listByCategoryForViewer
 // ---------------------------------------------------------------------------
 
@@ -421,6 +467,33 @@ export async function listByCategoryForViewer(
     skip,
     take,
   });
+  return rows.map((row) => toPublicProduct(row, publicTaxOpts(row, ctx)));
+}
+
+/**
+ * Gated read of specific products BY ID, preserving the caller's id order —
+ * the recommender ranks them, so the database's own sort must not reshuffle.
+ * Ids that are hidden (inactive/deleted) simply drop out.
+ */
+export async function listByIdsForViewer(
+  viewer: ViewerContext,
+  ids: string[],
+): Promise<(PublicProduct | PricedProduct)[]> {
+  if (ids.length === 0) return [];
+  const where = { ...VISIBLE_WHERE, id: { in: ids } } satisfies Prisma.ProductWhereInput;
+  const ctx = await loadTaxContext();
+  const rank = new Map(ids.map((id, i) => [id, i]));
+  const byRank = (a: { id: string }, b: { id: string }) =>
+    (rank.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+    (rank.get(b.id) ?? Number.MAX_SAFE_INTEGER);
+
+  if (canSeePrices(viewer)) {
+    const rows = await prisma.product.findMany({ where, select: PRICED_SELECT });
+    rows.sort(byRank);
+    return rows.map((row) => toPricedProduct(row, pricedTaxOpts(row, ctx)));
+  }
+  const rows = await prisma.product.findMany({ where, select: PUBLIC_FIELDS });
+  rows.sort(byRank);
   return rows.map((row) => toPublicProduct(row, publicTaxOpts(row, ctx)));
 }
 

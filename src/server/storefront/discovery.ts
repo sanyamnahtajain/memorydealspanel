@@ -58,6 +58,12 @@ const PUBLIC_FIELDS = {
   images: true,
   createdAt: true,
   updatedAt: true,
+  // NON-MONETARY boolean: the listing card needs to know a product has
+  // variants to offer the quick-pick sheet. The DAL's list selects carry it
+  // too — this select is discovery's OWN, and missing it here was exactly the
+  // kind of drift that only shows up in a real browser: the DAL had the
+  // field, the DTO mapped it, and every storefront row still said false.
+  hasVariants: true,
 } satisfies Prisma.ProductSelect;
 
 const PRICED_SELECT = {

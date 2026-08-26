@@ -7,6 +7,7 @@ import { canSeePrices, isCustomer } from "@/server/types/viewer";
 import {
   getBySlugForViewer,
   listByCategoryForViewer,
+  listByIdsForViewer,
 } from "@/server/dal/products";
 import { listActive } from "@/server/dal/categories";
 import type { PublicProduct, PricedProduct } from "@/server/dto/product";
@@ -27,6 +28,7 @@ import { wishlistProductIds } from "@/server/services/wishlist";
 import { cartCountForViewer } from "@/server/services/cart";
 import { recordProductView } from "@/server/services/pageviews";
 import { getSellerTaxProfile } from "@/server/services/tax-profile";
+import { coPurchasedProductIds } from "@/server/services/recommendations";
 import { getGstViewPreference } from "@/server/prefs/gst-view";
 import {
   ProductBreadcrumb,
@@ -56,7 +58,7 @@ import {
  * The DAL (`getBySlugForViewer`) is THE price gate: an anon/pending/expired
  * viewer gets a `PublicProduct` with NO price fields, so nothing on this page
  * — including metadata, JSON-LD, the related rail, and the sticky mobile bar —
- * can leak a price. Related products go through `listByCategoryForViewer` (the
+ * can leak a price. Related products go through the gated DAL reads (the
  * same gate) and their price cells are server-rendered `renderPriceSlot`
  * nodes, so no amount ever crosses into a client component for a gated viewer.
  *
@@ -150,13 +152,18 @@ export default async function ProductDetailPage({ params }: PageParams) {
     isCustomer(viewer) ? viewer.customerId : null,
   );
 
-  // Category (breadcrumb) + related products (same category), both gated,
-  // PLUS the tax profile — one parallel round instead of a sequential await
-  // before it. We over-fetch related by one so we can drop the current
-  // product and still fill the rail.
-  const [taxProfile, category, relatedRaw, savedIds, cartCount] = await Promise.all([
+  // Category (breadcrumb) + related products, both gated, PLUS the tax
+  // profile — one parallel round instead of a sequential await before it.
+  //
+  // "Related" now leads with CO-PURCHASE data — what shops actually order
+  // together (src/lib/recommend.ts) — and fills any remaining slots with
+  // category peers, which is also the complete fallback while a product has
+  // no order history yet. Category peers are over-fetched so the rail still
+  // fills after dropping the current product and any co-purchase duplicates.
+  const [taxProfile, category, coPurchasedIds, categoryPeers, savedIds, cartCount] = await Promise.all([
     getSellerTaxProfile(),
     resolveCategory(product.categoryId),
+    coPurchasedProductIds(product.id, RELATED_LIMIT),
     listByCategoryForViewer(viewer, product.categoryId, {
       page: 1,
       take: RELATED_LIMIT + 1,
@@ -178,8 +185,19 @@ export default async function ProductDetailPage({ params }: PageParams) {
 
   const initialSaved = savedIds.has(product.id);
 
+  // Resolve the ranked co-purchase ids through the same gated read the rest
+  // of the storefront uses (hidden products drop out; order is preserved).
+  const coPurchased = coPurchasedIds.length
+    ? await listByIdsForViewer(viewer, coPurchasedIds)
+    : [];
+  const seen = new Set<string>([product.id]);
+  const relatedRaw = [...coPurchased, ...categoryPeers].filter((p) => {
+    if (seen.has(p.id)) return false;
+    seen.add(p.id);
+    return true;
+  });
+
   const related: RelatedRailItem[] = relatedRaw
-    .filter((p) => p.id !== product.id)
     .slice(0, RELATED_LIMIT)
     .map((p) => ({
       // The rail is a client component; hand it only the public projection.

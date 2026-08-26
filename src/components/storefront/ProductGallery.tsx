@@ -3,8 +3,9 @@
 import * as React from "react";
 import useEmblaCarousel from "embla-carousel-react";
 import { useReducedMotion } from "motion/react";
-import { ChevronLeft, ChevronRight, ImageOff, ZoomIn } from "lucide-react";
+import { ChevronLeft, ChevronRight, ImageOff, Maximize2 } from "lucide-react";
 import type { PublicProductImage } from "@/server/dto/product";
+import { Lightbox } from "@/components/storefront/Lightbox";
 import { cn } from "@/lib/utils";
 
 /**
@@ -34,15 +35,16 @@ export interface ProductGalleryProps {
 }
 
 /**
- * Swipeable product gallery (Embla) with a thumbnail rail and tap-to-zoom.
+ * Swipeable product gallery (Embla) with a thumbnail rail and a fullscreen
+ * lightbox.
  *
  * - Main carousel: horizontal swipe, arrow buttons on pointer devices.
  * - Thumbnails: a synced strip; the active thumb is highlighted and scrolled
  *   into view.
- * - Zoom: tapping the active slide toggles a CSS transform zoom (pinch is
- *   handled natively by the browser inside the zoomed image); Escape exits.
- * - Reduced motion: disables Embla's animated scroll (instant jumps) and the
- *   zoom transition.
+ * - Fullscreen: tapping the main image opens the {@link Lightbox} at that
+ *   photo (swipe, double-tap zoom, pan; Esc or tap closes).
+ * - Reduced motion: disables Embla's animated scroll (instant jumps); the
+ *   lightbox handles its own `motion-reduce` transitions.
  *
  * Renders `PublicProductImage`s only — it carries no price and is safe for any
  * viewer.
@@ -72,7 +74,8 @@ export function ProductGallery({
   });
 
   const [selected, setSelected] = React.useState(0);
-  const [zoomed, setZoomed] = React.useState(false);
+  /** Index the lightbox opened at; `null` while it is closed. */
+  const [lightboxIndex, setLightboxIndex] = React.useState<number | null>(null);
 
   // `selected` is the single source of truth for which slide is active; the
   // arrow-enabled state is derived from it (no separate effect/setState), and
@@ -84,7 +87,6 @@ export function ProductGallery({
     const sync = () => {
       const index = mainApi.selectedScrollSnap();
       setSelected(index);
-      setZoomed(false);
       thumbApi?.scrollTo(index);
     };
     mainApi.on("select", sync);
@@ -104,15 +106,6 @@ export function ProductGallery({
 
   const canPrev = selected > 0;
   const canNext = selected < ordered.length - 1;
-
-  React.useEffect(() => {
-    if (!zoomed) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setZoomed(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [zoomed]);
 
   if (ordered.length === 0) {
     return (
@@ -148,14 +141,8 @@ export function ProductGallery({
                 >
                   <button
                     type="button"
-                    onClick={() => isActive && setZoomed((z) => !z)}
-                    aria-label={
-                      isActive
-                        ? zoomed
-                          ? "Zoom out"
-                          : "Zoom in"
-                        : `View image ${index + 1}`
-                    }
+                    onClick={() => setLightboxIndex(index)}
+                    aria-label={`View image ${index + 1} full screen`}
                     className="group relative block aspect-square w-full cursor-zoom-in overflow-hidden bg-muted/30"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -167,10 +154,6 @@ export function ProductGallery({
                       className={cn(
                         "h-full w-full object-contain",
                         isHero && GALLERY_HERO_CLASS,
-                        !reducedMotion && "transition-transform duration-300",
-                        isActive && zoomed
-                          ? "scale-[1.9] cursor-zoom-out"
-                          : "scale-100",
                       )}
                       style={
                         isHero
@@ -181,13 +164,13 @@ export function ProductGallery({
                           : undefined
                       }
                     />
-                    {isActive && !zoomed ? (
+                    {isActive ? (
                       <span
                         aria-hidden
                         className="absolute right-2.5 bottom-2.5 inline-flex items-center gap-1 rounded-full bg-foreground/70 px-2 py-1 text-xs font-medium text-background opacity-0 transition-opacity group-hover:opacity-100"
                       >
-                        <ZoomIn className="size-3.5" />
-                        Zoom
+                        <Maximize2 className="size-3.5" />
+                        Expand
                       </span>
                     ) : null}
                   </button>
@@ -256,6 +239,15 @@ export function ProductGallery({
             })}
           </div>
         </div>
+      ) : null}
+
+      {lightboxIndex !== null ? (
+        <Lightbox
+          images={ordered}
+          name={productName}
+          startIndex={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+        />
       ) : null}
     </div>
   );

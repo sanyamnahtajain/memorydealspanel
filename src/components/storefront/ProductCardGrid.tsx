@@ -26,6 +26,7 @@ import { motion, useReducedMotion, type Variants } from "motion/react";
 import type { PublicProduct } from "@/server/dto/product";
 import { EmptyState } from "@/components/common/EmptyState";
 import { BrandBadge } from "@/components/storefront/BrandBadge";
+import { VariantQuickSheet } from "@/components/storefront/VariantQuickSheet";
 import { staggerItemVariants } from "@/components/motion/primitives";
 import {
   GALLERY_HERO_CLASS,
@@ -285,6 +286,20 @@ function ProductCard({ item }: { item: ProductCardItem }) {
           <p className="line-clamp-1 text-xs text-muted-foreground">{snippet}</p>
         ) : null}
         <div className="mt-auto pt-2">{item.priceSlot}</div>
+        {/* Variant products get the quick-pick sheet: choose a size right
+            here instead of a full page trip. The trigger button swallows its
+            click (preventDefault + stopPropagation — same pattern as
+            QuickAddToCart), so the card link still works everywhere else, and
+            the sheet itself renders in a portal outside this <Link>. Non-
+            variant cards render exactly as before. */}
+        {product.hasVariants ? (
+          <VariantQuickSheet
+            productId={product.id}
+            slug={product.slug}
+            gateSlot={item.priceSlot}
+            className="mt-2"
+          />
+        ) : null}
       </div>
     </Link>
   );

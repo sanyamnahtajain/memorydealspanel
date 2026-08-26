@@ -29,6 +29,7 @@ import {
 import { BrandBadge } from "@/components/storefront/BrandBadge";
 import { HeartButton } from "@/components/storefront/wishlist/HeartButton";
 import { QuickAddToCart } from "@/components/storefront/cart/QuickAddToCart";
+import { VariantQuickSheet } from "@/components/storefront/VariantQuickSheet";
 import type { ListingItem } from "./types";
 import { canQuickAdd, keySpec, primaryImage } from "./product-display";
 
@@ -165,6 +166,19 @@ function GridCard({
             )
           ) : null}
         </div>
+        {/* Variant products can't one-tap quick-add (a variant must be picked
+            first — see canQuickAdd), so they get the quick-pick bottom sheet
+            instead: size pills + add, no page trip. The trigger swallows its
+            click (same pattern as QuickAddToCart) so the card link is
+            untouched; the sheet renders in a portal outside this <Link>. */}
+        {product.hasVariants ? (
+          <VariantQuickSheet
+            productId={product.id}
+            slug={product.slug}
+            gateSlot={item.priceSlot}
+            className="mt-2"
+          />
+        ) : null}
       </div>
     </Link>
   );

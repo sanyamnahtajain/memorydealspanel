@@ -4,6 +4,7 @@ import Image from "next/image";
 
 import { APP_NAME } from "@/lib/constants";
 import { ShopCodeGate } from "@/components/storefront/ShopCodeGate";
+import { SlabyBadge } from "@/components/slaby/SlabyMark";
 
 /**
  * Client half of the wall: brand mark + the shared code card, centred on a
@@ -15,7 +16,13 @@ import { ShopCodeGate } from "@/components/storefront/ShopCodeGate";
  * request presents the fresh cookie to it. A soft navigation would re-render
  * through the same rewritten route and show the wall again.
  */
-export function GatePageClient({ destination }: { destination: string }) {
+export function GatePageClient({
+  destination,
+  showSlaby = false,
+}: {
+  destination: string;
+  showSlaby?: boolean;
+}) {
   return (
     <main className="flex min-h-dvh flex-col items-center justify-center gap-6 bg-background px-4 py-10">
       <div className="flex flex-col items-center gap-2">
@@ -35,6 +42,10 @@ export function GatePageClient({ destination }: { destination: string }) {
       <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-5 text-card-foreground shadow-sm ring-1 ring-foreground/5 sm:p-6">
         <ShopCodeGate onPassed={() => window.location.assign(destination)} />
       </div>
+
+      {showSlaby ? (
+        <SlabyBadge placement="login" prefix="Secured by" />
+      ) : null}
 
       <p className="max-w-xs text-center text-xs text-muted-foreground">
         Already a customer?{" "}
