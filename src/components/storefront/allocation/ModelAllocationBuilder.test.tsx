@@ -104,10 +104,11 @@ describe("pack-sized stepping", () => {
     expect(onChange).toHaveBeenCalledWith([]);
   });
 
-  it("the +pack quick add adds one pack", () => {
-    const onChange = renderBuilder([S23]);
-    fireEvent.click(screen.getByLabelText("Add one pack of 10 S23 Ultra"));
-    expect(onChange).toHaveBeenCalledWith([{ ...S23, qty: 30 }]);
+  it("has no +pack quick-add button (owner cut it — the steppers move by pack)", () => {
+    renderBuilder([S23]);
+    expect(
+      screen.queryByLabelText("Add one pack of 10 S23 Ultra"),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -192,7 +193,7 @@ describe("adding a custom (typed) model", () => {
     ]);
   });
 
-  it("renders a custom row with a visible 'custom' tag, editable like any row", () => {
+  it("renders a custom row untagged and unabridged, editable like any row", () => {
     const custom: AllocationRow = {
       modelId: null,
       custom: true,
@@ -200,7 +201,10 @@ describe("adding a custom (typed) model", () => {
       qty: 20,
     };
     const onChange = renderBuilder([custom]);
-    expect(screen.getByText("custom")).toBeInTheDocument();
+    // Owner rules: the full typed name shows (never truncated) and typed
+    // rows carry NO "custom" badge — to the buyer their model is just a model.
+    expect(screen.getByText("Nokia 3310")).toBeInTheDocument();
+    expect(screen.queryByText("custom")).not.toBeInTheDocument();
     fireEvent.click(screen.getByLabelText("More Nokia 3310"));
     expect(onChange).toHaveBeenCalledWith([{ ...custom, qty: 30 }]);
     fireEvent.click(screen.getByLabelText("Remove Nokia 3310"));

@@ -51,7 +51,7 @@ export function StorefrontFooter() {
   return (
     <footer className="mt-12 border-t border-border bg-muted/30">
       <div className="mx-auto w-full max-w-6xl px-4 py-10 md:px-6">
-        <div className="grid gap-8 md:grid-cols-[1.5fr_repeat(3,1fr)]">
+        <div className="grid grid-cols-1 gap-8 md:grid-cols-[minmax(0,1.5fr)_repeat(3,minmax(0,1fr))]">
           {/* Brand + contact */}
           <div>
             <Logo size={40} withWordmark wordmarkClassName="text-base text-foreground" />

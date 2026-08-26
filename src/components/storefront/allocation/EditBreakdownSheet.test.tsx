@@ -95,7 +95,7 @@ describe("stored split validated on open", () => {
     expect(screen.queryByText(/Order at least/)).not.toBeInTheDocument();
   });
 
-  it("a CUSTOM (typed) stored line shows its tag and saves with the custom shape", async () => {
+  it("a CUSTOM (typed) stored line renders untagged and saves with the custom shape", async () => {
     updateCartQuantityAction.mockResolvedValue({
       ok: true,
       quantity: 30,
@@ -109,8 +109,10 @@ describe("stored split validated on open", () => {
     ]);
     fireEvent.click(screen.getByRole("button", { name: /Edit models/ }));
 
-    // The typed line is visibly marked so it's clear it is not from the master.
-    expect(await screen.findByText("custom")).toBeInTheDocument();
+    // The typed line renders like any other (no badge — owner rule); the
+    // full name is visible and the stored custom SHAPE is what must survive.
+    expect(await screen.findByText("Nokia 3310")).toBeInTheDocument();
+    expect(screen.queryByText("custom")).not.toBeInTheDocument();
     fireEvent.click(
       screen.getByRole("button", { name: /Save split \(30 units\)/ }),
     );

@@ -519,7 +519,7 @@ export function CartView({
   }, [canPlace, note, coupon, router]);
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
       {/* Line items. On mobile the inline summary below carries the bottom
           clearance for the fixed bars; at lg the summary is a sidebar. */}
       <div className="lg:pb-0">

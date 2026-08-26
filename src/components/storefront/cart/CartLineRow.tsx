@@ -164,7 +164,7 @@ export function CartLineRow({
         {line.allocationRequired ? (
           <div className="mt-2 flex flex-col gap-1.5">
             {line.breakdown && line.breakdown.length > 0 ? (
-              <p className="text-xs leading-relaxed text-muted-foreground">
+              <p className="min-w-0 text-xs leading-relaxed [overflow-wrap:anywhere] text-muted-foreground">
                 {line.breakdown
                   .slice(0, 3)
                   .map((b) => `${b.qty} × ${b.name}`)

@@ -179,7 +179,7 @@ export function OrderDetailView({ detail }: { detail: OrderHistoryDetail }) {
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_260px]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_260px]">
         {/* Line items (frozen snapshot) */}
         <section className="space-y-3">
           <h3 className="text-sm font-semibold text-foreground">Items</h3>
@@ -392,7 +392,7 @@ function OrderLineRow({
           </p>
         ) : null}
         {line.breakdown && line.breakdown.length > 0 ? (
-          <p className="text-xs leading-relaxed text-muted-foreground">
+          <p className="min-w-0 text-xs leading-relaxed [overflow-wrap:anywhere] text-muted-foreground">
             {line.breakdown.map((b) => `${b.qty} × ${b.modelName}`).join(" · ")}
           </p>
         ) : null}

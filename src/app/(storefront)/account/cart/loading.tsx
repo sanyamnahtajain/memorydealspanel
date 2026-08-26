@@ -12,7 +12,7 @@ export default function CartLoading() {
     <StorefrontShell>
       <div className="mx-auto w-full max-w-5xl py-6 pb-28 sm:py-8 lg:pb-8">
         <PageHeader title="Your cart" backHref="/account" backLabel="Account" />
-        <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_20rem]">
+        <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
           <ul className="flex flex-col gap-3">
             {Array.from({ length: 3 }).map((_, i) => (
               <li

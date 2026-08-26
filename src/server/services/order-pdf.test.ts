@@ -120,6 +120,28 @@ describe("renderOrderPdf", () => {
     expect(text).toContain("Seven Hundred Fifty Only");
   });
 
+  it("wraps an 80-char custom model name in the split sub-rows instead of running off the page", async () => {
+    // Custom (typed) models are free text up to 80 chars; the split sub-rows
+    // must go through wrapToWidth like the name/note lines do.
+    const bytes = await renderOrderPdf({
+      ...DATA,
+      lines: [
+        {
+          name: "TEMPERED",
+          qty: 40,
+          ratePaise: 5000,
+          amountPaise: 200000,
+          breakdown: [
+            { modelName: "W".repeat(80), qty: 10 },
+            { modelName: "Totally Made Up Phone Pro Max Ultra Special Wholesale Edition", qty: 30 },
+          ],
+        },
+      ],
+    });
+    expect(bytes.byteLength).toBeGreaterThan(500);
+    expect(String.fromCharCode(...bytes.slice(0, 4))).toBe("%PDF");
+  });
+
   it("paginates a long order without losing the totals block", async () => {
     const lines = Array.from({ length: 120 }, (_, i) => ({
       name: `Item ${i + 1}`, qty: 1, ratePaise: 1000, amountPaise: 1000,

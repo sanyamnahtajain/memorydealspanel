@@ -449,14 +449,26 @@ export async function renderOrderPdf(
       // Normalize to the bottom of the tallest column, plus a little breathing room.
       y = rowTop - rowHeight - 2;
       // Model-split sub-rows (allocation lines) — staff pick per model.
+      // Wrapped like the name/note lines: a long typed model name (custom
+      // models are free text up to 80 chars) must never run off the page.
       if (line.breakdown && line.breakdown.length > 0) {
+        const splitX = M + cols[0].w + 10;
+        const splitW = W - cols[0].w - 20;
         for (const b of line.breakdown) {
-          if (y < M + 96) {
-            newPage();
-            masthead(false);
+          const splitLines = wrapToWidth(
+            `- ${b.qty} x ${b.modelName}`,
+            helv,
+            8,
+            splitW,
+          );
+          for (const sl of splitLines) {
+            if (y < M + 96) {
+              newPage();
+              masthead(false);
+            }
+            text(sl, splitX, 8, helv, MUTED, "left", splitW);
+            y -= 11;
           }
-          text(`- ${b.qty} x ${b.modelName}`, M + cols[0].w + 10, 8, helv, MUTED);
-          y -= 11;
         }
         y -= 3;
       }

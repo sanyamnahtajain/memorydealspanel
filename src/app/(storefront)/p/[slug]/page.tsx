@@ -434,7 +434,7 @@ export default async function ProductDetailPage({ params }: PageParams) {
             trustSlot={trustRow}
           />
         ) : (
-          <div className="mt-4 grid gap-8 md:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] md:gap-10 lg:gap-12">
+          <div className="mt-4 grid grid-cols-1 gap-8 md:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] md:gap-10 lg:gap-12">
             <FadeUp>
               <div className="relative md:sticky md:top-20">
                 <ProductGallery

@@ -114,7 +114,7 @@ export function OrderDetailPanel({ order }: { order: OrderDetailDTO }) {
         charged={deliveryChargePaise > 0}
       />
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
         {/* Snapshot */}
         <section className="space-y-3">
           <h2 className="text-sm font-semibold text-foreground">Items</h2>
@@ -530,7 +530,7 @@ function OrderLineRow({ line }: { line: OrderLineDTO }) {
           Qty {line.quantity} · {formatPaise(line.unitPricePaise)} each
         </p>
         {line.breakdown && line.breakdown.length > 0 ? (
-          <p className="mt-0.5 text-[0.65rem] leading-relaxed text-muted-foreground">
+          <p className="mt-0.5 min-w-0 text-[0.65rem] leading-relaxed [overflow-wrap:anywhere] text-muted-foreground">
             {line.breakdown.map((b) => `${b.qty} × ${b.modelName}`).join(" · ")}
           </p>
         ) : null}

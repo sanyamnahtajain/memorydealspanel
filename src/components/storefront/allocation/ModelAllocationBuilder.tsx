@@ -554,18 +554,17 @@ export function ModelAllocationBuilder({
                     issue ? "border-destructive/60" : "border-border",
                   )}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="flex min-w-0 flex-1 items-center gap-1.5">
-                      <span className="min-w-0 truncate text-sm">{row.name}</span>
-                      {row.custom ? (
-                        // Marks a typed (not-in-master-list) model for both
-                        // the buyer and the admin reviewing the order.
-                        <span className="shrink-0 rounded border border-border bg-muted px-1 py-px text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                          custom
-                        </span>
-                      ) : null}
+                  <div className="flex items-start justify-between gap-2">
+                    {/* Owner rules: NEVER truncate the model name — a buyer
+                        must see exactly what they typed (break-words wraps
+                        even unbroken strings) — and typed rows carry NO
+                        "custom" badge: to the buyer their own model is just
+                        a model. (Admins still see typed names verbatim on
+                        the order breakdown.) */}
+                    <span className="min-w-0 flex-1 py-1 text-sm [overflow-wrap:anywhere]">
+                      {row.name}
                     </span>
-                    <div className="inline-flex items-center rounded-md border border-border">
+                    <div className="inline-flex shrink-0 items-center rounded-md border border-border">
                       <StepButton
                         aria-label={`Fewer ${row.name}`}
                         disabled={disabled}
@@ -609,19 +608,6 @@ export function ModelAllocationBuilder({
                         <Plus aria-hidden className="size-3.5" />
                       </StepButton>
                     </div>
-                    {rules.pack > 1 ? (
-                      <button
-                        type="button"
-                        aria-label={`Add one pack of ${rules.pack} ${row.name}`}
-                        disabled={disabled}
-                        onClick={() =>
-                          setQty(key, stepQtyUp(row.qty, rules.pack))
-                        }
-                        className="inline-flex h-8 shrink-0 select-none items-center rounded-md border border-border px-1.5 text-xs font-medium tabular-nums text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
-                      >
-                        +{rules.pack}
-                      </button>
-                    ) : null}
                     <button
                       type="button"
                       aria-label={`Remove ${row.name}`}
