@@ -151,13 +151,22 @@ export function perModelIssueText(
 }
 
 export interface PerModelQty {
-  modelId: string;
+  /**
+   * Master-list model id. ABSENT (or null) on a CUSTOM line — a model the
+   * buyer typed because it was missing from the master list; such a line
+   * carries only its `name`. The quantity rules apply to both identically.
+   */
+  modelId?: string | null;
   qty: number;
   /** Model name, when known — used to label the message. */
   name?: string | null;
 }
 
 export interface PerModelIssue {
+  /**
+   * The offending entry's key: the master model id, or (for a custom typed
+   * line, which has no id) the typed name itself.
+   */
   modelId: string;
   /** Named simple-English message: "S23 Ultra: order in packs of 10". */
   message: string;
@@ -180,7 +189,8 @@ export function validatePerModelQuantities(
     if (!text) continue;
     const label = entry.name?.trim() || "This model";
     issues.push({
-      modelId: entry.modelId,
+      // Custom lines have no id — the typed name is their stable key.
+      modelId: entry.modelId ?? entry.name?.trim() ?? "custom",
       message: `${label}: ${text.charAt(0).toLowerCase()}${text.slice(1)}`,
     });
   }

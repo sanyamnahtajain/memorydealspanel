@@ -11,7 +11,10 @@ import {
   MAX_CART_LINES,
   MIN_QTY_PER_LINE,
   MAX_BREAKDOWN_ENTRIES,
+  MAX_CUSTOM_MODEL_NAME,
+  type BreakdownEntryInput,
 } from "@/lib/schemas/cart";
+import { normalizeModelText } from "@/lib/allocation-paste";
 import {
   clampQuantity as clampQty,
   minOrderableQty,
@@ -158,8 +161,17 @@ export interface CartLine {
    * shows the same inline errors the server enforces, BEFORE a save bounces.
    */
   minPerModel: number | null;
-  /** Resolved per-model split with display names, when the line carries one. */
-  breakdown: { modelId: string; name: string; qty: number }[] | null;
+  /**
+   * Resolved per-model split with display names, when the line carries one.
+   * `modelId` is null (and `custom` true) for a line the buyer TYPED because
+   * their model was missing from the master list.
+   */
+  breakdown: {
+    modelId: string | null;
+    custom?: boolean;
+    name: string;
+    qty: number;
+  }[] | null;
   /** Live stock status of the ordered unit. */
   stockStatus: StockStatus;
   /**
@@ -632,7 +644,11 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
   // Resolve every referenced model name in ONE query (breakdown display).
   const allModelIds = [
     ...new Set(
-      rows.flatMap((r) => parseStoredBreakdown(r.breakdown).map((e) => e.modelId)),
+      rows.flatMap((r) =>
+        parseStoredBreakdown(r.breakdown).flatMap((e) =>
+          isCustomEntry(e) ? [] : [e.modelId],
+        ),
+      ),
     ),
   ];
   const modelRows = allModelIds.length
@@ -719,7 +735,10 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
           unit.allocation.modelIds.length > 0
             ? new Set(unit.allocation.modelIds)
             : null;
+        // Custom (typed) lines are always healthy model-wise — they reference
+        // no master row, and the restriction list does not apply to them.
         const modelsOk = entries.every((e) => {
+          if (isCustomEntry(e)) return true;
           const m = modelById.get(e.modelId);
           return m && m.status === "ACTIVE" && (!allowed || allowed.has(e.modelId));
         });
@@ -781,11 +800,15 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
       breakdown: (() => {
         const entries = parseStoredBreakdown(row.breakdown);
         if (entries.length === 0) return null;
-        return entries.map((e) => ({
-          modelId: e.modelId,
-          name: modelById.get(e.modelId)?.name ?? "Removed model",
-          qty: e.qty,
-        }));
+        return entries.map((e) =>
+          isCustomEntry(e)
+            ? { modelId: null, custom: true, name: e.name, qty: e.qty }
+            : {
+                modelId: e.modelId,
+                name: modelById.get(e.modelId)?.name ?? "Removed model",
+                qty: e.qty,
+              },
+        );
       })(),
       stockStatus,
       unitPricePaise: pricePaise,
@@ -923,21 +946,48 @@ export interface CartMutationResult {
   clamped: boolean;
 }
 
-type BreakdownEntry = { modelId: string; qty: number };
+/**
+ * One stored slice of an allocation line: a MASTER-LIST model by id, or a
+ * CUSTOM line carrying the name the buyer typed (their model was missing from
+ * the master). Legacy rows only ever contain the master shape — the stored
+ * JSON stays backward-compatible by construction.
+ */
+type BreakdownEntry =
+  | { modelId: string; qty: number }
+  | { custom: true; name: string; qty: number };
+
+/** Narrow a breakdown entry to the custom (typed) shape. */
+function isCustomEntry(
+  e: BreakdownEntry,
+): e is { custom: true; name: string; qty: number } {
+  return "custom" in e && e.custom === true;
+}
+
+/** Stable dedupe/merge key: the model id, or the normalized typed name. */
+function breakdownKey(e: BreakdownEntry): string {
+  return isCustomEntry(e)
+    ? `custom:${normalizeModelText(e.name)}`
+    : e.modelId;
+}
 
 /** Parse a STORED breakdown JSON defensively — corrupt data yields []. */
 function parseStoredBreakdown(raw: unknown): BreakdownEntry[] {
   if (!Array.isArray(raw)) return [];
   const out: BreakdownEntry[] = [];
   for (const e of raw) {
-    if (
-      e &&
-      typeof e === "object" &&
-      typeof (e as BreakdownEntry).modelId === "string" &&
-      Number.isSafeInteger((e as BreakdownEntry).qty) &&
-      (e as BreakdownEntry).qty > 0
-    ) {
-      out.push({ modelId: (e as BreakdownEntry).modelId, qty: (e as BreakdownEntry).qty });
+    if (!e || typeof e !== "object") continue;
+    const rec = e as { modelId?: unknown; custom?: unknown; name?: unknown; qty?: unknown };
+    if (!Number.isSafeInteger(rec.qty) || (rec.qty as number) <= 0) continue;
+    if (typeof rec.modelId === "string") {
+      out.push({ modelId: rec.modelId, qty: rec.qty as number });
+    } else if (rec.custom === true && typeof rec.name === "string") {
+      const name = rec.name
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, MAX_CUSTOM_MODEL_NAME);
+      if (name !== "") {
+        out.push({ custom: true, name, qty: rec.qty as number });
+      }
     }
   }
   return out;
@@ -945,23 +995,51 @@ function parseStoredBreakdown(raw: unknown): BreakdownEntry[] {
 
 /**
  * Validate a merged breakdown against the allocation config and the live
- * DeviceModel master: every model must exist, be ACTIVE, and (when the
+ * DeviceModel master: every MASTER model must exist, be ACTIVE, and (when the
  * allocation restricts) be on the allow-list. Throws BREAKDOWN_INVALID naming
  * the first offending model so the buyer knows what to fix.
+ *
+ * CUSTOM (typed) lines are exempt from the master checks BY DESIGN — even on
+ * a RESTRICTED product. The restriction pins which MASTER models may be
+ * picked, but free text exists precisely because the master list (and thus
+ * any allow-list built from it) is incomplete; the admin sees the typed name
+ * marked as custom and vets it when packing. A custom name that duplicates a
+ * master model ALREADY IN this breakdown is rejected, mirroring the UI's
+ * case-insensitive dedupe.
  */
 async function assertBreakdownModels(
   allocation: Allocation,
   entries: BreakdownEntry[],
 ): Promise<void> {
-  const ids = entries.map((e) => e.modelId);
-  const rows = await prisma.deviceModel.findMany({
-    where: { id: { in: ids } },
-    select: { id: true, name: true, status: true },
-  });
+  const ids = entries.flatMap((e) => (isCustomEntry(e) ? [] : [e.modelId]));
+  const rows = ids.length
+    ? await prisma.deviceModel.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, name: true, status: true },
+      })
+    : [];
   const byId = new Map(rows.map((r) => [r.id, r]));
   const allowed =
     allocation.modelIds.length > 0 ? new Set(allocation.modelIds) : null;
+  const masterNames = new Set(rows.map((r) => normalizeModelText(r.name)));
   for (const e of entries) {
+    if (isCustomEntry(e)) {
+      const norm = normalizeModelText(e.name);
+      // A punctuation-only "name" is meaningless to the packer.
+      if (norm === "") {
+        throw new CartError(
+          "BREAKDOWN_INVALID",
+          "Type a real model name for your custom model.",
+        );
+      }
+      if (masterNames.has(norm)) {
+        throw new CartError(
+          "BREAKDOWN_INVALID",
+          `"${e.name}" is already in your list as a catalog model.`,
+        );
+      }
+      continue;
+    }
     const row = byId.get(e.modelId);
     if (!row || row.status !== "ACTIVE") {
       throw new CartError(
@@ -1020,7 +1098,7 @@ export async function addToCart(
     productId: string;
     variantId?: string | null;
     quantity: number;
-    breakdown?: { modelId: string; qty: number }[];
+    breakdown?: BreakdownEntryInput[];
   },
 ): Promise<CartMutationResult> {
   await assertApproved(viewer);
@@ -1062,18 +1140,23 @@ export async function addToCart(
         "Choose the models and quantities for this product first.",
       );
     }
-    // Merge per-model with the stored split (repeat adds accumulate).
-    const merged = new Map<string, number>();
-    for (const e of parseStoredBreakdown(existing?.breakdown)) {
-      merged.set(e.modelId, (merged.get(e.modelId) ?? 0) + e.qty);
+    // Merge per-model with the stored split (repeat adds accumulate). Master
+    // rows merge on the model id; custom rows merge on the normalized typed
+    // name (so "iPhone 12" and "iphone-12" become one line, first name wins).
+    const merged = new Map<string, BreakdownEntry>();
+    for (const e of [
+      ...parseStoredBreakdown(existing?.breakdown),
+      ...(input.breakdown as BreakdownEntry[]),
+    ]) {
+      const key = breakdownKey(e);
+      const prev = merged.get(key);
+      if (prev) {
+        prev.qty += e.qty;
+      } else {
+        merged.set(key, { ...e });
+      }
     }
-    for (const e of input.breakdown) {
-      merged.set(e.modelId, (merged.get(e.modelId) ?? 0) + e.qty);
-    }
-    const entries = [...merged.entries()].map(([modelId, qty]) => ({
-      modelId,
-      qty,
-    }));
+    const entries = [...merged.values()];
     if (entries.length > MAX_BREAKDOWN_ENTRIES) {
       throw new CartError(
         "BREAKDOWN_INVALID",
@@ -1178,7 +1261,7 @@ export async function updateQuantity(
     productId: string;
     variantId?: string | null;
     quantity: number;
-    breakdown?: { modelId: string; qty: number }[];
+    breakdown?: BreakdownEntryInput[];
   },
 ): Promise<CartMutationResult> {
   await assertApproved(viewer);

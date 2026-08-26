@@ -120,7 +120,10 @@ async function requireApprovedCustomer(): Promise<
 async function perModelBreakdownRefusal(data: {
   productId: string;
   variantId?: string;
-  breakdown?: { modelId: string; qty: number }[];
+  breakdown?: (
+    | { modelId: string; qty: number }
+    | { custom: true; name: string; qty: number }
+  )[];
 }): Promise<CartActionResult | null> {
   const breakdown = data.breakdown;
   if (!breakdown || breakdown.length === 0) return null;
@@ -154,13 +157,23 @@ async function perModelBreakdownRefusal(data: {
   const rules = perModelRules(allocation.minPerModel, packMultiple);
   if (rules.pack === 1 && rules.min <= 1) return null; // nothing to enforce
 
-  const models = await prisma.deviceModel.findMany({
-    where: { id: { in: breakdown.map((e) => e.modelId) } },
-    select: { id: true, name: true },
-  });
+  // Custom (typed) lines carry their own name; only master rows need lookup.
+  const masterIds = breakdown.flatMap((e) =>
+    "modelId" in e ? [e.modelId] : [],
+  );
+  const models = masterIds.length
+    ? await prisma.deviceModel.findMany({
+        where: { id: { in: masterIds } },
+        select: { id: true, name: true },
+      })
+    : [];
   const nameById = new Map(models.map((m) => [m.id, m.name]));
   const issues = validatePerModelQuantities(
-    breakdown.map((e) => ({ ...e, name: nameById.get(e.modelId) })),
+    breakdown.map((e) =>
+      "modelId" in e
+        ? { modelId: e.modelId, qty: e.qty, name: nameById.get(e.modelId) }
+        : { qty: e.qty, name: e.name },
+    ),
     rules,
   );
   if (issues.length === 0) return null;

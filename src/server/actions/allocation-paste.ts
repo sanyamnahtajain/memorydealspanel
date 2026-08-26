@@ -16,7 +16,10 @@ import {
  * "S23 Ultra 20" lines, this action matches the names against the ACTIVE
  * DeviceModel master (scoped to the product's allocation restriction — a
  * restricted product can never resolve a model outside its allow-list) and
- * returns filled rows plus the lines it could not use.
+ * returns filled rows plus the lines it could not read. A readable line that
+ * matches NO candidate comes back as a CUSTOM (typed) row — free-text models
+ * are allowed even on restricted products, because the restriction list (like
+ * the master list itself) is never complete.
  *
  * Same trust level as `searchDeviceModelsAction`: model names are non-monetary
  * catalog metadata, so any signed-in customer or admin may call it; it is
@@ -28,7 +31,8 @@ export type MatchBreakdownPasteResult =
   | {
       ok: true;
       rows: PasteMatchRow[];
-      unmatched: string[];
+      /** Typed names that matched no master model — returned as custom rows. */
+      addedAsTyped: string[];
       unreadable: string[];
       overflow: number;
     }

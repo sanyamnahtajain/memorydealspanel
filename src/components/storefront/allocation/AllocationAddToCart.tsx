@@ -99,7 +99,11 @@ export function AllocationAddToCart({
       const result = await addToCartAction({
         productId,
         quantity: total,
-        breakdown: rows.map((r) => ({ modelId: r.modelId, qty: r.qty })),
+        breakdown: rows.map((r) =>
+          r.custom || r.modelId === null
+            ? { custom: true as const, name: r.name, qty: r.qty }
+            : { modelId: r.modelId, qty: r.qty },
+        ),
       });
       if (result.ok) {
         broadcastCartCount(result.itemCount);

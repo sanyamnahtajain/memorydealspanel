@@ -85,8 +85,8 @@ describe("matchPasteText", () => {
   ];
 
   it("matches case- and punctuation-insensitively", () => {
-    const { rows, unmatched } = matchPasteText("s23-ultra 20", CANDIDATES);
-    expect(unmatched).toEqual([]);
+    const { rows, addedAsTyped } = matchPasteText("s23-ultra 20", CANDIDATES);
+    expect(addedAsTyped).toEqual([]);
     expect(rows).toEqual([{ modelId: "a", name: "Galaxy S23 Ultra", qty: 20 }]);
   });
 
@@ -105,13 +105,36 @@ describe("matchPasteText", () => {
     expect(rows).toEqual([{ modelId: "e", name: "Redmi Note 13", qty: 50 }]);
   });
 
-  it("reports unmatched names plainly, as written", () => {
-    const { rows, unmatched } = matchPasteText(
+  it("a name matching no model becomes a CUSTOM row, kept as typed", () => {
+    const { rows, addedAsTyped } = matchPasteText(
       "Nokia 3310 20\niPhone 15 10",
       CANDIDATES,
     );
+    expect(rows).toEqual([
+      { modelId: null, custom: true, name: "Nokia 3310", qty: 20 },
+      { modelId: "c", name: "iPhone 15", qty: 10 },
+    ]);
+    // …and the preview is told, so it can note "will be added as typed".
+    expect(addedAsTyped).toEqual(["Nokia 3310"]);
+  });
+
+  it("repeated mentions of one CUSTOM name merge case-insensitively", () => {
+    const { rows, addedAsTyped } = matchPasteText(
+      "Nokia 3310 20\nnokia-3310 10",
+      CANDIDATES,
+    );
+    expect(rows).toEqual([
+      { modelId: null, custom: true, name: "Nokia 3310", qty: 30 },
+    ]);
+    expect(addedAsTyped).toEqual(["Nokia 3310"]);
+  });
+
+  it("a custom name is capped at the custom-name length limit", () => {
+    const longName = `Ultra ${"X".repeat(120)}`;
+    const { rows } = matchPasteText(`${longName} 10`, CANDIDATES);
     expect(rows).toHaveLength(1);
-    expect(unmatched).toEqual(["Nokia 3310"]);
+    expect(rows[0]!.custom).toBe(true);
+    expect(rows[0]!.name.length).toBeLessThanOrEqual(80);
   });
 
   it("repeated mentions of one model sum their quantities", () => {

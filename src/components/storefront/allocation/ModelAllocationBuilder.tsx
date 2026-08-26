@@ -18,7 +18,11 @@ import {
   perModelRules,
 } from "@/lib/allocation";
 import { normalizeModelText } from "@/lib/allocation-paste";
-import { MAX_BREAKDOWN_ENTRIES, MAX_QTY_PER_LINE } from "@/lib/schemas/cart";
+import {
+  MAX_BREAKDOWN_ENTRIES,
+  MAX_CUSTOM_MODEL_NAME,
+  MAX_QTY_PER_LINE,
+} from "@/lib/schemas/cart";
 import { searchDeviceModelsAction } from "@/server/actions/device-models";
 import { matchBreakdownPasteAction } from "@/server/actions/allocation-paste";
 
@@ -30,7 +34,11 @@ import { matchBreakdownPasteAction } from "@/server/actions/allocation-paste";
  *   - Search-first picker (the model master holds hundreds of rows); the SAME
  *     box filters the already-chosen rows as you type.
  *   - Paste mode: paste "S23 Ultra 20" lines and the rows fill themselves
- *     (server-side fuzzy match); unmatched lines are reported plainly.
+ *     (server-side fuzzy match); a line matching no master model is kept AS
+ *     TYPED — a custom line — and called out plainly in the report.
+ *   - Free text: when the search matches nothing (or only partially), an
+ *     "Add “<typed>”" row lets the buyer add their own wording as a custom
+ *     line, visually tagged "custom".
  *   - Per-model steppers step by the PACK MULTIPLE, with tap-and-hold repeat,
  *     plus a "+pack" quick add on each row.
  *   - Per-model pack/minimum violations render inline under the row (red),
@@ -42,9 +50,21 @@ import { matchBreakdownPasteAction } from "@/server/actions/allocation-paste";
  */
 
 export interface AllocationRow {
-  modelId: string;
+  /** Master-list model id — NULL for a custom (typed) line. */
+  modelId: string | null;
+  /** True when the buyer typed this model because the master list lacks it. */
+  custom?: boolean;
   name: string;
   qty: number;
+}
+
+/**
+ * Stable identity of a row: the model id for master rows, the normalized
+ * typed name for custom rows (which have no id). Used for React keys, the
+ * qty updates, and dedupe.
+ */
+export function allocationRowKey(row: Pick<AllocationRow, "modelId" | "name">): string {
+  return row.modelId ?? `custom:${normalizeModelText(row.name)}`;
 }
 
 export interface ModelAllocationBuilderProps {
@@ -68,7 +88,8 @@ interface SearchResult {
 
 interface PasteReport {
   filled: number;
-  unmatched: string[];
+  /** Typed names that matched no master model — kept as custom lines. */
+  addedAsTyped: string[];
   unreadable: string[];
   overflow: number;
   capped: boolean;
@@ -199,7 +220,10 @@ export function ModelAllocationBuilder({
   }, [query, open, productId]);
 
   const rules = perModelRules(minPerModel, packMultiple);
-  const chosen = new Set(value.map((r) => r.modelId));
+  const chosen = new Set(value.map((r) => allocationRowKey(r)));
+  // Normalized names of EVERY chosen row (master + custom) — the dedupe pool
+  // for a typed custom name ("iphone 12" twice must not make two lines).
+  const chosenNames = new Set(value.map((r) => normalizeModelText(r.name)));
   const total = value.reduce((acc, r) => acc + r.qty, 0);
   const floor = minOrderableQty(moq, packMultiple);
   const settled = clampQuantity(total, moq, packMultiple);
@@ -224,13 +248,42 @@ export function ModelAllocationBuilder({
     setOpen(false);
   }
 
-  function setQty(modelId: string, qty: number) {
+  // ---- Custom (typed) models -------------------------------------------
+  // The master list is never complete. When the search text matches nothing
+  // (or the buyer simply prefers their own wording) they can add the text
+  // AS TYPED; the line is stored with `custom: true` and its name, and is
+  // visually tagged so admins know it is not from the master list. This is
+  // deliberately ALSO allowed for products with a RESTRICTED modelIds list:
+  // the restriction pins which master models may be picked, but free text
+  // exists precisely because that list (like the master) is incomplete.
+  const typedName = query.replace(/\s+/g, " ").trim().slice(0, MAX_CUSTOM_MODEL_NAME);
+  const typedNorm = normalizeModelText(typedName);
+  const typedTaken = typedNorm !== "" && chosenNames.has(typedNorm);
+  // Hide the add row when a suggestion IS this exact name — pick the master
+  // row instead, so a custom duplicate of a catalog model can't be created.
+  const typedMatchesResult = results.some(
+    (m) => normalizeModelText(m.name) === typedNorm,
+  );
+  const showAddTyped =
+    typedNorm !== "" && !typedMatchesResult && value.length < MAX_BREAKDOWN_ENTRIES;
+
+  function addTypedModel() {
+    if (!showAddTyped || typedTaken) return;
+    onChange([
+      ...value,
+      { modelId: null, custom: true, name: typedName, qty: rules.min },
+    ]);
+    setQuery("");
+    setOpen(false);
+  }
+
+  function setQty(rowKey: string, qty: number) {
     if (qty <= 0) {
-      onChange(value.filter((r) => r.modelId !== modelId));
+      onChange(value.filter((r) => allocationRowKey(r) !== rowKey));
       return;
     }
     onChange(
-      value.map((r) => (r.modelId === modelId ? { ...r, qty } : r)),
+      value.map((r) => (allocationRowKey(r) === rowKey ? { ...r, qty } : r)),
     );
   }
 
@@ -248,15 +301,24 @@ export function ModelAllocationBuilder({
       }
       // Merge: pasted quantity REPLACES the row's quantity (predictable when
       // re-pasting a corrected list); new models append in pasted order.
+      // Custom (typed) rows merge on their normalized name, master rows on id.
       const merged = [...value];
-      const indexById = new Map(merged.map((r, i) => [r.modelId, i]));
+      const indexByKey = new Map(
+        merged.map((r, i) => [allocationRowKey(r), i] as const),
+      );
       let capped = false;
       for (const row of result.rows) {
-        const at = indexById.get(row.modelId);
+        const key = allocationRowKey(row);
+        const at = indexByKey.get(key);
         if (at !== undefined) {
           merged[at] = { ...merged[at], qty: row.qty };
         } else if (merged.length < MAX_BREAKDOWN_ENTRIES) {
-          merged.push({ modelId: row.modelId, name: row.name, qty: row.qty });
+          merged.push({
+            modelId: row.modelId,
+            ...(row.custom ? { custom: true } : {}),
+            name: row.name,
+            qty: row.qty,
+          });
         } else {
           capped = true;
         }
@@ -264,7 +326,7 @@ export function ModelAllocationBuilder({
       onChange(merged);
       setPasteReport({
         filled: result.rows.length,
-        unmatched: result.unmatched,
+        addedAsTyped: result.addedAsTyped,
         unreadable: result.unreadable,
         overflow: result.overflow,
         capped,
@@ -315,7 +377,7 @@ export function ModelAllocationBuilder({
               aria-label="Matching models"
               className="absolute inset-x-0 top-full z-30 mt-1 max-h-64 overflow-auto rounded-lg border border-border bg-popover p-1 shadow-lg"
             >
-              {results.length === 0 && !searching ? (
+              {results.length === 0 && !searching && !showAddTyped ? (
                 <li className="px-2.5 py-2 text-sm text-muted-foreground">
                   No models match “{query}”.
                 </li>
@@ -350,6 +412,38 @@ export function ModelAllocationBuilder({
                   );
                 })
               )}
+              {/* Free-text escape hatch: the master list is never complete,
+                  so whatever the buyer typed can always be added AS TYPED. */}
+              {showAddTyped ? (
+                <li key="add-typed">
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={typedTaken}
+                    disabled={typedTaken}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      addTypedModel();
+                    }}
+                    className={cn(
+                      "flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-2 text-left text-sm",
+                      typedTaken
+                        ? "cursor-default text-muted-foreground"
+                        : "hover:bg-muted",
+                    )}
+                  >
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <Plus aria-hidden className="size-3.5 shrink-0" />
+                      <span className="truncate">
+                        Add “{typedName}”
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {typedTaken ? "Added" : "as typed"}
+                    </span>
+                  </button>
+                </li>
+              ) : null}
             </ul>
           ) : null}
         </div>
@@ -395,9 +489,10 @@ export function ModelAllocationBuilder({
                   {pasteReport.filled === 1 ? "model" : "models"}.
                 </p>
               ) : null}
-              {pasteReport.unmatched.length > 0 ? (
-                <p className="text-destructive">
-                  Could not find: {pasteReport.unmatched.join(", ")}
+              {pasteReport.addedAsTyped.length > 0 ? (
+                <p className="text-amber-700 dark:text-amber-300">
+                  Not in our list — added as typed:{" "}
+                  {pasteReport.addedAsTyped.join(", ")}
                 </p>
               ) : null}
               {pasteReport.unreadable.length > 0 ? (
@@ -446,26 +541,36 @@ export function ModelAllocationBuilder({
           ) : null}
           <ul className="flex max-h-72 flex-col gap-1.5 overflow-auto">
             {visibleRows.map((row) => {
+              const key = allocationRowKey(row);
               const issue = perModelIssueText(row.qty, rules);
-              const errorId = issue ? `alloc-issue-${row.modelId}` : undefined;
+              const errorId = issue
+                ? `alloc-issue-${key.replace(/[^\p{L}\p{N}_-]+/gu, "-")}`
+                : undefined;
               return (
                 <li
-                  key={row.modelId}
+                  key={key}
                   className={cn(
                     "rounded-lg border bg-background px-2.5 py-1.5",
                     issue ? "border-destructive/60" : "border-border",
                   )}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="min-w-0 flex-1 truncate text-sm">
-                      {row.name}
+                    <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                      <span className="min-w-0 truncate text-sm">{row.name}</span>
+                      {row.custom ? (
+                        // Marks a typed (not-in-master-list) model for both
+                        // the buyer and the admin reviewing the order.
+                        <span className="shrink-0 rounded border border-border bg-muted px-1 py-px text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                          custom
+                        </span>
+                      ) : null}
                     </span>
                     <div className="inline-flex items-center rounded-md border border-border">
                       <StepButton
                         aria-label={`Fewer ${row.name}`}
                         disabled={disabled}
                         onStep={() =>
-                          setQty(row.modelId, stepQtyDown(row.qty, rules.pack))
+                          setQty(key, stepQtyDown(row.qty, rules.pack))
                         }
                         className="size-8"
                       >
@@ -482,9 +587,9 @@ export function ModelAllocationBuilder({
                         disabled={disabled}
                         onChange={(e) => {
                           const digits = e.target.value.replace(/[^\d]/g, "");
-                          if (digits === "") return setQty(row.modelId, 1);
+                          if (digits === "") return setQty(key, 1);
                           setQty(
-                            row.modelId,
+                            key,
                             Math.min(MAX_QTY_PER_LINE, Number(digits)),
                           );
                         }}
@@ -497,7 +602,7 @@ export function ModelAllocationBuilder({
                         aria-label={`More ${row.name}`}
                         disabled={disabled}
                         onStep={() =>
-                          setQty(row.modelId, stepQtyUp(row.qty, rules.pack))
+                          setQty(key, stepQtyUp(row.qty, rules.pack))
                         }
                         className="size-8"
                       >
@@ -510,7 +615,7 @@ export function ModelAllocationBuilder({
                         aria-label={`Add one pack of ${rules.pack} ${row.name}`}
                         disabled={disabled}
                         onClick={() =>
-                          setQty(row.modelId, stepQtyUp(row.qty, rules.pack))
+                          setQty(key, stepQtyUp(row.qty, rules.pack))
                         }
                         className="inline-flex h-8 shrink-0 select-none items-center rounded-md border border-border px-1.5 text-xs font-medium tabular-nums text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
                       >
@@ -521,7 +626,7 @@ export function ModelAllocationBuilder({
                       type="button"
                       aria-label={`Remove ${row.name}`}
                       disabled={disabled}
-                      onClick={() => setQty(row.modelId, 0)}
+                      onClick={() => setQty(key, 0)}
                       className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
                     >
                       <X aria-hidden className="size-4" />

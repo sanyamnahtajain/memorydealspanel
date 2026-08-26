@@ -626,6 +626,114 @@ describe("addToCart — allocation breakdowns", () => {
     line = cart.lines.find((l) => l.productId === productId);
     expect(line?.issues).toContain("breakdown-mismatch");
   });
+
+  /* ---- Custom (typed) lines — models missing from the master list ---- */
+
+  it("stores a custom (typed) line alongside master lines", async () => {
+    const customerId = await makeCustomer("alloc-custom");
+    const productId = await makeAllocProduct();
+    const m1 = await makeModel("Alpha");
+
+    const result = await addToCart(approvedViewer(customerId), {
+      productId,
+      quantity: 30,
+      breakdown: [
+        { modelId: m1, qty: 10 },
+        { custom: true, name: "Nokia 3310", qty: 20 },
+      ],
+    });
+    expect(result.quantity).toBe(30);
+
+    const row = await prisma.cartItem.findFirst({
+      where: { customerId, productId },
+      select: { quantity: true, breakdown: true },
+    });
+    expect(row?.quantity).toBe(30);
+    expect(row?.breakdown).toEqual([
+      { modelId: m1, qty: 10 },
+      { custom: true, name: "Nokia 3310", qty: 20 },
+    ]);
+  });
+
+  it("merges repeat adds of a custom line case-insensitively, keeping the first name", async () => {
+    const customerId = await makeCustomer("alloc-custom-merge");
+    const productId = await makeAllocProduct();
+
+    await addToCart(approvedViewer(customerId), {
+      productId,
+      quantity: 10,
+      breakdown: [{ custom: true, name: "Nokia 3310", qty: 10 }],
+    });
+    await addToCart(approvedViewer(customerId), {
+      productId,
+      quantity: 15,
+      breakdown: [{ custom: true, name: "NOKIA-3310", qty: 15 }],
+    });
+
+    const row = await prisma.cartItem.findFirst({
+      where: { customerId, productId },
+      select: { quantity: true, breakdown: true },
+    });
+    expect(row?.quantity).toBe(25);
+    expect(row?.breakdown).toEqual([
+      { custom: true, name: "Nokia 3310", qty: 25 },
+    ]);
+  });
+
+  it("rejects a custom name that duplicates a master model already in the split", async () => {
+    const customerId = await makeCustomer("alloc-custom-dup");
+    const productId = await makeAllocProduct();
+    const m1 = await makeModel("DupCheck");
+    const m1Name = (await prisma.deviceModel.findUnique({
+      where: { id: m1 },
+      select: { name: true },
+    }))!.name;
+
+    await expect(
+      addToCart(approvedViewer(customerId), {
+        productId,
+        quantity: 20,
+        breakdown: [
+          { modelId: m1, qty: 10 },
+          { custom: true, name: m1Name.toUpperCase(), qty: 10 },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: "BREAKDOWN_INVALID" });
+  });
+
+  it("accepts a custom line on a RESTRICTED product — free text bypasses the allow-list by design", async () => {
+    const customerId = await makeCustomer("alloc-custom-restricted");
+    const m1 = await makeModel("OnList");
+    const productId = await makeAllocProduct({ modelIds: [m1] });
+
+    const result = await addToCart(approvedViewer(customerId), {
+      productId,
+      quantity: 25,
+      breakdown: [
+        { modelId: m1, qty: 10 },
+        { custom: true, name: "Off List Model", qty: 15 },
+      ],
+    });
+    expect(result.quantity).toBe(25);
+  });
+
+  it("getCart projects a custom line with its typed name and no mismatch flag", async () => {
+    const customerId = await makeCustomer("alloc-custom-read");
+    const productId = await makeAllocProduct();
+
+    await addToCart(approvedViewer(customerId), {
+      productId,
+      quantity: 10,
+      breakdown: [{ custom: true, name: "Nokia 3310", qty: 10 }],
+    });
+
+    const cart = await getCart(approvedViewer(customerId));
+    const line = cart.lines.find((l) => l.productId === productId);
+    expect(line?.breakdown).toEqual([
+      { modelId: null, custom: true, name: "Nokia 3310", qty: 10 },
+    ]);
+    expect(line?.issues).not.toContain("breakdown-mismatch");
+  });
 });
 
 describe("setCartRequirement — notes & photos", () => {

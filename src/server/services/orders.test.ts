@@ -514,6 +514,37 @@ describe("placeOrder — allocation breakdowns", () => {
     }
   });
 
+  it("snapshots a CUSTOM (typed) line with the typed name as modelName", async () => {
+    const customerId = await makeCustomer();
+    await grantAccess(customerId);
+    const productId = await makeAllocProduct();
+    const m1 = await makeModel("Realme 11");
+
+    await prisma.cartItem.create({
+      data: {
+        customerId,
+        productId,
+        quantity: 30,
+        breakdown: [
+          { modelId: m1.id, qty: 10 },
+          { custom: true, name: "Nokia 3310 Fancy Edition", qty: 20 },
+        ],
+      },
+    });
+
+    const result = await placeOrder(customerId, {});
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const item = (result.order.items as { breakdown?: { modelName: string; qty: number }[] }[])[0];
+      // The frozen snapshot keeps the exact { modelName, qty } shape old
+      // orders use — a custom line simply carries the typed name.
+      expect(item.breakdown).toEqual([
+        { modelName: m1.name, qty: 10 },
+        { modelName: "Nokia 3310 Fancy Edition", qty: 20 },
+      ]);
+    }
+  });
+
   it("blocks placement when the stored split does not sum to the quantity", async () => {
     const customerId = await makeCustomer();
     await grantAccess(customerId);

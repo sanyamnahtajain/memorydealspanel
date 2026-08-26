@@ -187,6 +187,21 @@ describe("validatePerModelQuantities", () => {
     );
     expect(issues).toEqual([]);
   });
+
+  it("CUSTOM (typed) lines obey exactly the same pack/minimum rules", () => {
+    const issues = validatePerModelQuantities(
+      [
+        { qty: 11, name: "Nokia 3310" }, // custom: no modelId
+        { modelId: MODEL_A, qty: 20, name: "S23 Ultra" },
+        { qty: 30, name: "Custom OK" },
+      ],
+      pack10,
+    );
+    expect(issues).toEqual([
+      // The typed name doubles as the issue key for id-less lines.
+      { modelId: "Nokia 3310", message: "Nokia 3310: order in packs of 10" },
+    ]);
+  });
 });
 
 describe("the sum-equals-line-quantity contract is untouched", () => {
@@ -214,5 +229,92 @@ describe("the sum-equals-line-quantity contract is untouched", () => {
       ],
     });
     expect(parsed.success).toBe(false);
+  });
+});
+
+describe("custom (typed) breakdown lines — schema", () => {
+  const PRODUCT = "64b0000000000000000000aa";
+
+  it("accepts a mix of master and custom lines summing to the quantity", () => {
+    const parsed = addToCartSchema.safeParse({
+      productId: PRODUCT,
+      quantity: 30,
+      breakdown: [
+        { modelId: MODEL_A, qty: 10 },
+        { custom: true, name: "Nokia 3310", qty: 20 },
+      ],
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("trims and collapses whitespace in the typed name", () => {
+    const parsed = addToCartSchema.safeParse({
+      productId: PRODUCT,
+      quantity: 10,
+      breakdown: [{ custom: true, name: "  Nokia   3310\t ", qty: 10 }],
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.breakdown![0]).toEqual({
+        custom: true,
+        name: "Nokia 3310",
+        qty: 10,
+      });
+    }
+  });
+
+  it("rejects an empty / whitespace-only typed name", () => {
+    for (const name of ["", "   ", "\t\n"]) {
+      const parsed = addToCartSchema.safeParse({
+        productId: PRODUCT,
+        quantity: 10,
+        breakdown: [{ custom: true, name, qty: 10 }],
+      });
+      expect(parsed.success).toBe(false);
+    }
+  });
+
+  it("rejects a typed name beyond 80 characters", () => {
+    const parsed = addToCartSchema.safeParse({
+      productId: PRODUCT,
+      quantity: 10,
+      breakdown: [{ custom: true, name: "X".repeat(81), qty: 10 }],
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("dedupes custom names case-insensitively — 'iphone 12' twice is blocked", () => {
+    const parsed = addToCartSchema.safeParse({
+      productId: PRODUCT,
+      quantity: 20,
+      breakdown: [
+        { custom: true, name: "iPhone 12", qty: 10 },
+        { custom: true, name: "IPHONE 12", qty: 10 },
+      ],
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("custom quantities follow the same integer rules as master lines", () => {
+    for (const qty of [0, -1, 1.5]) {
+      const parsed = addToCartSchema.safeParse({
+        productId: PRODUCT,
+        quantity: 10,
+        breakdown: [{ custom: true, name: "Nokia 3310", qty }],
+      });
+      expect(parsed.success).toBe(false);
+    }
+  });
+
+  it("legacy master-only payloads still parse exactly as before", () => {
+    const parsed = addToCartSchema.safeParse({
+      productId: PRODUCT,
+      quantity: 10,
+      breakdown: [{ modelId: MODEL_A, qty: 10 }],
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.breakdown![0]).toEqual({ modelId: MODEL_A, qty: 10 });
+    }
   });
 });

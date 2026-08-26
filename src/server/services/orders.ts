@@ -532,24 +532,45 @@ function priceLine(
     product.allocation,
     product.category?.defaultAllocation,
   );
-  const entries = Array.isArray(storedBreakdown)
-    ? (storedBreakdown as { modelId?: unknown; qty?: unknown }[])
-        .filter(
-          (e) =>
-            e &&
-            typeof e.modelId === "string" &&
-            Number.isSafeInteger(e.qty) &&
-            (e.qty as number) > 0,
-        )
-        .map((e) => ({ modelId: e.modelId as string, qty: e.qty as number }))
+  // A stored slice is EITHER a master-list model ({ modelId }) or a CUSTOM
+  // typed line ({ custom: true, name }) — the buyer's model was missing from
+  // the master list. Legacy rows only ever contain the master shape.
+  type StoredEntry =
+    | { modelId: string; qty: number }
+    | { custom: true; name: string; qty: number };
+  const entries: StoredEntry[] = Array.isArray(storedBreakdown)
+    ? (storedBreakdown as { modelId?: unknown; custom?: unknown; name?: unknown; qty?: unknown }[]).flatMap(
+        (e): StoredEntry[] => {
+          if (!e || !Number.isSafeInteger(e.qty) || (e.qty as number) <= 0) {
+            return [];
+          }
+          if (typeof e.modelId === "string") {
+            return [{ modelId: e.modelId, qty: e.qty as number }];
+          }
+          if (e.custom === true && typeof e.name === "string" && e.name.trim() !== "") {
+            return [{ custom: true, name: e.name.trim(), qty: e.qty as number }];
+          }
+          return [];
+        },
+      )
     : [];
+  /** The display/snapshot name of one slice — the custom TYPED name survives
+   *  onto the frozen order line so admin views and messages render it. */
+  const entryName = (e: StoredEntry): string =>
+    "custom" in e
+      ? e.name
+      : modelById.get(e.modelId)?.name ?? "Unknown model";
   let breakdownMismatch = false;
   let breakdown: { modelName: string; qty: number }[] | null = null;
   if (allocation?.required) {
     const sum = entries.reduce((acc, e) => acc + e.qty, 0);
     const allowed =
       allocation.modelIds.length > 0 ? new Set(allocation.modelIds) : null;
+    // Custom lines pass the model health check by definition: they reference
+    // no master row, and a restricted allow-list does not bar free text (the
+    // list is incomplete — that is why custom lines exist).
     const modelsOk = entries.every((e) => {
+      if ("custom" in e) return true;
       const m = modelById.get(e.modelId);
       return m && m.status === "ACTIVE" && (!allowed || allowed.has(e.modelId));
     });
@@ -561,18 +582,12 @@ function priceLine(
       !modelsOk ||
       quantity !== requestedQuantity;
     if (!breakdownMismatch) {
-      breakdown = entries.map((e) => ({
-        modelName: modelById.get(e.modelId)?.name ?? "Unknown model",
-        qty: e.qty,
-      }));
+      breakdown = entries.map((e) => ({ modelName: entryName(e), qty: e.qty }));
     }
   } else if (entries.length > 0) {
     // Allocation switched off after the split was captured: keep the split
     // for display/packing, but it no longer gates the order.
-    breakdown = entries.map((e) => ({
-      modelName: modelById.get(e.modelId)?.name ?? "Unknown model",
-      qty: e.qty,
-    }));
+    breakdown = entries.map((e) => ({ modelName: entryName(e), qty: e.qty }));
   }
 
   const fatal: CartLineIssue[] = [];

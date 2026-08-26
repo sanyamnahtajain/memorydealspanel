@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { objectIdSchema } from "@/lib/schemas/shared";
-import { MAX_QTY_PER_LINE } from "@/lib/schemas/cart";
+import { MAX_CUSTOM_MODEL_NAME, MAX_QTY_PER_LINE } from "@/lib/schemas/cart";
 
 /**
  * Paste-a-list parsing + fuzzy model matching for the allocation builder.
@@ -97,15 +97,22 @@ export interface PasteCandidate {
 }
 
 export interface PasteMatchRow {
-  modelId: string;
+  /** Master-list model id, or NULL for a custom (typed) line. */
+  modelId: string | null;
+  /** True when the name matched no master model — the line is kept as typed. */
+  custom?: true;
   name: string;
   qty: number;
 }
 
 export interface PasteMatchResult {
   rows: PasteMatchRow[];
-  /** Name texts (as written) that matched no model. */
-  unmatched: string[];
+  /**
+   * Name texts (as written) that matched no master model. They are NOT
+   * errors any more — each also appears in `rows` as a custom line — but the
+   * preview calls them out ("not in master list — will be added as typed").
+   */
+  addedAsTyped: string[];
   unreadable: string[];
   overflow: number;
 }
@@ -151,7 +158,11 @@ function matchOne(
 
 /**
  * Parse a pasted list and resolve every line against the candidate models.
- * Repeated mentions of the same model SUM their quantities. Never throws.
+ * Repeated mentions of the same model SUM their quantities. A line whose name
+ * matches NO candidate becomes a CUSTOM (typed) row instead of an error —
+ * the master list is never complete, and a wholesale buyer must still be able
+ * to order "their" model. Custom rows merge case-/punctuation-insensitively
+ * on the typed name. Never throws.
  */
 export function matchPasteText(
   text: string,
@@ -164,28 +175,39 @@ export function matchPasteText(
     norm: normalizeModelText(c.name),
   }));
 
-  const byId = new Map<string, PasteMatchRow>();
+  // Keyed by model id for master rows, by `custom:<norm>` for typed rows.
+  const byKey = new Map<string, PasteMatchRow>();
   const order: string[] = [];
-  const unmatched: string[] = [];
+  const addedAsTyped: string[] = [];
 
   for (const line of parsed.lines) {
-    const hit = matchOne(normalizeModelText(line.name), pool);
-    if (!hit) {
-      unmatched.push(line.name);
-      continue;
-    }
-    const existing = byId.get(hit.id);
+    const norm = normalizeModelText(line.name);
+    const hit = matchOne(norm, pool);
+    // Custom names follow the same sanitising as the cart schema: collapse
+    // whitespace (parsePasteText already trimmed) and cap the length.
+    const typedName = line.name.replace(/\s+/g, " ").slice(0, MAX_CUSTOM_MODEL_NAME).trim();
+    const key = hit ? hit.id : `custom:${norm}`;
+    const existing = byKey.get(key);
     if (existing) {
       existing.qty = Math.min(existing.qty + line.qty, MAX_QTY_PER_LINE);
+    } else if (hit) {
+      byKey.set(key, { modelId: hit.id, name: hit.name, qty: line.qty });
+      order.push(key);
     } else {
-      byId.set(hit.id, { modelId: hit.id, name: hit.name, qty: line.qty });
-      order.push(hit.id);
+      byKey.set(key, {
+        modelId: null,
+        custom: true,
+        name: typedName,
+        qty: line.qty,
+      });
+      order.push(key);
+      addedAsTyped.push(line.name);
     }
   }
 
   return {
-    rows: order.map((id) => byId.get(id)!),
-    unmatched,
+    rows: order.map((key) => byKey.get(key)!),
+    addedAsTyped,
     unreadable: parsed.unreadable,
     overflow: parsed.overflow,
   };

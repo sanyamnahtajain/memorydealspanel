@@ -9,7 +9,7 @@
  */
 import * as React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 vi.mock("@/server/actions/device-models", () => ({
   searchDeviceModelsAction: vi.fn(async () => ({ ok: true, data: [] })),
@@ -36,7 +36,12 @@ afterEach(() => {
 });
 
 function renderSheet(
-  initial: { modelId: string; name: string; qty: number }[],
+  initial: {
+    modelId: string | null;
+    custom?: boolean;
+    name: string;
+    qty: number;
+  }[],
   minPerModel: number | null = null,
 ) {
   render(
@@ -88,5 +93,37 @@ describe("stored split validated on open", () => {
       await screen.findByRole("button", { name: /Save split \(30 units\)/ }),
     ).toBeEnabled();
     expect(screen.queryByText(/Order at least/)).not.toBeInTheDocument();
+  });
+
+  it("a CUSTOM (typed) stored line shows its tag and saves with the custom shape", async () => {
+    updateCartQuantityAction.mockResolvedValue({
+      ok: true,
+      quantity: 30,
+      itemCount: 30,
+      lineCount: 1,
+      clamped: false,
+    });
+    renderSheet([
+      { modelId: "a", name: "S23 Ultra", qty: 20 },
+      { modelId: null, custom: true, name: "Nokia 3310", qty: 10 },
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: /Edit models/ }));
+
+    // The typed line is visibly marked so it's clear it is not from the master.
+    expect(await screen.findByText("custom")).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: /Save split \(30 units\)/ }),
+    );
+
+    // A successful save closes the sheet — wait on the action call itself.
+    await waitFor(() => expect(updateCartQuantityAction).toHaveBeenCalled());
+    expect(updateCartQuantityAction).toHaveBeenCalledWith({
+      productId: "64b0000000000000000000aa",
+      quantity: 30,
+      breakdown: [
+        { modelId: "a", qty: 20 },
+        { custom: true, name: "Nokia 3310", qty: 10 },
+      ],
+    });
   });
 });

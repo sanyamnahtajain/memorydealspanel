@@ -181,6 +181,7 @@ export function CartLineRow({
                 minPerModel={line.minPerModel}
                 initial={(line.breakdown ?? []).map((b) => ({
                   modelId: b.modelId,
+                  ...(b.custom ? { custom: true } : {}),
                   name: b.name,
                   qty: b.qty,
                 }))}
@@ -191,6 +192,7 @@ export function CartLineRow({
                     quantity,
                     breakdown: rows.map((r) => ({
                       modelId: r.modelId,
+                      ...(r.custom ? { custom: true } : {}),
                       name: r.name,
                       qty: r.qty,
                     })),

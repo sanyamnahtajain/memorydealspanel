@@ -53,30 +53,93 @@ export const quantitySchema = z
 /** Max distinct models a single line's breakdown may reference. */
 export const MAX_BREAKDOWN_ENTRIES = 500;
 
-/** One per-model slice of a line's quantity. Strict positive integers only. */
-export const breakdownEntrySchema = z.object({
+/** Max length of a custom (typed, not-in-master-list) model name. */
+export const MAX_CUSTOM_MODEL_NAME = 80;
+
+const breakdownQtySchema = z
+  .number()
+  .int("Model quantity must be a whole number.")
+  .min(1, "Each model needs at least 1 unit.")
+  .max(MAX_QTY_PER_LINE)
+  .refine((v) => Number.isSafeInteger(v), "Model quantity is out of range.");
+
+/**
+ * A custom model name as typed by the buyer: trimmed, inner whitespace (and
+ * control characters) collapsed, non-empty, capped. PLAIN TEXT only — it is
+ * rendered verbatim in the storefront, admin panel and order views (always
+ * through React/text nodes, never as markup), so no HTML survives here beyond
+ * what escaping already neutralises.
+ */
+export const customModelNameSchema = z
+  .string()
+  .max(400, "Model name is too long.")
+  .transform((v) =>
+    v
+      .replace(/[\u0000-\u001f\u007f]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim(),
+  )
+  .pipe(
+    z
+      .string()
+      .min(1, "Type a model name.")
+      .max(
+        MAX_CUSTOM_MODEL_NAME,
+        `A model name can have at most ${MAX_CUSTOM_MODEL_NAME} characters.`,
+      ),
+  );
+
+/** One per-model slice of a line's quantity — a MASTER-LIST model by id. */
+export const masterBreakdownEntrySchema = z.object({
   modelId: objectIdSchema,
-  qty: z
-    .number()
-    .int("Model quantity must be a whole number.")
-    .min(1, "Each model needs at least 1 unit.")
-    .max(MAX_QTY_PER_LINE)
-    .refine((v) => Number.isSafeInteger(v), "Model quantity is out of range."),
+  qty: breakdownQtySchema,
 });
 
 /**
- * A per-model quantity breakdown. Distinct model ids; the SUM must equal the
- * line quantity — enforced by the superRefine on the mutation schemas below,
- * and re-validated server-side (the schema is a first gate, not the last).
+ * A CUSTOM (typed) slice — the buyer's phone model was missing from the
+ * master list, so the line carries the name they typed instead of an id.
+ */
+export const customBreakdownEntrySchema = z.object({
+  custom: z.literal(true),
+  name: customModelNameSchema,
+  qty: breakdownQtySchema,
+});
+
+/**
+ * One slice of a line's quantity: EITHER a master-list model (`modelId`) OR a
+ * custom typed line (`{ custom: true, name }`). The master shape is tried
+ * first so every pre-existing payload parses exactly as before.
+ */
+export const breakdownEntrySchema = z.union([
+  masterBreakdownEntrySchema,
+  customBreakdownEntrySchema,
+]);
+export type BreakdownEntryInput = z.infer<typeof breakdownEntrySchema>;
+
+/** Case-insensitive dedupe key for a custom entry's name. */
+const customNameKey = (name: string) => name.trim().toLowerCase();
+
+/**
+ * A per-model quantity breakdown. Distinct model ids AND distinct custom names
+ * (case-insensitively); the SUM must equal the line quantity — enforced by the
+ * superRefine on the mutation schemas below, and re-validated server-side (the
+ * schema is a first gate, not the last). A custom name colliding with a MASTER
+ * model's name cannot be checked here (the schema only sees ids) — the UI and
+ * the cart service both enforce that half of the dedupe rule.
  */
 export const breakdownSchema = z
   .array(breakdownEntrySchema)
   .min(1, "Pick at least one model.")
   .max(MAX_BREAKDOWN_ENTRIES)
-  .refine(
-    (entries) => new Set(entries.map((e) => e.modelId)).size === entries.length,
-    "Each model may appear only once.",
-  );
+  .refine((entries) => {
+    const ids = entries.flatMap((e) => ("modelId" in e ? [e.modelId] : []));
+    const names = entries.flatMap((e) =>
+      "custom" in e ? [customNameKey(e.name)] : [],
+    );
+    return (
+      new Set(ids).size === ids.length && new Set(names).size === names.length
+    );
+  }, "Each model may appear only once.");
 export type BreakdownInput = z.infer<typeof breakdownSchema>;
 
 const withBreakdownSum = <T extends z.ZodRawShape>(shape: z.ZodObject<T>) =>

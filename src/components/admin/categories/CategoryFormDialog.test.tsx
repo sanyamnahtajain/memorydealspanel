@@ -46,7 +46,7 @@ function renderDialog(
 
 describe("CategoryFormDialog — allocation default toggle", () => {
   it("submits allocationDefaultOn=true after toggling ON (stale-closure regression)", async () => {
-    const onSubmit = vi.fn(async () => null);
+    const onSubmit = vi.fn(async (_values: unknown) => null);
     renderDialog(onSubmit, { allocationDefaultOn: false });
 
     fireEvent.click(
@@ -64,7 +64,7 @@ describe("CategoryFormDialog — allocation default toggle", () => {
   });
 
   it("submits allocationDefaultOn=false after toggling OFF", async () => {
-    const onSubmit = vi.fn(async () => null);
+    const onSubmit = vi.fn(async (_values: unknown) => null);
     renderDialog(onSubmit, { allocationDefaultOn: true });
 
     fireEvent.click(
@@ -81,7 +81,7 @@ describe("CategoryFormDialog — allocation default toggle", () => {
   });
 
   it("an untouched toggle submits its seeded value", async () => {
-    const onSubmit = vi.fn(async () => null);
+    const onSubmit = vi.fn(async (_values: unknown) => null);
     renderDialog(onSubmit, { allocationDefaultOn: true });
 
     fireEvent.click(screen.getByRole("button", { name: /save changes/i }));

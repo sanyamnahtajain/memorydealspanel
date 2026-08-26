@@ -113,8 +113,17 @@ export interface CartLineData {
    * lets the split editor flag violations inline, exactly as the server will.
    */
   minPerModel: number | null;
-  /** Resolved split for display/edit, when the line carries one. */
-  breakdown: { modelId: string; name: string; qty: number }[] | null;
+  /**
+   * Resolved split for display/edit, when the line carries one. `modelId` is
+   * null (with `custom` true) for a model the buyer typed because the master
+   * list lacked it.
+   */
+  breakdown: {
+    modelId: string | null;
+    custom?: boolean;
+    name: string;
+    qty: number;
+  }[] | null;
   /** Whether this product accepts a requirement note + photos. */
   allowRequirementNotes: boolean;
   /** Stored requirement note, when set. */
