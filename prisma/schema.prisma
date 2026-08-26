@@ -377,6 +377,31 @@ model Notification {
 
 // Web Push subscriptions (admin devices) — populated when an admin enables
 // push in the PWA; consumed by src/server/notify/push.ts to send alerts.
+// ── Contact-us messages (public, Google-verified visitors) ──────────────────
+// These people are NOT customers: the form requires a Google sign-in + phone
+// + reason, and the same Google account may write at most 3 messages ever
+// (anti-misuse, owner request). Staff read and action them in the admin panel.
+model ContactMessage {
+  id         String    @id @default(auto()) @map("_id") @db.ObjectId
+  // Google identity of the sender (verified in the OAuth callback).
+  googleSub  String
+  email      String
+  name       String?
+  phone      String
+  businessName String?
+  city       String?
+  // Why they are contacting — mandatory, the whole point of the form.
+  reason     String
+  // NEW → staff have not acted; DONE → handled (kept for the audit trail).
+  status     String    @default("NEW")
+  handledAt  DateTime?
+  handledBy  String?   @db.ObjectId
+  createdAt  DateTime  @default(now())
+
+  @@index([status, createdAt])
+  @@index([googleSub])
+}
+
 model PushSubscription {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
   endpoint  String   @unique
@@ -557,6 +582,10 @@ model Order {
   // (anti-abuse: junk orders to farm access). {days, previousExpiresAt,
   // expiresAt, retractedAt?}
   accessExtension    Json?
+  // Courier tracking the admin attaches once the parcel ships:
+  // { courierName?, trackingId?, url? } — parsed defensively in
+  // src/lib/tracking.ts. Absent for unshipped/legacy orders.
+  tracking           Json?
   placedAt      DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 

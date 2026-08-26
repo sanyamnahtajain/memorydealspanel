@@ -80,5 +80,11 @@ export async function GET(req: Request): Promise<Response> {
 
   // New visitor → complete the request-access form with the verified email.
   const token = await createSignupHandoff(result.identity);
+  // CONTACT flow: someone writing to the shop is NOT a customer signup — send
+  // them back to the contact form carrying the same single-use handoff, so the
+  // form knows their verified Google identity without creating anything.
+  if (result.returnTo.startsWith("/contact")) {
+    return to(`/contact?g=${encodeURIComponent(token)}`);
+  }
   return to(`/account/request-access?g=${encodeURIComponent(token)}`);
 }

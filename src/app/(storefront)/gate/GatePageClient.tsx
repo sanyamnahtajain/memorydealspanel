@@ -57,6 +57,15 @@ export function GatePageClient({
         </a>{" "}
         — you do not need the code.
       </p>
+      <p className="max-w-xs text-center text-xs text-muted-foreground">
+        Want to ask us something?{" "}
+        <a
+          href="/contact"
+          className="font-medium text-primary underline-offset-4 hover:underline"
+        >
+          Contact us
+        </a>
+      </p>
     </main>
   );
 }

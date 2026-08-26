@@ -46,6 +46,7 @@ export const ADMIN_FEED_TYPES = [
   "access_request",
   "renewal_request",
   "order.cancelledByCustomer",
+  "contact_message",
 ] as const;
 
 /** Does this Notification row belong on the staff live feed? */

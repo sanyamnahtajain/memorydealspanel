@@ -168,6 +168,10 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     pathname === "/gate" ||
     pathname.startsWith("/gate/") ||
     pathname === "/offline" ||
+    // Contact-us is open to strangers by design: writers prove a Google
+    // identity instead of the shop code (and are capped server-side).
+    pathname === "/contact" ||
+    pathname.startsWith("/contact/") ||
     pathname.startsWith("/auth/") ||
     pathname.startsWith("/api/") ||
     pathname.startsWith("/manifest") ||

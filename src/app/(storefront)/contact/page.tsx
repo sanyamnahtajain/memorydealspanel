@@ -1,100 +1,94 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 
-import { APP_NAME, CONTACT } from "@/lib/constants";
-import { ContentPage } from "@/components/storefront/ContentPage";
+import { APP_NAME } from "@/lib/constants";
+import { prisma } from "@/server/db";
 import { resolveViewer } from "@/server/auth/viewer";
 import { isCustomer } from "@/server/types/viewer";
-import { phoneDisplayForViewer, whatsappContactHrefForViewer } from "@/server/contact";
+import {
+  googleOAuthConfigured,
+  peekSignupHandoff,
+} from "@/server/services/google-auth";
+import { ContactPageClient } from "@/components/storefront/contact/ContactPageClient";
 
 export const metadata: Metadata = {
-  title: `Contact — ${APP_NAME}`,
-  description: `Get in touch with ${APP_NAME} for wholesale enquiries and price access.`,
+  title: `Contact us — ${APP_NAME}`,
+  description: `Write to ${APP_NAME} — we will call you back.`,
 };
 
-// Reads the viewer (cookies) so the phone / WhatsApp lines can be gated.
 export const dynamic = "force-dynamic";
 
 /**
- * Contact page. The shop's phone + WhatsApp are shown ONLY to viewers with
- * live price access (owner request: no access ⇒ no way to reach the shop
- * directly). Everyone else sees how to get access instead. The number is
- * minted server-side per viewer, so a gated render never contains it.
+ * Contact-us page. ANYONE may write to the shop — including people who are
+ * not customers — but only after proving a Google identity:
+ *
+ *  - a SIGNED-IN customer skips the Google step entirely (their session is
+ *    the identity; email may be null for phone customers);
+ *  - a Google-verified visitor arrives with the single-use `?g=` handoff the
+ *    OAuth callback minted (PEEKED here read-only, exactly like
+ *    /account/request-access — the submit action consumes it);
+ *  - everyone else sees the Continue-with-Google card.
+ *
+ * This route sits OUTSIDE the shop-code wall (see src/proxy.ts), so for
+ * non-customers it renders a BARE page — no storefront shell, nothing about
+ * the catalogue leaks to someone who has not passed the code. Sending a
+ * message never creates a Customer and never grants price access.
  */
-export default async function ContactPage() {
+export default async function ContactPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ g?: string }>;
+}) {
+  const sp = await searchParams;
+  const token = typeof sp.g === "string" ? sp.g : "";
+
   const viewer = await resolveViewer();
-  const whatsappHref = whatsappContactHrefForViewer(viewer);
-  const phone = phoneDisplayForViewer(viewer);
-  const signedIn = isCustomer(viewer);
+
+  if (isCustomer(viewer)) {
+    const customer = await prisma.customer.findUnique({
+      where: { id: viewer.customerId },
+      select: {
+        contactName: true,
+        phone: true,
+        businessName: true,
+        city: true,
+        email: true,
+      },
+    });
+    if (customer) {
+      return (
+        <ContactPageClient
+          mode={{
+            kind: "customer",
+            prefill: {
+              name: customer.contactName,
+              phone: customer.phone,
+              businessName: customer.businessName,
+              city: customer.city ?? "",
+            },
+            email: customer.email,
+          }}
+        />
+      );
+    }
+  }
+
+  const peek = token ? await peekSignupHandoff(token) : null;
+  if (peek) {
+    return (
+      <ContactPageClient
+        mode={{
+          kind: "google",
+          token,
+          email: peek.email,
+          name: peek.name,
+        }}
+      />
+    );
+  }
 
   return (
-    <ContentPage
-      title="Contact us"
-      intro="Wholesale enquiries, price access, or anything else — reach out and we'll get back to you."
-    >
-      <h2>Get in touch</h2>
-      {whatsappHref && phone ? (
-        <ul>
-          <li>
-            <strong>Phone:</strong>{" "}
-            <a href={`tel:${phone.replace(/\s/g, "")}`}>{phone}</a>
-          </li>
-          <li>
-            <strong>WhatsApp:</strong>{" "}
-            <a href={whatsappHref} target="_blank" rel="noopener noreferrer">
-              Message us on WhatsApp
-            </a>
-          </li>
-          <li>
-            <strong>Hours:</strong> {CONTACT.hours}
-          </li>
-        </ul>
-      ) : (
-        <>
-          <p>
-            Our phone and WhatsApp are available to <strong>approved wholesale
-            buyers</strong>. Once your access is live, you can message us from any
-            product page or right here.
-          </p>
-          <p>
-            {signedIn ? (
-              <>
-                Check your access status on your{" "}
-                <Link href="/account">account page</Link>.
-              </>
-            ) : (
-              <>
-                Browse the <Link href="/search">catalog</Link> and tap{" "}
-                <strong>See price</strong> on any product to request access with
-                your business details.
-              </>
-            )}
-          </p>
-          <ul>
-            <li>
-              <strong>Hours:</strong> {CONTACT.hours}
-            </li>
-          </ul>
-        </>
-      )}
-
-      <h2>Visit / write to us</h2>
-      <p>
-        {CONTACT.addressLines.map((line, i) => (
-          <span key={i}>
-            {line}
-            {i < CONTACT.addressLines.length - 1 ? <br /> : null}
-          </span>
-        ))}
-      </p>
-
-      <h2>Looking for prices?</h2>
-      <p>
-        Wholesale prices are shown to approved buyers only. Browse the catalog and
-        tap <strong>See price</strong> on any product to request access with your
-        business details — or check your status anytime from your{" "}
-        <Link href="/account">account</Link>.
-      </p>
-    </ContentPage>
+    <ContactPageClient
+      mode={{ kind: "gate", googleReady: googleOAuthConfigured() }}
+    />
   );
 }

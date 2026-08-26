@@ -12,6 +12,7 @@ import {
   Volume2,
   VolumeX,
   BellRing,
+  MessageSquare,
   PackageX,
 } from "lucide-react";
 
@@ -119,6 +120,18 @@ const EVENT_META: Record<string, EventMeta> = {
     icon: PackageX,
     // A withdrawal needs to be seen, but nothing is waiting on staff — a
     // toast, not a takeover that must be dismissed.
+    tune: "short",
+    alert: "toast",
+  },
+  contact_message: {
+    title: "New contact message",
+    describe: (p) =>
+      [str(p.name), str(p.phone), str(p.reason)].filter(Boolean).join(" · "),
+    href: "/admin/contact",
+    actionLabel: "Read message",
+    icon: MessageSquare,
+    // Someone wants a call back — worth seeing, but nobody is stuck waiting:
+    // a quiet toast with the short tune, never a ringing takeover.
     tune: "short",
     alert: "toast",
   },
