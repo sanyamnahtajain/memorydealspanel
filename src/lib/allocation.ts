@@ -1,6 +1,8 @@
 import { z } from "zod";
 
 import { objectIdSchema } from "@/lib/schemas/shared";
+import { MAX_QTY_PER_LINE } from "@/lib/schemas/cart";
+import { normalisePack } from "@/lib/quantity";
 
 /**
  * Allocation — the per-model quantity-breakdown configuration.
@@ -24,6 +26,21 @@ export const allocationSchema = z.object({
   required: z.boolean(),
   /** Allowed model ids; EMPTY means every ACTIVE model is allowed. */
   modelIds: z.array(objectIdSchema).max(2000).default([]),
+  /**
+   * OPTIONAL per-model minimum quantity ("at least 10 pcs of every model").
+   * Absent on every legacy config — parsing must never change their behaviour,
+   * and a corrupt stored value degrades to null (`catch`) instead of failing
+   * the whole config: a bad knob must never switch a required breakdown OFF.
+   * Stays OPTIONAL in the output type too, so existing builders of Allocation
+   * literals (the admin editor) keep compiling untouched.
+   */
+  minPerModel: z
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_QTY_PER_LINE)
+    .nullish()
+    .catch(null),
 });
 
 export type Allocation = z.infer<typeof allocationSchema>;
@@ -62,6 +79,8 @@ export interface PublicAllocation {
   kind: "DEVICE_MODEL";
   required: boolean;
   restricted: boolean;
+  /** Per-model minimum quantity, when the config defines one. */
+  minPerModel: number | null;
 }
 
 export function toPublicAllocation(
@@ -72,5 +91,98 @@ export function toPublicAllocation(
     kind: allocation.kind,
     required: allocation.required,
     restricted: allocation.modelIds.length > 0,
+    minPerModel: allocation.minPerModel ?? null,
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* Per-model quantity rules (pack multiples + minimums)                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The effective per-model quantity rules for one product line:
+ *
+ *   - `pack`: every per-model quantity must be a POSITIVE MULTIPLE of the
+ *     product's packMultiple ("I can't order S23 Ultra 11 pcs at packs of
+ *     10"). Falls back to 1 (no constraint) when the product has no pack.
+ *   - `min`: every per-model quantity must be at least this. It is the
+ *     config's `minPerModel` aligned UP onto the pack; without the knob it is
+ *     simply one pack (which "a positive multiple of pack" already implies),
+ *     so legacy configs behave exactly as the pack rule alone dictates.
+ *
+ * Pure + isomorphic — the builder uses it for instant inline feedback and the
+ * cart action re-derives it server-side with identical results.
+ */
+export interface PerModelRules {
+  pack: number;
+  min: number;
+}
+
+export function perModelRules(
+  minPerModel: number | null | undefined,
+  packMultiple: number | null | undefined,
+): PerModelRules {
+  const pack = normalisePack(packMultiple);
+  const knob =
+    typeof minPerModel === "number" &&
+    Number.isSafeInteger(minPerModel) &&
+    minPerModel > 0
+      ? minPerModel
+      : null;
+  const min = knob == null ? pack : Math.ceil(knob / pack) * pack;
+  return { pack, min };
+}
+
+/**
+ * The problem with ONE per-model quantity, as a short simple-English string
+ * WITHOUT the model name ("Order in packs of 10") — the builder renders it
+ * under the offending row, where the name is already visible. Null = fine.
+ */
+export function perModelIssueText(
+  qty: number,
+  rules: PerModelRules,
+): string | null {
+  if (!Number.isSafeInteger(qty) || qty <= 0) return "Enter a quantity";
+  if (rules.pack > 1 && qty % rules.pack !== 0) {
+    return `Order in packs of ${rules.pack}`;
+  }
+  if (qty < rules.min) return `Order at least ${rules.min} pcs`;
+  return null;
+}
+
+export interface PerModelQty {
+  modelId: string;
+  qty: number;
+  /** Model name, when known — used to label the message. */
+  name?: string | null;
+}
+
+export interface PerModelIssue {
+  modelId: string;
+  /** Named simple-English message: "S23 Ultra: order in packs of 10". */
+  message: string;
+}
+
+/**
+ * Validate every per-model quantity of a breakdown against the rules. Returns
+ * one named issue per offending model (empty array = all good). NOTE: summing
+ * to the line quantity is NOT this function's job — the cart schemas enforce
+ * that — and validating an INPUT split is sufficient even when the server
+ * merges it with a stored one: multiples sum to multiples, minima only grow.
+ */
+export function validatePerModelQuantities(
+  entries: readonly PerModelQty[],
+  rules: PerModelRules,
+): PerModelIssue[] {
+  const issues: PerModelIssue[] = [];
+  for (const entry of entries) {
+    const text = perModelIssueText(entry.qty, rules);
+    if (!text) continue;
+    const label = entry.name?.trim() || "This model";
+    issues.push({
+      modelId: entry.modelId,
+      message: `${label}: ${text.charAt(0).toLowerCase()}${text.slice(1)}`,
+    });
+  }
+  return issues;
 }

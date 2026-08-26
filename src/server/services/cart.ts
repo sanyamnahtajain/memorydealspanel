@@ -152,6 +152,12 @@ export interface CartLine {
   attachments: { url: string }[];
   /** Whether this product requires a per-model quantity breakdown. */
   allocationRequired: boolean;
+  /**
+   * The allocation config's per-model minimum for this line, or null (no knob
+   * / no allocation). NON-MONETARY display plumbing: the cart's split editor
+   * shows the same inline errors the server enforces, BEFORE a save bounces.
+   */
+  minPerModel: number | null;
   /** Resolved per-model split with display names, when the line carries one. */
   breakdown: { modelId: string; name: string; qty: number }[] | null;
   /** Live stock status of the ordered unit. */
@@ -769,6 +775,9 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
       note: sanitizeNote(row.note),
       attachments: sanitizeAttachments(row.attachments, r2PublicBase()),
       allocationRequired: unit?.allocation?.required ?? false,
+      minPerModel: unit?.allocation?.required
+        ? (unit.allocation.minPerModel ?? null)
+        : null,
       breakdown: (() => {
         const entries = parseStoredBreakdown(row.breakdown);
         if (entries.length === 0) return null;
