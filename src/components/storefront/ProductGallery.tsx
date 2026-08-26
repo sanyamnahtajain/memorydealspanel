@@ -111,7 +111,7 @@ export function ProductGallery({
     return (
       <div
         className={cn(
-          "flex aspect-square w-full flex-col items-center justify-center gap-2 rounded-2xl border border-border bg-muted/40 text-muted-foreground",
+          "flex aspect-square w-full flex-col items-center justify-center gap-2 rounded-3xl border border-border/60 bg-muted/40 text-muted-foreground",
           className,
         )}
       >
@@ -128,7 +128,7 @@ export function ProductGallery({
       <div className="relative">
         <div
           ref={mainRef}
-          className="overflow-hidden rounded-2xl border border-border bg-card"
+          className="overflow-hidden rounded-3xl bg-card shadow-sm ring-1 ring-foreground/5"
         >
           <div className="flex touch-pan-y">
             {ordered.map((image, index) => {
@@ -192,13 +192,13 @@ export function ProductGallery({
               disabled={!canNext}
               onClick={scrollNext}
             />
-            <div className="pointer-events-none absolute bottom-2.5 left-1/2 flex -translate-x-1/2 gap-1.5 sm:hidden">
+            <div className="pointer-events-none absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-background/75 px-2 py-1.5 backdrop-blur-sm sm:hidden">
               {ordered.map((_, index) => (
                 <span
                   key={index}
                   className={cn(
-                    "size-1.5 rounded-full transition-colors",
-                    index === selected ? "bg-foreground" : "bg-foreground/25",
+                    "h-1.5 rounded-full transition-all duration-300",
+                    index === selected ? "w-5 bg-foreground" : "w-1.5 bg-foreground/25",
                   )}
                 />
               ))}
@@ -220,10 +220,10 @@ export function ProductGallery({
                   aria-label={`Show image ${index + 1}`}
                   aria-current={isActive}
                   className={cn(
-                    "relative aspect-square w-16 shrink-0 overflow-hidden rounded-lg border bg-muted/30 transition-colors sm:w-20",
+                    "relative aspect-square w-16 shrink-0 overflow-hidden rounded-xl border bg-muted/30 transition-[border-color,opacity,box-shadow] sm:w-20",
                     isActive
                       ? "border-primary ring-2 ring-primary/40"
-                      : "border-border hover:border-foreground/30",
+                      : "border-border opacity-80 hover:border-foreground/30 hover:opacity-100",
                   )}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}

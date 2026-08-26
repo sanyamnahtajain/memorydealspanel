@@ -21,6 +21,8 @@ import { AddToCartButton } from "@/components/storefront/cart/AddToCartButton";
 import { APP_NAME } from "@/lib/constants";
 import { buildWhatsAppLink, enquiryMessageLines } from "@/lib/whatsapp-link";
 import { gatedEnquiryLabel } from "./WhatsAppEnquire";
+import { BoxGlyph, InfoPill, LayersGlyph } from "./info-graphics";
+import { PRICE_PANEL_ID } from "./price-panel";
 
 /**
  * Client-side variant selector for the product detail page — the variant-aware
@@ -87,6 +89,12 @@ export interface VariantSelectorProps {
    * resolution), so the parent can update the gallery / sticky bar. Optional.
    */
   onVariantChange?: (variant: AnyVariant | null) => void;
+  /**
+   * Server-rendered reassurance row (TrustRow) placed at the bottom of the
+   * price panel — passed down as a node so the truthful claims (GST on/off)
+   * are decided on the server. Carries no pricing.
+   */
+  trustSlot?: React.ReactNode;
   className?: string;
 }
 
@@ -157,6 +165,7 @@ export function VariantSelector({
   status,
   whatsappNumber,
   onVariantChange,
+  trustSlot,
   className,
 }: VariantSelectorProps) {
   const [requestOpen, setRequestOpen] = React.useState(false);
@@ -243,13 +252,16 @@ export function VariantSelector({
                       disabled={!available}
                       onClick={() => choose(option.name, value)}
                       className={cn(
-                        "inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors",
+                        // Matches the quick-pick sheet's pills: rounded-full,
+                        // filled active state, struck-through when the combo
+                        // doesn't exist. Tactile press via a tiny scale.
+                        "inline-flex min-h-9 items-center gap-1.5 rounded-full border px-4 py-1.5 text-sm font-medium transition-[background-color,border-color,color,transform] active:scale-[0.96]",
                         "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
                         isSelected
-                          ? "border-primary bg-primary/10 text-primary"
+                          ? "border-primary bg-primary text-primary-foreground shadow-sm"
                           : "border-border bg-card text-foreground hover:border-foreground/30 hover:bg-muted/60",
                         !available &&
-                          "cursor-not-allowed border-dashed text-muted-foreground/60 line-through hover:border-border hover:bg-card",
+                          "cursor-not-allowed border-dashed text-muted-foreground/60 line-through hover:border-border hover:bg-card active:scale-100",
                       )}
                     >
                       {isSelected ? (
@@ -265,12 +277,18 @@ export function VariantSelector({
         })}
       </div>
 
-      {/* Selected-variant price + stock. Mirrors ProductPriceArea at variant scale. */}
-      <div className="rounded-2xl border border-border bg-card p-4 sm:p-5">
+      {/* THE PRICE PANEL — the page's visual anchor at variant scale: one
+          elevated card holding the gated price, stock, MOQ/pack facts, the
+          primary CTAs and the reassurance row. Carries PRICE_PANEL_ID so the
+          StickyMobileBar can watch it scroll out of view. */}
+      <div
+        id={PRICE_PANEL_ID}
+        className="rounded-3xl bg-card p-4 shadow-sm ring-1 ring-foreground/5 sm:p-5"
+      >
         {selected ? (
           <>
             <div className="flex items-center justify-between gap-3">
-              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              <p className="text-[0.7rem] font-medium tracking-[0.08em] text-muted-foreground uppercase">
                 Wholesale price
               </p>
               <StatusChip
@@ -281,7 +299,7 @@ export function VariantSelector({
 
             {priced ? (
               <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <span className="font-heading text-3xl font-semibold tracking-tight text-foreground tabular-nums">
+                <span className="font-heading text-[2rem] font-semibold tracking-tight text-foreground tabular-nums sm:text-4xl">
                   {formatPaise(priced.price)}
                 </span>
                 {priced.mrp && priced.mrp > priced.price ? (
@@ -308,62 +326,87 @@ export function VariantSelector({
             {showPrices ? " and price" : ""}.
           </p>
         )}
-      </div>
 
-      {/* Add to cart — approved-only, bound to the SELECTED variant. The button
-          self-gates (locked CTA for anon/unapproved), and OUT_OF_STOCK or "no
-          variant selected yet" disables it. Sends only { productId, variantId,
-          quantity } — never a price. Rendered only when add-to-cart is wired in
-          (a productId is present). */}
-      {productId ? (
-        <AddToCartButton
-          productId={productId}
-          variantId={selected?.id ?? null}
-          moq={selected?.moq ?? moq}
-          packMultiple={selected?.packMultiple ?? packMultiple}
-          canAdd={showPrices && selected != null}
-          isCustomer={status !== undefined}
-          outOfStock={
-            !selected || selected.stockStatus === "OUT_OF_STOCK"
-          }
-        />
-      ) : null}
+        {/* MOQ / pack facts for the SELECTED variant (variant override first,
+            product level as fallback) — small labelled pills. */}
+        {(selected?.moq ?? moq) || (selected?.packMultiple ?? packMultiple) ? (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {(selected?.moq ?? moq) ? (
+              <InfoPill
+                icon={<BoxGlyph />}
+                label="Min. order"
+                value={`${selected?.moq ?? moq} units`}
+              />
+            ) : null}
+            {(selected?.packMultiple ?? packMultiple) ? (
+              <InfoPill
+                icon={<LayersGlyph />}
+                label="Pack of"
+                value={String(selected?.packMultiple ?? packMultiple)}
+              />
+            ) : null}
+          </div>
+        ) : null}
 
-      {/* Enquire CTA — carries the SELECTED variant's SKU + options. Locked
-          when the WhatsApp gate is closed: anon can request access (reusing
-          this selector's sheet); a gated customer sees their status. */}
-      {enquireHref ? (
-        <Button
-          size="lg"
-          variant="default"
-          className="h-11 w-full gap-2"
-          disabled={!selected}
-          render={
-            <a
-              href={enquireHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={`Enquire about ${productName} on WhatsApp`}
+        <div className="mt-4 flex flex-col gap-3">
+          {/* Add to cart — approved-only, bound to the SELECTED variant. The
+              button self-gates (locked CTA for anon/unapproved), and
+              OUT_OF_STOCK or "no variant selected yet" disables it. Sends only
+              { productId, variantId, quantity } — never a price. Rendered only
+              when add-to-cart is wired in (a productId is present). */}
+          {productId ? (
+            <AddToCartButton
+              productId={productId}
+              variantId={selected?.id ?? null}
+              moq={selected?.moq ?? moq}
+              packMultiple={selected?.packMultiple ?? packMultiple}
+              canAdd={showPrices && selected != null}
+              isCustomer={status !== undefined}
+              outOfStock={
+                !selected || selected.stockStatus === "OUT_OF_STOCK"
+              }
             />
-          }
-        >
-          <MessageCircle aria-hidden />
-          Enquire on WhatsApp
-        </Button>
-      ) : (
-        <Button
-          type="button"
-          size="lg"
-          variant="outline"
-          className="h-11 w-full gap-2"
-          disabled={status !== undefined}
-          onClick={status === undefined ? () => setRequestOpen(true) : undefined}
-          aria-label={`${gatedEnquiryLabel(status)} — ${productName}`}
-        >
-          <LockKeyhole aria-hidden />
-          {gatedEnquiryLabel(status)}
-        </Button>
-      )}
+          ) : null}
+
+          {/* Enquire CTA — carries the SELECTED variant's SKU + options. Locked
+              when the WhatsApp gate is closed: anon can request access (reusing
+              this selector's sheet); a gated customer sees their status. */}
+          {enquireHref ? (
+            <Button
+              size="lg"
+              variant="default"
+              className="h-12 w-full gap-2 transition-transform active:scale-[0.98]"
+              disabled={!selected}
+              render={
+                <a
+                  href={enquireHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`Enquire about ${productName} on WhatsApp`}
+                />
+              }
+            >
+              <MessageCircle aria-hidden />
+              Enquire on WhatsApp
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              size="lg"
+              variant="outline"
+              className="h-12 w-full gap-2 transition-transform active:scale-[0.98]"
+              disabled={status !== undefined}
+              onClick={status === undefined ? () => setRequestOpen(true) : undefined}
+              aria-label={`${gatedEnquiryLabel(status)} — ${productName}`}
+            >
+              <LockKeyhole aria-hidden />
+              {gatedEnquiryLabel(status)}
+            </Button>
+          )}
+        </div>
+
+        {trustSlot ? <div className="mt-5">{trustSlot}</div> : null}
+      </div>
 
       {/* The request sheet is an anon affordance only — a signed-in customer
           gets their canonical status (and renewal CTA) instead. */}

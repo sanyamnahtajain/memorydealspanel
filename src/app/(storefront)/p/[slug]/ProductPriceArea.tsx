@@ -116,15 +116,17 @@ export function ProductPriceArea({
   // NON-MONETARY GST metadata — present on every viewer's DTO, carries no paise.
   const tax = product.tax;
 
+  // NOTE: this component renders the price panel's INNER content only — the
+  // page (or VariantSelector) supplies the elevated card around it.
   if (showPrices && hasPrice(product)) {
     const priced = product;
     return (
-      <div className="rounded-2xl border border-border bg-card p-4 sm:p-5">
-        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+      <div>
+        <p className="text-[0.7rem] font-medium tracking-[0.08em] text-muted-foreground uppercase">
           Wholesale price
         </p>
         <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <span className="font-heading text-3xl font-semibold tracking-tight text-foreground tabular-nums">
+          <span className="font-heading text-[2rem] font-semibold tracking-tight text-foreground tabular-nums sm:text-4xl">
             {formatPaise(priced.price)}
           </span>
           {priced.mrp && priced.mrp > priced.price ? (
@@ -172,10 +174,10 @@ export function ProductPriceArea({
   if (state !== "anon") {
     const copy = accessCopy(state);
     return (
-      <div className="rounded-2xl border border-border bg-muted/40 p-4 sm:p-5">
+      <div className="rounded-2xl border border-border/60 bg-muted/40 p-4">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1">
-            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            <p className="text-[0.7rem] font-medium tracking-[0.08em] text-muted-foreground uppercase">
               Wholesale price
             </p>
             <PricePill variant="locked" size="lg" />
@@ -204,10 +206,10 @@ export function ProductPriceArea({
 
   // Anon (or a viewer who can still request) → open the request sheet inline.
   return (
-    <div className="rounded-2xl border border-border bg-muted/40 p-4 sm:p-5">
+    <div className="rounded-2xl border border-border/60 bg-muted/40 p-4">
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1">
-          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+          <p className="text-[0.7rem] font-medium tracking-[0.08em] text-muted-foreground uppercase">
             Wholesale price
           </p>
           <PricePill variant="locked" size="lg" />
@@ -222,9 +224,9 @@ export function ProductPriceArea({
         unlock prices across the catalog.
       </p>
       <Button
-        variant="outline"
+        variant="default"
         size="sm"
-        className="mt-3 h-9"
+        className="mt-3 h-10 px-5 transition-transform active:scale-[0.98]"
         onClick={() => setOpen(true)}
       >
         Request access

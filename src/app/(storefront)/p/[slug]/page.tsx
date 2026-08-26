@@ -38,7 +38,17 @@ import {
   type RelatedRailItem,
   StickyMobileBar,
   VariantProductView,
+  CollapsibleSection,
+  ReadMoreText,
+  InfoPill,
+  TrustRow,
+  BoxGlyph,
+  LayersGlyph,
+  TruckGlyph,
+  PRICE_PANEL_ID,
 } from "@/components/storefront/product";
+import { getDeliveryDisclosure } from "@/server/services/store-settings";
+import { deliveryDisclosureCopy } from "@/lib/delivery";
 import {
   whatsappEnquiryHrefForViewer,
   whatsappNumberForViewer,
@@ -160,7 +170,7 @@ export default async function ProductDetailPage({ params }: PageParams) {
   // category peers, which is also the complete fallback while a product has
   // no order history yet. Category peers are over-fetched so the rail still
   // fills after dropping the current product and any co-purchase duplicates.
-  const [taxProfile, category, coPurchasedIds, categoryPeers, savedIds, cartCount] = await Promise.all([
+  const [taxProfile, category, coPurchasedIds, categoryPeers, savedIds, cartCount, deliveryDisclosure] = await Promise.all([
     getSellerTaxProfile(),
     resolveCategory(product.categoryId),
     coPurchasedProductIds(product.id, RELATED_LIMIT),
@@ -176,6 +186,10 @@ export default async function ProductDetailPage({ params }: PageParams) {
       : Promise.resolve(new Set<string>()),
     // Header cart badge — a count only for an approved customer, else undefined.
     cartCountForViewer(viewer),
+    // Delivery-charge disclosure for the PDP's delivery note. Fetched ONLY for
+    // a viewer with live price access — the public page shows no amounts of
+    // any kind, delivery included.
+    showPrices ? getDeliveryDisclosure() : Promise.resolve(null),
   ]);
 
   // GST view preference — only wording of the tax line; inert while GST is off.
@@ -236,77 +250,78 @@ export default async function ProductDetailPage({ params }: PageParams) {
   const showVariantHero =
     product.hasVariants && product.variants.length > 0;
 
+  // Title block: brand as a tappable chip, the name in confident display
+  // type, then ONE quiet line with the SKU and the stock chip. The wishlist
+  // heart now floats over the gallery (see `galleryHeart`), not up here.
   const heroHeader = (
-    <header className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
-        {product.brandRef ? (
+    <header className="space-y-2.5">
+      {product.brandRef ? (
+        <div>
           <BrandBadge
             name={product.brandRef.name}
             slug={product.brandRef.slug}
             size="md"
           />
-        ) : product.brand ? (
-          <span className="text-sm font-medium tracking-wide text-muted-foreground uppercase">
-            {product.brand}
-          </span>
-        ) : null}
+        </div>
+      ) : product.brand ? (
+        <span className="text-sm font-medium tracking-wide text-muted-foreground uppercase">
+          {product.brand}
+        </span>
+      ) : null}
+      <h1 className="font-heading text-[1.65rem] leading-[1.15] font-semibold tracking-tight text-balance sm:text-3xl lg:text-4xl">
+        {product.name}
+      </h1>
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
         <StatusChip
           variant={STOCK_CHIP[product.stockStatus]}
           label={STOCK_LABEL[product.stockStatus]}
         />
-      </div>
-      <div className="flex items-start justify-between gap-3">
-        <h1 className="font-heading text-2xl font-semibold tracking-tight sm:text-3xl">
-          {product.name}
-        </h1>
-        {/* Save to wishlist — carries no price; prompts login for anon. */}
-        <HeartButton
-          productId={product.id}
-          initialSaved={initialSaved}
-          size="default"
-          className="-mr-1 shrink-0"
-        />
+        {product.sku ? (
+          <span className="text-xs text-muted-foreground">
+            SKU {product.sku}
+          </span>
+        ) : null}
       </div>
     </header>
   );
 
+  // Save to wishlist — floats over the gallery's corner. Carries no price;
+  // prompts login for anon.
+  const galleryHeart = (
+    <span className="inline-flex rounded-full bg-background/90 shadow-md ring-1 ring-foreground/10 backdrop-blur-sm">
+      <HeartButton
+        productId={product.id}
+        initialSaved={initialSaved}
+        size="default"
+      />
+    </span>
+  );
+
+  // Reassurance chips near the CTA — only claims that are true of this shop
+  // (see TrustRow). GST invoice appears only while the GST profile is on.
+  const trustRow = <TrustRow gstInvoice={taxProfile.gstEnabled} />;
+
+  // Below-the-panel content: collapsible sections (collapsed on phones,
+  // expanded from md: up) and the delivery note. Every field the old page
+  // showed still renders — nothing was cut, only foldered.
   const heroFooter = (
     <>
-      {product.moq || product.packMultiple ? (
-        <p className="text-sm text-muted-foreground">
-          {product.moq ? (
-            <>
-              Minimum order quantity:{" "}
-              <span className="font-medium text-foreground">
-                {product.moq} units
-              </span>
-            </>
-          ) : null}
-          {product.packMultiple ? (
-            <>
-              {product.moq ? " · " : null}
-              Sold in packs of{" "}
-              <span className="font-medium text-foreground">
-                {product.packMultiple}
-              </span>
-            </>
-          ) : null}
-        </p>
-      ) : null}
+      <SpecSection specs={product.specs} />
 
       {product.description ? (
-        // Description BOX (owner note): a titled card, with the admin's typed
-        // line breaks preserved (whitespace-pre-line) instead of collapsing
-        // into one paragraph.
-        <section className="rounded-xl border border-border bg-muted/30 p-4">
-          <h2 className="text-sm font-semibold text-foreground">Description</h2>
-          <p className="mt-2 text-sm leading-relaxed whitespace-pre-line text-foreground/80">
-            {product.description}
-          </p>
-        </section>
+        // Description (owner note): the admin's typed line breaks are
+        // preserved (whitespace-pre-line); long text clamps with "Read more".
+        <CollapsibleSection title="Description">
+          <ReadMoreText text={product.description} />
+        </CollapsibleSection>
       ) : null}
 
-      <SpecSection specs={product.specs} />
+      {deliveryDisclosure ? (
+        <DeliveryNote
+          minChargePaise={deliveryDisclosure.minChargePaise}
+          note={deliveryDisclosure.note}
+        />
+      ) : null}
     </>
   );
 
@@ -379,80 +394,126 @@ export default async function ProductDetailPage({ params }: PageParams) {
             status={customerStatus}
             header={heroHeader}
             footer={heroFooter}
+            galleryOverlay={galleryHeart}
+            trustSlot={trustRow}
           />
         ) : (
-          <div className="mt-4 grid gap-8 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
+          <div className="mt-4 grid gap-8 md:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] md:gap-10 lg:gap-12">
             <FadeUp>
-              <div className="lg:sticky lg:top-20">
+              <div className="relative md:sticky md:top-20">
                 <ProductGallery
                   images={product.images}
                   productName={product.name}
                   productId={product.id}
                 />
+                <div className="absolute top-3 right-3 z-10">{galleryHeart}</div>
               </div>
             </FadeUp>
 
-            <FadeUp delay={0.05}>
-              <div className="flex flex-col gap-5">
-                {heroHeader}
+            <div className="flex flex-col gap-5 sm:gap-6">
+              <FadeUp delay={0.06}>{heroHeader}</FadeUp>
 
-                <ProductPriceArea
-                  googleGateHref={googleGateHref}
-                  product={product as PublicProduct | PricedProduct}
-                  showPrices={showPrices}
-                  status={customerStatus}
-                  gstView={gstView}
-                />
-
-                {/* Add to cart — approved-only. The button self-gates: an
-                    unapproved/anon viewer sees a locked CTA that routes to
-                    login/request-access; OUT_OF_STOCK is blocked. It sends only
-                    { productId, quantity } — never a price. */}
-                {product.allocation?.required ? (
-                  <AllocationAddToCart
-                    productId={product.id}
-                    moq={product.moq}
-                    packMultiple={product.packMultiple}
-                    canAdd={canAdd}
-                    isCustomer={isCustomer(viewer)}
-                    outOfStock={product.stockStatus === "OUT_OF_STOCK"}
-                  />
-                ) : (
-                  <AddToCartButton
-                    productId={product.id}
-                    moq={product.moq}
-                    packMultiple={product.packMultiple}
-                    canAdd={canAdd}
-                    isCustomer={isCustomer(viewer)}
-                    outOfStock={product.stockStatus === "OUT_OF_STOCK"}
-                  />
-                )}
-
-                {/* Requirement notes & photos — admin-flagged products only.
-                    Auto-opens right after an add via the cart-events bus. */}
-                {product.allowRequirementNotes ? (
-                  <RequirementPrompt
-                    productId={product.id}
-                    productName={product.name}
-                    canAdd={canAdd}
-                    initialNote={requirementInitial?.note ?? null}
-                    initialAttachments={requirementInitial?.attachments ?? []}
-                  />
-                ) : null}
-
-                {/* Inline Enquire — hidden on mobile where the sticky bar owns it. */}
-                <div className="hidden md:block">
-                  <WhatsAppEnquire
-                    href={enquireHref}
-                    productName={product.name}
-                    status={customerStatus}
+              {/* THE PRICE PANEL — the page's visual anchor: one elevated card
+                  holding the price (or the gate), the GST line, the MOQ/pack
+                  pills, the primary CTA and the reassurance row. Its id lets
+                  the StickyMobileBar spring in once it scrolls out of view. */}
+              <FadeUp delay={0.12}>
+                <section
+                  id={PRICE_PANEL_ID}
+                  aria-label="Price and ordering"
+                  className="rounded-3xl bg-card p-4 shadow-sm ring-1 ring-foreground/5 sm:p-6"
+                >
+                  <ProductPriceArea
                     googleGateHref={googleGateHref}
+                    product={product as PublicProduct | PricedProduct}
+                    showPrices={showPrices}
+                    status={customerStatus}
+                    gstView={gstView}
                   />
-                </div>
 
+                  {/* MOQ / pack facts as small labelled pills (same data the
+                      old sentence carried). */}
+                  {product.moq || product.packMultiple ? (
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {product.moq ? (
+                        <InfoPill
+                          icon={<BoxGlyph />}
+                          label="Min. order"
+                          value={`${product.moq} units`}
+                        />
+                      ) : null}
+                      {product.packMultiple ? (
+                        <InfoPill
+                          icon={<LayersGlyph />}
+                          label="Pack of"
+                          value={String(product.packMultiple)}
+                        />
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  <div className="mt-4 flex flex-col gap-3">
+                    {/* Add to cart — approved-only. The button self-gates: an
+                        unapproved/anon viewer sees a locked CTA that routes to
+                        login/request-access; OUT_OF_STOCK is blocked. It sends
+                        only { productId, quantity } — never a price. */}
+                    {product.allocation?.required ? (
+                      <AllocationAddToCart
+                        productId={product.id}
+                        moq={product.moq}
+                        packMultiple={product.packMultiple}
+                        // Per-model minimum from the allocation config — the
+                        // builder seeds rows at the pack-aligned minimum and
+                        // shows the same inline errors the server would send.
+                        minPerModel={product.allocation?.minPerModel ?? null}
+                        canAdd={canAdd}
+                        isCustomer={isCustomer(viewer)}
+                        outOfStock={product.stockStatus === "OUT_OF_STOCK"}
+                      />
+                    ) : (
+                      <AddToCartButton
+                        productId={product.id}
+                        moq={product.moq}
+                        packMultiple={product.packMultiple}
+                        canAdd={canAdd}
+                        isCustomer={isCustomer(viewer)}
+                        outOfStock={product.stockStatus === "OUT_OF_STOCK"}
+                      />
+                    )}
+
+                    {/* Requirement notes & photos — admin-flagged products
+                        only. Auto-opens right after an add via the cart-events
+                        bus. */}
+                    {product.allowRequirementNotes ? (
+                      <RequirementPrompt
+                        productId={product.id}
+                        productName={product.name}
+                        canAdd={canAdd}
+                        initialNote={requirementInitial?.note ?? null}
+                        initialAttachments={requirementInitial?.attachments ?? []}
+                      />
+                    ) : null}
+
+                    {/* Inline Enquire — hidden on mobile where the sticky bar
+                        owns it. */}
+                    <div className="hidden md:block">
+                      <WhatsAppEnquire
+                        href={enquireHref}
+                        productName={product.name}
+                        status={customerStatus}
+                        googleGateHref={googleGateHref}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mt-5">{trustRow}</div>
+                </section>
+              </FadeUp>
+
+              <FadeUp delay={0.18} className="flex flex-col gap-4">
                 {heroFooter}
-              </div>
-            </FadeUp>
+              </FadeUp>
+            </div>
           </div>
         )}
 
@@ -463,9 +524,9 @@ export default async function ProductDetailPage({ params }: PageParams) {
                 id="related-heading"
                 className="mb-4 font-heading text-lg font-semibold tracking-tight sm:text-xl"
               >
-                More in {category ? category.name : "this category"}
+                Shops also ordered
               </h2>
-              <RelatedRail items={related} />
+              <RelatedRail items={related} bleed />
             </section>
           </FadeUp>
         ) : null}
@@ -546,15 +607,52 @@ function hasPrintableSpecs(specs: unknown): boolean {
   });
 }
 
-/** Specs block with a heading; renders nothing when there are no specs. */
+/**
+ * Specs section — a collapsible chevron row (collapsed on phones, expanded on
+ * md+); renders nothing when there are no printable specs.
+ */
 function SpecSection({ specs }: { specs: unknown }) {
   if (!hasPrintableSpecs(specs)) return null;
   return (
-    <div className="space-y-3">
-      <h2 className="font-heading text-base font-semibold tracking-tight">
-        Specifications
-      </h2>
-      <SpecTable specs={specs} />
-    </div>
+    <CollapsibleSection title="Specifications">
+      {/* The section card already provides the surface — flatten the table's
+          own chrome to a quiet inset. */}
+      <SpecTable specs={specs} className="rounded-xl border-border/60 bg-muted/20" />
+    </CollapsibleSection>
+  );
+}
+
+/**
+ * Delivery note — the PDP presentation of the canonical delivery-charge
+ * disclosure (src/lib/delivery.ts wording, house-style truck glyph). Rendered
+ * ONLY for a viewer with live price access: the public page shows no amounts
+ * of any kind. The cart/orders keep the shared DeliveryNotice component.
+ */
+function DeliveryNote({
+  minChargePaise,
+  note,
+}: {
+  minChargePaise: number;
+  note: string | null;
+}) {
+  const copy = deliveryDisclosureCopy(formatPaise(minChargePaise));
+  return (
+    <section
+      aria-label="Delivery"
+      className="flex items-start gap-3 rounded-2xl bg-card p-4 ring-1 ring-foreground/5 sm:p-5"
+    >
+      <TruckGlyph className="mt-0.5 size-6 shrink-0" />
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-foreground">{copy.title}</p>
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+          {copy.detail}
+        </p>
+        {note ? (
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            {note}
+          </p>
+        ) : null}
+      </div>
+    </section>
   );
 }

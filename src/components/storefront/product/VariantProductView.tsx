@@ -49,6 +49,13 @@ export interface VariantProductViewProps {
   googleGateHref?: string | null;
   /** Shop WhatsApp number — server-gated; `null` when the viewer can't contact. */
   whatsappNumber: string | null;
+  /**
+   * Floating control rendered over the gallery's top-right corner (the wishlist
+   * heart). Positioned here so the variant hero matches the static hero.
+   */
+  galleryOverlay?: React.ReactNode;
+  /** Server-rendered reassurance row, forwarded into the selector's panel. */
+  trustSlot?: React.ReactNode;
 }
 
 export function VariantProductView({
@@ -65,6 +72,8 @@ export function VariantProductView({
   footer,
   googleGateHref = null,
   whatsappNumber,
+  galleryOverlay,
+  trustSlot,
 }: VariantProductViewProps) {
   const [selectedImages, setSelectedImages] =
     React.useState<PublicProductImage[]>(productImages);
@@ -79,19 +88,22 @@ export function VariantProductView({
   );
 
   return (
-    <div className="mt-4 grid gap-8 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
+    <div className="mt-4 grid gap-8 md:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] md:gap-10 lg:gap-12">
       <FadeUp>
-        <div className="lg:sticky lg:top-20">
+        <div className="relative md:sticky md:top-20">
           <ProductGallery
             images={selectedImages}
             productName={productName}
             productId={productId}
           />
+          {galleryOverlay ? (
+            <div className="absolute top-3 right-3 z-10">{galleryOverlay}</div>
+          ) : null}
         </div>
       </FadeUp>
 
-      <FadeUp delay={0.05}>
-        <div className="flex flex-col gap-5">
+      <FadeUp delay={0.06}>
+        <div className="flex flex-col gap-5 sm:gap-6">
           {header}
           <VariantSelector
             googleGateHref={googleGateHref}
@@ -105,6 +117,7 @@ export function VariantProductView({
             showPrices={showPrices}
             status={status}
             onVariantChange={handleVariantChange}
+            trustSlot={trustSlot}
           />
           {footer}
         </div>

@@ -14,18 +14,27 @@
  * ever reach the client through this bar.
  *
  * It only mounts on mobile (below `md`); on larger screens the inline price
- * area + Enquire button already sit in view, so the bar is hidden via CSS
+ * panel + Enquire button already sit in view, so the bar is hidden via CSS
  * (`md:hidden`) and its spacer likewise.
+ *
+ * ENTRANCE: the bar springs up only while the page's PRICE PANEL
+ * (#pdp-price-panel — see ./price-panel.ts) is OFF screen, so the viewport
+ * never shows the same price/CTA twice. An IntersectionObserver watches the
+ * panel; while it is visible the bar sits faded + slid down and inert.
+ * Reduced motion swaps the spring for an instant show/hide.
  */
 
 import * as React from "react";
 import { LockIcon, MessageCircle } from "lucide-react";
+import { motion, useReducedMotion } from "motion/react";
 
 import type { CustomerStatus } from "@/lib/schemas/shared";
 import { accessCopy, resolveAccessState } from "@/lib/access-status";
+import { springs } from "@/components/motion/tokens";
 import { RequestAccessSheet } from "@/components/storefront/RequestAccessSheet";
 import { GatedRenewCta } from "@/components/storefront/GatedRenewCta";
 import { cn } from "@/lib/utils";
+import { PRICE_PANEL_ID } from "./price-panel";
 
 export interface StickyMobileBarProps {
   /**
@@ -54,7 +63,32 @@ export function StickyMobileBar({
   status,
   googleGateHref = null,
 }: StickyMobileBarProps) {
+  const reduced = useReducedMotion();
   const [open, setOpen] = React.useState(false);
+  // True once the price panel has scrolled OUT of view — the bar's cue to
+  // enter. Starts false (panel is normally in the first viewport-and-a-bit),
+  // and the observer fires immediately on mount to correct it either way.
+  const [panelAway, setPanelAway] = React.useState(false);
+
+  React.useEffect(() => {
+    const panel = document.getElementById(PRICE_PANEL_ID);
+    if (!panel || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[entries.length - 1];
+        if (entry) setPanelAway(!entry.isIntersecting);
+      },
+      // Trim the top ~header's height off the intersection root: once only the
+      // panel's tail is peeking under the sticky header (or the page bottomed
+      // out with just the tail on screen), the panel counts as GONE and the
+      // bar may enter. Without this, short pages pin a sliver of the panel on
+      // screen forever and the bar never appears.
+      { rootMargin: "-96px 0px 0px 0px", threshold: 0 },
+    );
+    observer.observe(panel);
+    return () => observer.disconnect();
+  }, []);
+
   const showPrice = canSeePrices && priceLabel !== undefined;
   // Canonical access state (src/lib/access-status.ts); the status slot only
   // renders when the gate is closed, so APPROVED resolves to "expired".
@@ -69,14 +103,28 @@ export function StickyMobileBar({
     <>
       {/* Spacer so the fixed bar never overlaps the last content on mobile.
           The bar is lifted above the storefront tab nav, so this clears the
-          bar height + that offset. */}
+          bar height + that offset. Reserved even while the bar is hidden so
+          content never jumps when it springs in. */}
       <div aria-hidden className="h-[calc(8rem+env(safe-area-inset-bottom))] md:hidden" />
 
       {/* Sits ABOVE the storefront bottom tab nav (fixed bottom-0 z-40 md:hidden,
           ~3.5rem tall); this bar is md:hidden too, so the nav is always present
           beneath it. Without the offset the nav paints over this bar and the
           See-price / Enquire actions are unreachable on phones. */}
-      <div className="fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-40 border-t border-border bg-background/95 backdrop-blur md:hidden">
+      <motion.div
+        initial={false}
+        animate={
+          panelAway ? { y: 0, opacity: 1 } : { y: 24, opacity: 0 }
+        }
+        transition={reduced ? { duration: 0 } : springs.gentle}
+        // `inert` (not aria-hidden) — removes the hidden bar's links/buttons
+        // from focus order AND the a11y tree in one attribute.
+        inert={!panelAway}
+        className={cn(
+          "fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-40 border-t border-border/60 bg-background/95 shadow-[0_-10px_28px_-18px_rgb(0_0_0/0.35)] backdrop-blur-md md:hidden",
+          !panelAway && "pointer-events-none",
+        )}
+      >
         <div className="mx-auto flex w-full max-w-5xl items-stretch gap-3 px-4 py-3">
           <div className="flex min-w-0 flex-1 flex-col justify-center">
             {showPrice ? (
@@ -139,7 +187,7 @@ export function StickyMobileBar({
               rel="noopener noreferrer"
               aria-label="Enquire on WhatsApp"
               className={cn(
-                "inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-sm outline-none transition-colors hover:bg-primary/90 focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.98]",
+                "inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-primary px-6 text-sm font-semibold text-primary-foreground shadow-sm outline-none transition-[background-color,transform] hover:bg-primary/90 focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97]",
               )}
             >
               <MessageCircle aria-hidden className="size-4" />
@@ -158,8 +206,10 @@ export function StickyMobileBar({
                   : "WhatsApp is available to approved buyers"
               }
               className={cn(
-                "inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-full border border-border px-5 text-sm font-semibold text-muted-foreground outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50",
-                status === undefined ? "hover:bg-accent hover:text-foreground" : "opacity-70",
+                "inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-full border border-border px-6 text-sm font-semibold text-muted-foreground outline-none transition-[background-color,color,transform] focus-visible:ring-3 focus-visible:ring-ring/50",
+                status === undefined
+                  ? "hover:bg-accent hover:text-foreground active:scale-[0.97]"
+                  : "opacity-70",
               )}
             >
               <LockIcon aria-hidden className="size-4" />
@@ -167,7 +217,7 @@ export function StickyMobileBar({
             </button>
           )}
         </div>
-      </div>
+      </motion.div>
 
       <RequestAccessSheet open={open} onOpenChange={setOpen} googleGateHref={googleGateHref} />
     </>

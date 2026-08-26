@@ -39,10 +39,16 @@ export interface RelatedRailItem {
 
 export interface RelatedRailProps {
   items: RelatedRailItem[];
+  /**
+   * Full-bleed on phones: the rail breaks out of the page gutter (-mx-4) and
+   * pads its track instead, so cards scroll edge-to-edge under the thumb.
+   * Contained again from md: up. Matches StorefrontShell's px-4 gutter.
+   */
+  bleed?: boolean;
   className?: string;
 }
 
-export function RelatedRail({ items, className }: RelatedRailProps) {
+export function RelatedRail({ items, bleed = false, className }: RelatedRailProps) {
   const reduced = useReducedMotion();
   const [emblaRef, emblaApi] = useEmblaCarousel({
     loop: false,
@@ -82,9 +88,12 @@ export function RelatedRail({ items, className }: RelatedRailProps) {
   if (items.length === 0) return null;
 
   return (
-    <section className={cn("relative", className)} aria-label="Related products">
+    <section
+      className={cn("relative", bleed && "-mx-4 md:mx-0", className)}
+      aria-label="Related products"
+    >
       <div ref={emblaRef} className="overflow-hidden">
-        <ul className="flex gap-3 md:gap-4">
+        <ul className={cn("flex gap-3 md:gap-4", bleed && "px-4 md:px-0")}>
           {items.map((item) => (
             <li
               key={item.product.id}
@@ -130,7 +139,7 @@ function RelatedCard({ item }: { item: RelatedRailItem }) {
   return (
     <Link
       href={`/p/${product.slug}`}
-      className="group flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm outline-none transition-shadow hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.99]"
+      className="group flex h-full flex-col overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm outline-none transition-[box-shadow,transform] hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.98]"
     >
       <div className="relative aspect-square w-full overflow-hidden bg-muted">
         {image ? (
