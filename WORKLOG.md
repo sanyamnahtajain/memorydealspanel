@@ -13,6 +13,10 @@ themselves carry the deep detail; this file is the map.
 
 | Commit | What it is |
 |---|---|
+| `b03346a` | **Brand+category filter fix**: /b/boat/bluetooth-airpods no longer offers other brands — the Brand facet group is context-blanked on /b/… pages; the DAL's deliberate replace-not-narrow brand scoping is documented at the collision site. |
+| `eb789bf` | **Trending rail** (surge-vs-own-baseline momentum, admin "Show in Trending" pin that always leads, audited, fail-open) + **home reordered** (brands → categories → best sellers → trending → featured; in-page search bar deleted; New & featured carries no price cell) + **live price reveal** (/api/price-labels + LivePriceSlot upgrade the ISR shell's locked pills for entitled viewers) + **editor save fix** (root-relative image URLs no longer fail z.url() silently — displayUrlSchema, applied to product/brand/category assets, and failed client validation now toasts). |
+| `85ac0df` | **One-tap add in the PDP sticky bar** for priced simple products (shared useAddToCart hook — cannot diverge from the in-page button) + PDP single detail query per request for gated traffic + hero fetchPriority. |
+| `78e50ce` | **Home as a working tool**: personal LastOrderCard + /api/last-order, Best sellers server rail (ANON, ISR-safe), marketing sections deleted. (Search-first layout, superseded same-day by `eb789bf`'s reorder.) |
 | (next) | **PDP redesign** — premium-quiet restyle: floating heart, anchor price panel with trust row, collapsible sections, "Shops also ordered", spring sticky bar; price gate re-verified independently (anon page carries zero rupee amounts). |
 | `f57ef0f` | Tests for the context-scoped facet assembly. |
 | `56f1467` | **Tempered-glass ordering**: pack multiples + per-model minimums enforced lib→server→UI, paste mode for 100-model orders, single cart summary, one MOV message. 65 tests. |
