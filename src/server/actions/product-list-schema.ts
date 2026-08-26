@@ -42,6 +42,11 @@ export type ListProductsInput = z.input<typeof listProductsInputSchema>;
 
 export interface ListProductsResult {
   products: PricedProduct[];
+  /**
+   * Ids (from this page of `products`) currently pinned into the "Trending
+   * now" rail — drives the list's flame chip without widening the priced DTO.
+   */
+  pinnedProductIds: string[];
   total: number;
   page: number;
   pageCount: number;

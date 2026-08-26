@@ -11,14 +11,17 @@ import { CategoryGrid } from "@/components/storefront/CategoryGrid";
 import { EmptyState } from "@/components/common/EmptyState";
 import { renderPriceSlot } from "@/components/storefront/priceSlot";
 import type { ProductCardItem } from "@/components/storefront/ProductCardGrid";
-import { FadeUp } from "@/components/motion/primitives";
 import {
   HowItWorks,
   BrandShowcase,
   FeaturedRail,
   SectionHeading,
-  HomeSearch,
 } from "@/components/storefront/home";
+import { TrendingRail } from "@/components/storefront/home/TrendingRail";
+import {
+  HomePriceReveal,
+  LivePriceSlot,
+} from "@/components/storefront/home/LivePriceSlot";
 import { BuyAgainRail } from "@/components/storefront/home/BuyAgainRail";
 import { LastOrderCard } from "@/components/storefront/home/LastOrderCard";
 import { APP_NAME } from "@/lib/constants";
@@ -31,8 +34,9 @@ export const metadata: Metadata = {
 
 /**
  * Home is a PUBLIC, price-free working tool served via ISR — the page a
- * retailer opens every day: search first, their own re-orders, the shop's
- * best sellers, then the catalog jump-off points. Every server-rendered rail
+ * retailer opens every day: their own re-orders first, the shop's best
+ * sellers and trending movers, then the catalog jump-off points. (Search
+ * lives in the shell header — the owner cut the in-page search bar.) Every server-rendered rail
  * uses the ANONYMOUS viewer on purpose: the cached shell must never embed a
  * real price, and locked pills are correct for every visitor sharing a cache
  * entry. Live pricing is unlocked on category/product/search surfaces, which
@@ -65,28 +69,24 @@ export default async function HomePage() {
 
   const bestSellerItems: ProductCardItem[] = bestSellers.map((product) => ({
     product,
-    priceSlot: renderPriceSlot(product, ANON_VIEWER),
+    // Anon pill in the cached shell; LivePriceSlot swaps in the real label
+    // client-side for entitled viewers (see LivePriceSlot.tsx).
+    priceSlot: (
+      <LivePriceSlot productId={product.id}>
+        {renderPriceSlot(product, ANON_VIEWER)}
+      </LivePriceSlot>
+    ),
   }));
 
+  // OWNER RULE: New & featured is a discovery shelf — no price cell at all
+  // (no pill, no "See price", no lock). Price lives one tap away on the PDP.
   const featuredItems: ProductCardItem[] = featured.map((product) => ({
     product,
-    priceSlot: renderPriceSlot(product, ANON_VIEWER),
+    priceSlot: null,
   }));
-
-  // Category names double as search suggestion chips — global catalog data,
-  // identical for every visitor, so they belong in the cached shell.
-  const searchSuggestions = categories.slice(0, 5).map((c) => c.name);
 
   return (
     <StorefrontShell topNotice="Prices are subject to change without prior notice — please confirm current rates before placing your order.">
-      {/* Search first — retailers open the app to FIND things. A GET form to
-          /search (name=q); no viewer, no prices, ISR-safe. */}
-      <FadeUp className="mt-4">
-        <section aria-label="Search the catalogue">
-          <HomeSearch suggestions={searchSuggestions} />
-        </section>
-      </FadeUp>
-
       {/* "Your last order" + "Buy again" — the signed-in customer's own data,
           right under search. DO NOT move these into the server render: home is
           PUBLIC ISR (revalidate=300) and must never read cookies or embed
@@ -100,17 +100,8 @@ export default async function HomePage() {
       <LastOrderCard />
       <BuyAgainRail />
 
+      <HomePriceReveal>
       <HomeSections>
-        {/* Best sellers — global, price-free (ANON locked pills), identical
-            for every visitor: see the comment above bestSellers. Young shop
-            with no order signal → no section at all. */}
-        {bestSellerItems.length > 0 ? (
-          <section aria-labelledby="home-best-sellers">
-            <SectionHeading id="home-best-sellers" title="Best sellers" />
-            <FeaturedRail items={bestSellerItems} />
-          </section>
-        ) : null}
-
         {/* Shop by brand — leverages the brand master. */}
         {brands.length > 0 ? (
           <section aria-labelledby="home-brands">
@@ -144,6 +135,23 @@ export default async function HomePage() {
           )}
         </section>
 
+        {/* Best sellers — global, price-free (ANON locked pills), identical
+            for every visitor: see the comment above bestSellers. Young shop
+            with no order signal → no section at all. */}
+        {bestSellerItems.length > 0 ? (
+          <section aria-labelledby="home-best-sellers">
+            <SectionHeading id="home-best-sellers" title="Best sellers" />
+            <FeaturedRail items={bestSellerItems} />
+          </section>
+        ) : null}
+
+        {/* Trending now — admin pins first, then the surge algorithm (maths
+            in src/lib/trending.ts). A server component that renders ANON
+            locked pills into the shared cache; LivePriceSlot upgrades them
+            client-side exactly like Best sellers. Renders nothing without
+            signal. */}
+        <TrendingRail />
+
         {/* New & featured products (gated pills). Far below the fold now, so
             no eager/priority images — Best sellers owns the LCP slot. */}
         {featuredItems.length > 0 ? (
@@ -164,6 +172,7 @@ export default async function HomePage() {
           <HowItWorks />
         </section>
       </HomeSections>
+      </HomePriceReveal>
     </StorefrontShell>
   );
 }

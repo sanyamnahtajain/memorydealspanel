@@ -123,6 +123,18 @@ export async function createProductAction(
       },
     });
 
+    // A product born pinned gets the dedicated Trending audit tag too.
+    if (data.trendingPinned) {
+      await writeAudit({
+        actorType: ACTOR,
+        actorId: viewer.adminId,
+        action: "product.trendingPin",
+        entity: "Product",
+        entityId: product.id,
+        diff: { pinned: true },
+      });
+    }
+
     revalidateProductViews(product.id);
     return { ok: true, product };
   });
@@ -153,6 +165,20 @@ export async function updateProductAction(
       entityId: product.id,
       diff: { changed: Object.keys(data) },
     });
+
+    // The pin toggle rides the one-payload editor save, but keeps its own
+    // dedicated audit tag so "who pinned what into Trending, when" is a
+    // one-line audit query.
+    if (data.trendingPinned !== undefined) {
+      await writeAudit({
+        actorType: ACTOR,
+        actorId: viewer.adminId,
+        action: "product.trendingPin",
+        entity: "Product",
+        entityId: product.id,
+        diff: { pinned: data.trendingPinned },
+      });
+    }
 
     revalidateProductViews(product.id);
     return { ok: true, product };
@@ -339,6 +365,8 @@ const LIST_SELECT = {
   images: true,
   price: true,
   mrp: true,
+  // NON-MONETARY: feeds the list's "Trending" flame chip only.
+  trendingPinnedAt: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.ProductSelect;
@@ -391,6 +419,11 @@ export async function listProductsAction(
     return {
       ok: true,
       products: rows.map((row) => toPricedProduct(row)),
+      // The priced DTO deliberately has no pin field; the list page needs only
+      // "is it pinned", so ids ride alongside instead of widening the DTO.
+      pinnedProductIds: rows
+        .filter((row) => row.trendingPinnedAt != null)
+        .map((row) => row.id),
       total,
       page: params.page,
       pageCount: Math.max(1, Math.ceil(total / take)),

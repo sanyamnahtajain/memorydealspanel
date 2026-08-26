@@ -1,4 +1,6 @@
 import { z } from "zod";
+
+import { displayUrlSchema } from "./display-url";
 import { entityStatusSchema, objectIdSchema } from "./shared";
 import { gstRateBpsSchema, hsnCodeSchema } from "./product";
 import { allocationSchema } from "@/lib/allocation";
@@ -7,7 +9,7 @@ import { allocationSchema } from "@/lib/allocation";
 // .partial() means "leave unchanged" rather than "reset to default".
 const categoryCoreSchema = z.object({
   name: z.string().trim().min(2, "name is too short").max(80, "name is too long"),
-  image: z.url("image must be a valid URL").optional(),
+  image: displayUrlSchema("image must be a valid URL").optional(),
   sortOrder: z.number().int().min(0),
   status: entityStatusSchema,
   parentId: objectIdSchema.nullish(),

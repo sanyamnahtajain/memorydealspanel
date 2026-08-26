@@ -1,4 +1,6 @@
 import { z } from "zod";
+
+import { displayUrlSchema } from "./display-url";
 import { allocationSchema } from "@/lib/allocation";
 import { MAX_IMAGES_PER_PRODUCT } from "../constants";
 import {
@@ -40,8 +42,11 @@ export const paiseSchema = z
 
 /** Mirrors the embedded ProductImage composite type in prisma/schema.prisma. */
 export const productImageSchema = z.object({
-  url: z.url("image url must be a valid URL"),
-  thumbUrl: z.url("thumbnail url must be a valid URL").optional(),
+  // displayUrlSchema, NOT z.url(): real rows carry root-relative image
+  // paths (/seed/…, /uploads/…) and z.url() rejected them — which made the
+  // editor's Save silently no-op on any such product.
+  url: displayUrlSchema("image url must be a valid URL"),
+  thumbUrl: displayUrlSchema("thumbnail url must be a valid URL").optional(),
   sortOrder: z.number().int().min(0).default(0),
   isPrimary: z.boolean().default(false),
 });
@@ -97,6 +102,11 @@ const productCoreSchema = z.object({
   status: entityStatusSchema,
   tags: z.array(z.string().trim().min(1)).max(20),
   images: imagesSchema,
+  // Admin pin into the "Trending now" rail. `true` sets Product.trendingPinnedAt
+  // (the service stamps a timestamp only on the false→true transition, so
+  // re-saving an already-pinned product keeps its pin order); `false` clears
+  // it; absent leaves it unchanged. NON-MONETARY.
+  trendingPinned: z.boolean().optional(),
   // GST overrides — all NON-MONETARY metadata. `null` explicitly clears an
   // override back to "inherit" (category → seller profile); `undefined` in an
   // update leaves the stored value unchanged.

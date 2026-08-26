@@ -1,4 +1,6 @@
 import { z } from "zod";
+
+import { displayUrlSchema } from "./display-url";
 import { entityStatusSchema, objectIdSchema } from "./shared";
 
 /**
@@ -14,7 +16,7 @@ import { entityStatusSchema, objectIdSchema } from "./shared";
  */
 const brandCoreSchema = z.object({
   name: z.string().trim().min(2, "name is too short").max(80, "name is too long"),
-  logo: z.url("logo must be a valid URL").optional(),
+  logo: displayUrlSchema("logo must be a valid URL").optional(),
   sortOrder: z.number().int().min(0),
   status: entityStatusSchema,
 });

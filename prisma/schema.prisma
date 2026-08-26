@@ -154,6 +154,11 @@ model Product {
   // its own price/sku/stock. optionTypes is the embedded axis definition
   // (e.g. [{ name: "Capacity", values: ["10000mAh","20000mAh"] }]).
   hasVariants Boolean          @default(false)
+  // Admin override for the Trending rail: a set timestamp FORCES this product
+  // into Trending (pinned first, newest pin first) regardless of the algo;
+  // absent/null = algo decides. Timestamp, not boolean, so pins order
+  // deterministically and "unpin" is just clearing it.
+  trendingPinnedAt DateTime?
   optionTypes Json?
   // Per-model quantity allocation (screen protectors etc.). Shape:
   //   { kind: "DEVICE_MODEL", required: boolean, modelIds: string[] }

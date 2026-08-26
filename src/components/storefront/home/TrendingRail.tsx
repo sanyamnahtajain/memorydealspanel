@@ -7,6 +7,7 @@ import { trendingProductIds } from "@/server/services/recommendations";
 import { listByIdsForViewer } from "@/server/dal/products";
 import { ANON_VIEWER } from "@/server/types/viewer";
 import { renderPriceSlot } from "@/components/storefront/priceSlot";
+import { LivePriceSlot } from "@/components/storefront/home/LivePriceSlot";
 import { BrandBadge } from "@/components/storefront/BrandBadge";
 import type { PublicProduct, PricedProduct } from "@/server/dto/product";
 
@@ -49,7 +50,13 @@ export async function TrendingRail() {
 
   const items: TrendingItem[] = products.map((product) => ({
     product,
-    priceSlot: renderPriceSlot(product, ANON_VIEWER),
+    // Anon pill in the cached shell; when the page mounts this inside
+    // <HomePriceReveal>, entitled viewers get the real label client-side.
+    priceSlot: (
+      <LivePriceSlot productId={product.id}>
+        {renderPriceSlot(product, ANON_VIEWER)}
+      </LivePriceSlot>
+    ),
   }));
 
   return (

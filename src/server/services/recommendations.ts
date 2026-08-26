@@ -11,6 +11,13 @@ import {
   type FavouriteOrder,
   type FavouriteOrderItem,
 } from "@/lib/buy-again";
+import {
+  BASELINE_WINDOW_DAYS,
+  RECENT_WINDOW_DAYS,
+  mergePinnedFirst,
+  topTrending,
+  type TrendingOrderLine,
+} from "@/lib/trending";
 
 /**
  * Server side of the co-purchase recommender (the maths lives in
@@ -36,6 +43,7 @@ const CACHE_TTL_MS = 15 * 60 * 1000;
 
 const globalForRec = globalThis as unknown as {
   __mdRecIndex: { at: number; index: RecommendIndex } | undefined;
+  __mdTrendingAlgo: { at: number; ids: string[] } | undefined;
 };
 
 /** Items are frozen JSON on the order; pull out just the product ids. */
@@ -92,6 +100,98 @@ export async function bestSellerProductIds(k: number): Promise<string[]> {
   const index = await getIndex();
   if (!index) return [];
   return topSellers(index, k);
+}
+
+/* ------------------------------------------------------------------ */
+/* Trending — momentum scorer + admin pin override                     */
+/* ------------------------------------------------------------------ */
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * How many ALGO ids to rank and cache. Deliberately larger than any rail will
+ * ask for, so pin-dedup and hidden/deleted-product drop-out (the DAL filters
+ * ids it can't show) still leave a full rail.
+ */
+const TRENDING_ALGO_POOL = 24;
+
+/**
+ * The cached ALGO half of the trending rail (see src/lib/trending.ts for the
+ * surge maths and every constant's why). Same per-instance 15-minute cache
+ * call as the co-purchase index — both windows together are a 28-day slice of
+ * orders plus page views (the (productId, createdAt) index covers the view
+ * scan), a few milliseconds at this shop's volume.
+ *
+ * Fails open to `[]`: a broken scorer must never break the home page.
+ */
+async function trendingAlgoIds(): Promise<string[]> {
+  const cached = globalForRec.__mdTrendingAlgo;
+  if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.ids;
+
+  try {
+    const now = new Date();
+    const since = new Date(
+      now.getTime() - (RECENT_WINDOW_DAYS + BASELINE_WINDOW_DAYS) * DAY_MS,
+    );
+    const [orderRows, viewRows] = await Promise.all([
+      prisma.order.findMany({
+        where: { status: { not: "CANCELLED" }, placedAt: { gte: since } },
+        select: { items: true, placedAt: true },
+      }),
+      prisma.pageView.findMany({
+        where: { createdAt: { gte: since } },
+        select: { productId: true, createdAt: true },
+      }),
+    ]);
+
+    const lines: TrendingOrderLine[] = [];
+    for (const row of orderRows) {
+      for (const item of orderFavouriteItems(row.items)) {
+        lines.push({
+          productId: item.productId,
+          quantity: item.quantity,
+          placedAt: row.placedAt,
+        });
+      }
+    }
+
+    const ids = topTrending(lines, viewRows, now, TRENDING_ALGO_POOL);
+    globalForRec.__mdTrendingAlgo = { at: Date.now(), ids };
+    return ids;
+  } catch (error) {
+    console.error("[recommendations] trending scoring failed:", error);
+    return [];
+  }
+}
+
+/**
+ * The "Trending now" rail's product ids, best first:
+ *
+ *   1. ADMIN PINS FIRST — products with `trendingPinnedAt` set (newest pin
+ *      first), read FRESH on every call (never cached) so an admin's pin
+ *      shows up immediately, filtered to visible rows (ACTIVE, not deleted).
+ *   2. Algo (surge) results fill the remaining slots, deduped against pins.
+ *
+ * Degrades gracefully: algo failure → pins only; pins failure → algo only;
+ * both → []. Nothing here ever throws to the page.
+ */
+export async function trendingProductIds(k: number): Promise<string[]> {
+  if (k <= 0) return [];
+
+  let pinnedIds: string[] = [];
+  try {
+    const pinned = await prisma.product.findMany({
+      where: { trendingPinnedAt: { not: null }, status: "ACTIVE", deletedAt: null },
+      select: { id: true },
+      orderBy: { trendingPinnedAt: "desc" },
+    });
+    pinnedIds = pinned.map((row) => row.id);
+  } catch (error) {
+    console.error("[recommendations] trending pins read failed:", error);
+  }
+
+  const algoIds = await trendingAlgoIds();
+  return mergePinnedFirst(pinnedIds, algoIds, k);
 }
 
 /** Items are frozen JSON on the order; pull out {productId, quantity} lines. */

@@ -2,7 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
-import { PackageIcon, PlusIcon, TablePropertiesIcon } from "lucide-react";
+import {
+  FlameIcon,
+  PackageIcon,
+  PlusIcon,
+  TablePropertiesIcon,
+} from "lucide-react";
 
 import { getViewer } from "@/server/auth/viewer";
 import { isAdmin } from "@/server/types/viewer";
@@ -101,6 +106,7 @@ export default async function AdminProductsPage({
   const categoryName = new Map(categories.map((c) => [c.id, c.name]));
 
   const products = listResult.ok ? listResult.products : [];
+  const pinnedIds = new Set(listResult.ok ? listResult.pinnedProductIds : []);
   const total = listResult.ok ? listResult.total : 0;
   const currentPage = listResult.ok ? listResult.page : 1;
   const pageCount = listResult.ok ? listResult.pageCount : 1;
@@ -237,6 +243,14 @@ export default async function AdminProductsPage({
                           <StatusChip
                             variant={STOCK_VARIANT[product.stockStatus]}
                           />
+                          {pinnedIds.has(product.id) ? (
+                            // Pinned into the "Trending now" rail (StatusChip
+                            // geometry, flame instead of the dot).
+                            <span className="inline-flex h-5 w-fit shrink-0 items-center gap-1 rounded-full border border-warning/35 bg-warning/15 px-2 text-xs font-medium whitespace-nowrap text-warning-foreground dark:text-warning">
+                              <FlameIcon className="size-3" aria-hidden />
+                              Trending
+                            </span>
+                          ) : null}
                         </div>
                       </TableCell>
                       <TableCell className="text-right">

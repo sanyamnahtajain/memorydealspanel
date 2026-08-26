@@ -60,6 +60,8 @@ const EDIT_SELECT = {
   hsnCode: true,
   gstRateBps: true,
   taxTreatment: true,
+  // Seeds the editor's "Show in Trending" toggle. Non-monetary.
+  trendingPinnedAt: true,
   category: { select: { defaultHsnCode: true, defaultGstRateBps: true } },
   createdAt: true,
   updatedAt: true,
@@ -161,6 +163,8 @@ export default async function EditProductPage({
     hsnCode: row.hsnCode,
     gstRateBps: row.gstRateBps,
     taxTreatment: row.taxTreatment,
+    // The editor toggle only needs the boolean; the timestamp stays server-side.
+    trendingPinned: row.trendingPinnedAt != null,
   };
 
   // The tax section is shown only when the GST kill-switch is on. `inherited`

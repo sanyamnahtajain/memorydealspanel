@@ -58,6 +58,9 @@ const PRICED_SELECT = {
   hsnCode: true,
   gstRateBps: true,
   taxTreatment: true,
+  // Trending pin timestamp — NON-MONETARY. Read so updateProduct can detect
+  // the pinned/unpinned transition without an extra query.
+  trendingPinnedAt: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.ProductSelect;
@@ -287,6 +290,10 @@ export async function createProduct(
         hsnCode: data.hsnCode ?? null,
         gstRateBps: data.gstRateBps ?? null,
         taxTreatment: data.taxTreatment ?? null,
+        // Trending pin: a set timestamp force-pins the product into the
+        // "Trending now" rail (newest pin first). Explicit null when unpinned,
+        // consistent with `deletedAt` below.
+        trendingPinnedAt: data.trendingPinned ? new Date() : null,
         // Store an explicit null: on MongoDB (Atlas), `{ deletedAt: null }` — the
         // filter every storefront/DAL query uses — does NOT match an ABSENT
         // field, only an explicit null. Omitting it would make the product
@@ -392,6 +399,17 @@ export async function updateProduct(
   if (data.gstRateBps !== undefined) update.gstRateBps = data.gstRateBps ?? null;
   if (data.taxTreatment !== undefined) {
     update.taxTreatment = data.taxTreatment ?? null;
+  }
+  // Trending pin: only the TRANSITION writes, so re-saving an already-pinned
+  // product keeps its original timestamp (and therefore its pin order in the
+  // rail — pins render newest-first).
+  if (data.trendingPinned !== undefined) {
+    const currentlyPinned = existing.trendingPinnedAt != null;
+    if (data.trendingPinned && !currentlyPinned) {
+      update.trendingPinnedAt = new Date();
+    } else if (!data.trendingPinned && currentlyPinned) {
+      update.trendingPinnedAt = null;
+    }
   }
 
   try {

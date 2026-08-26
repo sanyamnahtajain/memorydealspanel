@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2Icon } from "lucide-react";
+import { FlameIcon, Loader2Icon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { parseRupees, formatPaise } from "@/lib/money";
 import {
@@ -97,6 +97,8 @@ export type EditorProduct = Pick<
   hsnCode?: string | null;
   gstRateBps?: number | null;
   taxTreatment?: TaxTreatment | null;
+  /** Whether the product is pinned into the "Trending now" rail. */
+  trendingPinned?: boolean;
 };
 
 /**
@@ -160,6 +162,8 @@ interface FormState {
   maxQty: string;
   /** Buyers may attach a requirement note + photos on this product. */
   allowRequirementNotes: boolean;
+  /** Pin into the "Trending now" rail (always shown, first). */
+  trendingPinned: boolean;
   stockStatus: StockStatus;
   status: EntityStatus;
   tags: string[];
@@ -212,6 +216,7 @@ function buildInitialState(product?: EditorProduct): FormState {
       product?.packMultiple != null ? String(product.packMultiple) : "",
     maxQty: product?.maxQty != null ? String(product.maxQty) : "",
     allowRequirementNotes: product?.allowRequirementNotes ?? false,
+    trendingPinned: product?.trendingPinned ?? false,
     stockStatus: product?.stockStatus ?? "IN_STOCK",
     status: product?.status ?? "ACTIVE",
     tags: product?.tags ?? [],
@@ -385,6 +390,13 @@ export function ProductEditorForm({
       packMultiple: packValue,
       maxQty: maxQtyValue,
       allowRequirementNotes: state.allowRequirementNotes,
+      // Sent only when it changed (or is on at create): the server audits every
+      // present `trendingPinned` as a pin/unpin, so an untouched toggle must
+      // stay OUT of the payload.
+      trendingPinned:
+        state.trendingPinned !== (product?.trendingPinned ?? false)
+          ? state.trendingPinned
+          : undefined,
       allocation: allocationOn
         ? {
             kind: "DEVICE_MODEL" as const,
@@ -405,7 +417,12 @@ export function ProductEditorForm({
 
     const parsed = createProductSchema.safeParse(raw);
     if (!parsed.success) {
-      setFieldError(parsed.error.issues[0]?.message ?? "Please check the form.");
+      const message =
+        parsed.error.issues[0]?.message ?? "Please check the form.";
+      setFieldError(message);
+      // The inline note can be far off-screen on a long form — a silent
+      // failed Save reads as a broken button. Say it out loud too.
+      toast.error(message);
       return;
     }
 
@@ -681,6 +698,29 @@ export function ProductEditorForm({
               </label>
             </Field>
           </div>
+
+          {/* Trending pin — saves with the form payload like every other
+              toggle here; the server stamps/clears trendingPinnedAt. */}
+          <label className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-input px-3 py-2.5 dark:bg-input/30">
+            <span className="min-w-0 space-y-0.5">
+              <span className="flex items-center gap-1.5 text-sm font-medium">
+                <FlameIcon
+                  className="size-3.5 shrink-0 text-warning"
+                  aria-hidden
+                />
+                Show in Trending
+              </span>
+              <span className="block text-xs text-muted-foreground">
+                Pinned products always show in the Trending rail, first.
+              </span>
+            </span>
+            <Switch
+              checked={state.trendingPinned}
+              onCheckedChange={(v) => set("trendingPinned", v)}
+              disabled={pending}
+              aria-label="Show in Trending"
+            />
+          </label>
         </Section>
       </FadeUp>
 
