@@ -4,7 +4,6 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Minus, Plus, ShoppingCart, Lock } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
-import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -16,16 +15,16 @@ import {
   minOrderableQty,
   normalisePack,
 } from "@/lib/quantity";
-import { addToCartAction } from "@/server/actions/cart";
-import { broadcastCartCount } from "./CartBadge";
-import { broadcastLineAdded } from "./cart-events";
-import { setCartLineQty } from "./cart-lines-store";
+import { useAddToCart } from "./useAddToCart";
 
 /**
  * AddToCartButton — the storefront add-to-cart control: a quantity stepper
  * (respecting the product's MOQ floor and the per-line cap) plus an "Add to
  * cart" button. Optimistic: it broadcasts the new cart count immediately and
- * reconciles with the server's authoritative count on response.
+ * reconciles with the server's authoritative count on response. The add
+ * round-trip itself (action, toasts, broadcasts, refusal routing) lives in
+ * the shared {@link useAddToCart} hook so the sticky mobile bar's one-tap
+ * add behaves identically.
  *
  * GATE: only an APPROVED customer (`canAdd`) sees the working control. Everyone
  * else sees a locked affordance that routes to login (anonymous) or the
@@ -79,7 +78,12 @@ export function AddToCartButton({
   const cap = React.useMemo(() => maxOrderableQty(packMultiple), [packMultiple]);
 
   const [qty, setQty] = React.useState(floor);
-  const [pending, startTransition] = React.useTransition();
+  const { pending, add } = useAddToCart({
+    productId,
+    variantId,
+    moq,
+    packMultiple,
+  });
 
   // Re-seed the quantity to the floor when MOQ/pack change (e.g. variant swap).
   const [seenFloor, setSeenFloor] = React.useState(floor);
@@ -146,49 +150,8 @@ export function AddToCartButton({
   }
 
   function handleAdd() {
-    if (pending) return;
-    const quantity = clampQuantity(qty, moq, packMultiple);
-
-    startTransition(async () => {
-      const result = await addToCartAction({
-        productId,
-        ...(variantId ? { variantId } : {}),
-        quantity,
-      });
-
-      if (result.ok) {
-        broadcastCartCount(result.itemCount);
-        broadcastLineAdded(productId, variantId);
-        setCartLineQty(productId, variantId, result.quantity);
-        toast.success(
-          result.clamped
-            ? pack > 1
-              ? `Added — quantity adjusted to ${result.quantity} (packs of ${pack}).`
-              : `Added — quantity adjusted to ${result.quantity} (minimum order).`
-            : "Added to cart.",
-          {
-            action: {
-              label: "View cart",
-              onClick: () => router.push("/account/cart"),
-            },
-          },
-        );
-        return;
-      }
-
-      switch (result.reason) {
-        case "needs-login":
-          toast.info(result.message);
-          router.push("/account/login");
-          break;
-        case "needs-approval":
-          toast.info(result.message);
-          router.push("/account?request=1");
-          break;
-        default:
-          toast.error(result.message);
-      }
-    });
+    // The hook clamps through the same shared helper before sending.
+    add(qty);
   }
 
   return (

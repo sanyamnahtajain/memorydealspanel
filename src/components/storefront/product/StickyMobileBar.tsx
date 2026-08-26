@@ -2,7 +2,9 @@
 
 /**
  * StickyMobileBar — a mobile-only sticky action bar pinned to the bottom of
- * the product detail viewport ("See price / Enquire").
+ * the product detail viewport ("See price / Enquire", and — for a priced
+ * viewer on a plain in-stock product — a one-tap "Add to cart", see
+ * `addToCart` below).
  *
  * PRICE-GATE SAFETY: this component receives an already-decided verdict
  * (`canSeePrices`) and, ONLY when that verdict is true, a `priceLabel` string
@@ -25,7 +27,7 @@
  */
 
 import * as React from "react";
-import { LockIcon, MessageCircle } from "lucide-react";
+import { Loader2, LockIcon, MessageCircle, ShoppingCart } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 
 import type { CustomerStatus } from "@/lib/schemas/shared";
@@ -33,6 +35,8 @@ import { accessCopy, resolveAccessState } from "@/lib/access-status";
 import { springs } from "@/components/motion/tokens";
 import { RequestAccessSheet } from "@/components/storefront/RequestAccessSheet";
 import { GatedRenewCta } from "@/components/storefront/GatedRenewCta";
+import { useAddToCart } from "@/components/storefront/cart/useAddToCart";
+import { minOrderableQty } from "@/lib/quantity";
 import { cn } from "@/lib/utils";
 import { PRICE_PANEL_ID } from "./price-panel";
 
@@ -54,6 +58,61 @@ export interface StickyMobileBarProps {
   status?: CustomerStatus;
   /** Google-only gate: when set, "Request access" routes to Google. */
   googleGateHref?: string | null;
+  /**
+   * One-tap add-to-cart config — set ONLY for a PRICED viewer on a plain
+   * in-stock product (non-variant, non-allocation). When present, the bar's
+   * primary slot becomes a real "Add to cart" (the exact AddToCartButton
+   * flow, adding the pack-aligned MOQ) and Enquire collapses to an icon.
+   * When absent — every gated viewer, variant products (choosing happens in
+   * the selector), allocation products (the breakdown builder is the flow),
+   * out-of-stock — the bar renders exactly as before. Carries NO money:
+   * ids and quantity rules only.
+   */
+  addToCart?: {
+    productId: string;
+    moq: number | null;
+    packMultiple: number | null;
+  } | null;
+}
+
+/**
+ * The bar's one-tap "Add to cart" primary button. A separate component so the
+ * add hook only mounts when the bar actually offers the add (hooks cannot be
+ * conditional inside StickyMobileBar itself). Adds the same MOQ-respecting
+ * default quantity AddToCartButton seeds its stepper with — the pack-aligned
+ * MOQ — through the same shared flow (action, toasts, broadcasts).
+ */
+function StickyAddToCartButton({
+  productId,
+  moq,
+  packMultiple,
+}: {
+  productId: string;
+  moq: number | null;
+  packMultiple: number | null;
+}) {
+  const { pending, add } = useAddToCart({ productId, moq, packMultiple });
+  const quantity = minOrderableQty(moq, packMultiple);
+
+  return (
+    <button
+      type="button"
+      aria-busy={pending || undefined}
+      disabled={pending}
+      onClick={() => add(quantity)}
+      className={cn(
+        "inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-sm outline-none transition-[background-color,transform] hover:bg-primary/90 focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97]",
+        "disabled:pointer-events-none disabled:opacity-70",
+      )}
+    >
+      {pending ? (
+        <Loader2 aria-hidden className="size-4 animate-spin" />
+      ) : (
+        <ShoppingCart aria-hidden className="size-4" />
+      )}
+      {pending ? "Adding…" : "Add to cart"}
+    </button>
+  );
 }
 
 export function StickyMobileBar({
@@ -62,6 +121,7 @@ export function StickyMobileBar({
   priceLabel,
   status,
   googleGateHref = null,
+  addToCart = null,
 }: StickyMobileBarProps) {
   const reduced = useReducedMotion();
   const [open, setOpen] = React.useState(false);
@@ -90,6 +150,9 @@ export function StickyMobileBar({
   }, []);
 
   const showPrice = canSeePrices && priceLabel !== undefined;
+  // One-tap add — ONLY alongside a live price (the prop is never set for a
+  // gated viewer; this guard is belt-and-braces, not the gate).
+  const showAdd = showPrice && addToCart != null;
   // Canonical access state (src/lib/access-status.ts); the status slot only
   // renders when the gate is closed, so APPROVED resolves to "expired".
   const state = resolveAccessState({
@@ -180,7 +243,38 @@ export function StickyMobileBar({
             )}
           </div>
 
-          {enquireHref ? (
+          {showAdd && addToCart ? (
+            <>
+              {/* Enquire collapses to an icon so the primary slot is the
+                  one-tap add. Same gate logic as the wide button below: a
+                  live wa.me link, else a locked inert affordance. */}
+              {enquireHref ? (
+                <a
+                  href={enquireHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Enquire on WhatsApp"
+                  className="inline-flex size-12 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground outline-none transition-[background-color,color,transform] hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97]"
+                >
+                  <MessageCircle aria-hidden className="size-4" />
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  disabled
+                  aria-label="WhatsApp is available to approved buyers"
+                  className="inline-flex size-12 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground opacity-70"
+                >
+                  <LockIcon aria-hidden className="size-4" />
+                </button>
+              )}
+              <StickyAddToCartButton
+                productId={addToCart.productId}
+                moq={addToCart.moq}
+                packMultiple={addToCart.packMultiple}
+              />
+            </>
+          ) : enquireHref ? (
             <a
               href={enquireHref}
               target="_blank"

@@ -151,6 +151,10 @@ export function ProductGallery({
                       alt={`${productName} — image ${index + 1}`}
                       draggable={false}
                       loading={isHero ? "eager" : "lazy"}
+                      // The hero is the page's LCP element: without an explicit
+                      // priority hint it queues behind CSS/fonts even though it
+                      // is eager (perf finding 3).
+                      fetchPriority={isHero ? "high" : "auto"}
                       className={cn(
                         "h-full w-full object-contain",
                         isHero && GALLERY_HERO_CLASS,

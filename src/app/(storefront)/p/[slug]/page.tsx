@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
+import { cache } from "react";
 import { googleOAuthConfigured } from "@/server/services/google-auth";
 import { notFound } from "next/navigation";
 
 import { getViewer } from "@/server/auth/viewer";
-import { canSeePrices, isCustomer } from "@/server/types/viewer";
+import { ANON_VIEWER, canSeePrices, isCustomer } from "@/server/types/viewer";
 import {
   getBySlugForViewer,
   listByCategoryForViewer,
@@ -97,6 +98,18 @@ const STOCK_CHIP: Record<StockStatus, StatusChipVariant> = {
 const RELATED_LIMIT = 12;
 
 /**
+ * ANON-projection detail read, deduped per request with React `cache()` —
+ * the same pattern `categories.getBySlug` documents. Every product view runs
+ * `generateMetadata` (always anon — metadata must never see a price) AND the
+ * page body; for a GATED viewer both reads are byte-identical, so sharing
+ * this one memoised fetch halves the detail queries on the hottest page.
+ * Priced viewers still get their own (priced) query in the page body.
+ */
+const getBySlugAnonCached = cache(async (slug: string) =>
+  getBySlugForViewer(ANON_VIEWER, slug),
+);
+
+/**
  * OpenGraph / SEO metadata. NEVER includes a price — we resolve the product
  * through the anonymous public projection so a price cannot even be in scope
  * here regardless of who requests the page.
@@ -105,7 +118,7 @@ export async function generateMetadata({
   params,
 }: PageParams): Promise<Metadata> {
   const { slug } = await params;
-  const product = await getBySlugForViewer({ kind: "anon" }, slug);
+  const product = await getBySlugAnonCached(slug);
   if (!product) {
     return { title: `Product not found — ${APP_NAME}` };
   }
@@ -146,13 +159,18 @@ async function resolveCategory(
 export default async function ProductDetailPage({ params }: PageParams) {
   const { slug } = await params;
   const viewer = await getViewer();
-  const product = await getBySlugForViewer(viewer, slug);
+  const showPrices = canSeePrices(viewer);
+  // One detail query per request (perf finding 5): a gated viewer's read is
+  // byte-identical to the anon projection `generateMetadata` already fetched,
+  // so share the request-cached anon read. Priced viewers branch to their own
+  // priced query — the gate itself is untouched.
+  const product = showPrices
+    ? await getBySlugForViewer(viewer, slug)
+    : await getBySlugAnonCached(slug);
 
   if (!product) {
     notFound();
   }
-
-  const showPrices = canSeePrices(viewer);
   const customerStatus = isCustomer(viewer) ? viewer.status : undefined;
 
   // Record the view for the dashboard's "Most viewed" aggregation. Best-effort
@@ -344,6 +362,24 @@ export default async function ProductDetailPage({ params }: PageParams) {
   // variant product the AddToCartButton lives inside VariantProductView (it
   // needs the selected variant + its MOQ), so the non-variant hero owns it here.
   const canAdd = showPrices && !showVariantHero;
+
+  // Sticky-bar one-tap add (ORDER_FLOW proposal 1): the same gate as the
+  // inline AddToCartButton — a PRICED viewer on a non-variant product — and
+  // only when the flow is genuinely one tap: an allocation product's flow is
+  // the breakdown builder and an out-of-stock product cannot be added, so
+  // both keep the bar's current layout. Gated viewers never get this prop,
+  // so every locked branch of the bar renders exactly as before. Carries NO
+  // money — ids and quantity rules only.
+  const stickyAddToCart =
+    canAdd &&
+    !product.allocation?.required &&
+    product.stockStatus !== "OUT_OF_STOCK"
+      ? {
+          productId: product.id,
+          moq: product.moq,
+          packMultiple: product.packMultiple,
+        }
+      : null;
 
   // Requirement notes & photos: when this product allows them and the viewer
   // already carries a cart line, seed the PDP sheet with the stored values so
@@ -538,6 +574,7 @@ export default async function ProductDetailPage({ params }: PageParams) {
         canSeePrices={showPrices}
         priceLabel={stickyPriceLabel}
         status={customerStatus}
+        addToCart={stickyAddToCart}
       />
     </StorefrontShell>
   );
