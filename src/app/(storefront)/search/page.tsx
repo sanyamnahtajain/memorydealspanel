@@ -15,7 +15,9 @@ import {
   StorefrontListing,
   buildListingItems,
   type ListingItem,
+  type LoadMoreResult,
 } from "@/components/storefront/listing";
+import { isObjectId } from "@/components/storefront/listing/filter-params";
 import { SearchLauncher } from "@/components/storefront/SearchLauncher";
 import { CategoryGrid } from "@/components/storefront/CategoryGrid";
 import { renderPriceSlot } from "@/components/storefront/priceSlot";
@@ -134,27 +136,32 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
     priceSlot: renderPriceSlot(product, viewer),
   }));
 
-  // Load-more re-runs the SAME faceted query for the next offset window; the
-  // selection + query are captured server-side (gated viewers can't inject a
-  // price band). Price slots stay server-rendered.
+  // Load-more fetches exactly ONE page after the given cursor (the previous
+  // page's `nextCursor` — an opaque product id, no price); the selection +
+  // query are captured server-side (gated viewers can't inject a price band).
+  // Price slots stay server-rendered, and the total is never re-counted.
   const selectionSnapshot = selection;
   const sortSnapshot = sort;
   const searchSnapshot = search;
-  async function loadMore(nextPage: number): Promise<ListingItem[]> {
+  async function loadMore(cursor: string): Promise<LoadMoreResult> {
     "use server";
-    const page = Math.max(1, Math.trunc(nextPage));
+    // Client-supplied cursor: a malformed id ends the list, never throws.
+    if (!isObjectId(cursor)) return { items: [], nextCursor: null };
     const v = await getViewer();
-    const result = await discoverProducts(
-      v,
-      selectionToDiscoverParams(selectionSnapshot, {
+    const result = await discoverProducts(v, {
+      ...selectionToDiscoverParams(selectionSnapshot, {
         approved: canSeePrices(v),
         search: searchSnapshot,
         sort: sortSnapshot,
-        limit: page * PAGE_SIZES.storefront,
+        cursor,
+        limit: PAGE_SIZES.storefront,
       }),
-    );
-    const start = (page - 1) * PAGE_SIZES.storefront;
-    return buildListingItems(result.items.slice(start), v);
+      withTotal: false,
+    });
+    return {
+      items: buildListingItems(result.items, v),
+      nextCursor: result.nextCursor,
+    };
   }
 
   return (
@@ -210,8 +217,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
             <StorefrontListing
               initialItems={items}
               loadMore={loadMore}
-              pageSize={PAGE_SIZES.storefront}
-              initialPage={1}
+              initialNextCursor={firstPage.nextCursor}
               canSeePrices={approved}
               total={firstPage.total}
               emptyTitle={`No results for “${rawQuery}”`}

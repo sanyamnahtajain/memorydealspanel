@@ -50,10 +50,13 @@ interface StorefrontListingProps {
   initialItems: ListingItem[];
   /** Server action to fetch subsequent pages (already gated). */
   loadMore?: LoadMoreFn;
-  /** Server page size; a short page signals the end of the list. */
-  pageSize: number;
-  /** Page already rendered as `initialItems` (1-based). */
-  initialPage?: number;
+  /**
+   * Cursor for the page AFTER `initialItems` — the first page's `nextCursor`
+   * from the server render. `null` means the whole result set already fits in
+   * the first page; that (not a short page) is the end-of-list signal. An
+   * opaque product id: it carries no price.
+   */
+  initialNextCursor: string | null;
   /** Whether the current viewer may see/sort prices (approved). */
   canSeePrices: boolean;
   /** Total result count, when known (for the count line). */
@@ -74,6 +77,15 @@ interface StorefrontListingProps {
    * price. Defaults to `canSeePrices`.
    */
   canAddToCart?: boolean;
+  /**
+   * Context-scoped filter controls (a {@link ListingFilters} element built by
+   * the SERVER page from that page's own facets — brand chips on a category
+   * page, category chips on a brand page). Rendered in ONE horizontal,
+   * scrollable chip row with the sort control; on phones the row sticks just
+   * under the condensed header. Absent (e.g. /search) the toolbar renders
+   * exactly as before.
+   */
+  filterSlot?: React.ReactNode;
 }
 
 function isViewMode(value: unknown): value is ViewMode {
@@ -83,14 +95,14 @@ function isViewMode(value: unknown): value is ViewMode {
 export function StorefrontListing({
   initialItems,
   loadMore,
-  pageSize,
-  initialPage = 1,
+  initialNextCursor,
   canSeePrices,
   total,
   emptyTitle = "No products here yet",
   emptyDescription = "Check back soon — we're adding stock regularly.",
   savedProductIds,
   canAddToCart = canSeePrices,
+  filterSlot,
 }: StorefrontListingProps) {
   const prefs = usePreferences();
   const router = useRouter();
@@ -122,22 +134,28 @@ export function StorefrontListing({
     return "newest";
   });
 
-  // ---- Pagination state. ----
+  // ---- Pagination state (cursor-based). ----
+  // `cursor` is the OPAQUE id to hand to `loadMore` for the NEXT page; null
+  // means exhausted. Seeded from the server's first-page `nextCursor` — the
+  // total count travels the same way (the `total` prop), fetched once on the
+  // first page and never re-counted by load-more.
   const [appended, setAppended] = React.useState<ListingItem[]>([]);
-  const [page, setPage] = React.useState(initialPage);
+  const [cursor, setCursor] = React.useState<string | null>(initialNextCursor);
   const [pending, setPending] = React.useState(false);
-  const [exhausted, setExhausted] = React.useState(false);
   // Reset accumulated pages ONLY when the listing identity actually changes
-  // (path or a facet-bearing param) — NEVER on array identity. A server
-  // action anywhere (e.g. quick-add revalidating the cart) refreshes the RSC
-  // payload and hands us a NEW initialItems array with the same content;
-  // resetting on identity collapsed the list back to page 1 mid-scroll (the
-  // page shrank under the viewport — the "jumped to the top, half the
-  // products gone" bug). view/sort are display-only and keep the pages.
+  // (path, a facet-bearing param, or the SORT) — NEVER on array identity. A
+  // server action anywhere (e.g. quick-add revalidating the cart) refreshes
+  // the RSC payload and hands us a NEW initialItems array with the same
+  // content; resetting on identity collapsed the list back to page 1
+  // mid-scroll (the page shrank under the viewport — the "jumped to the top,
+  // half the products gone" bug). `view` is display-only and keeps the pages;
+  // `sort` is PART of the pagination identity now that pages are fetched by
+  // cursor — a cursor minted under one order is meaningless under another, so
+  // a sort change restarts from the fresh server-rendered first page (whose
+  // new `initialNextCursor` prop arrives in the same render as the new URL).
   const facetKey = React.useMemo(() => {
     const params = new URLSearchParams(searchParams.toString());
     params.delete("view");
-    params.delete("sort");
     params.sort();
     const qs = params.toString();
     return qs ? `${pathname}?${qs}` : pathname;
@@ -146,8 +164,7 @@ export function StorefrontListing({
   if (baselineKey !== facetKey) {
     setBaselineKey(facetKey);
     setAppended([]);
-    setPage(initialPage);
-    setExhausted(false);
+    setCursor(initialNextCursor);
   }
 
   // ---- Persist view / sort into the URL (shareable, back-safe). ----
@@ -181,23 +198,24 @@ export function StorefrontListing({
     return [...initialItems, ...appended.filter((i) => !seen.has(i.product.id))];
   }, [initialItems, appended]);
 
-  const done = exhausted || !loadMore || initialItems.length < pageSize;
+  // Exhaustion comes from the CURSOR being null — never from a short page
+  // (a short page under the server's 100-row limit clamp is exactly the bug
+  // that silently capped every listing at 100 products).
+  const done = !loadMore || cursor === null;
 
   const handleLoadMore = React.useCallback(async () => {
-    if (!loadMore || pending || done) return;
+    if (!loadMore || pending || cursor === null) return;
     setPending(true);
     try {
-      const next = page + 1;
-      const rows = await loadMore(next);
-      setAppended((prev) => [...prev, ...rows]);
-      setPage(next);
-      if (rows.length < pageSize) setExhausted(true);
+      const result = await loadMore(cursor);
+      setAppended((prev) => [...prev, ...result.items]);
+      setCursor(result.nextCursor);
     } catch {
-      // Leave the button visible so the user can retry.
+      // Leave the button visible (and the cursor untouched) for a retry.
     } finally {
       setPending(false);
     }
-  }, [loadMore, pending, done, page, pageSize]);
+  }, [loadMore, pending, cursor]);
 
   // ---- Client-side re-sort over the accumulated set. ----
   // Stock (and every facet) is filtered SERVER-SIDE by the discovery layer, so
@@ -241,11 +259,29 @@ export function StorefrontListing({
             {formatCount(resultCount, total)}
           </p>
         </div>
-        <ListingControls
-          sort={sort}
-          onSort={changeSort}
-          canSortPrice={canSeePrices}
-        />
+        {filterSlot ? (
+          /* One chip bar: Filters sheet + context chips + sort. Horizontally
+             scrollable, and sticky just under the condensed header on phones
+             so refinements stay reachable mid-scroll. Desktop wraps inline. */
+          <div className="sticky top-[calc(3rem+env(safe-area-inset-top))] z-30 -mx-4 border-b border-transparent bg-background/95 px-4 py-2 backdrop-blur supports-backdrop-filter:bg-background/85 md:static md:z-auto md:mx-0 md:border-0 md:bg-transparent md:p-0 md:backdrop-blur-none">
+            <div className="no-scrollbar flex items-center gap-2 overflow-x-auto md:flex-wrap md:overflow-visible">
+              {filterSlot}
+              <div className="shrink-0 md:ml-auto">
+                <ListingControls
+                  sort={sort}
+                  onSort={changeSort}
+                  canSortPrice={canSeePrices}
+                />
+              </div>
+            </div>
+          </div>
+        ) : (
+          <ListingControls
+            sort={sort}
+            onSort={changeSort}
+            canSortPrice={canSeePrices}
+          />
+        )}
       </div>
 
       {/* Results */}

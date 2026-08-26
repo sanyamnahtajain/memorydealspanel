@@ -98,6 +98,12 @@ export type DiscoverSort =
 export interface DiscoverParams {
   /** Restrict to a single category. */
   categoryId?: string;
+  /**
+   * Restrict to a set of category ids (OR). ADDITIVE (context-scoped filters):
+   * used by the brand page's category chips. ANDs with every other clause —
+   * combining it with `categoryId` narrows to their intersection.
+   */
+  categoryIds?: string[];
   /** Restrict to a set of Brand master ids (OR). */
   brandIds?: string[];
   /** Spec constraints (AND across keys, OR within a key's values). */
@@ -117,6 +123,14 @@ export interface DiscoverParams {
   sort?: DiscoverSort;
   /** Opaque forward cursor (a product id) from a previous page's `nextCursor`. */
   cursor?: string;
+  /**
+   * Whether to run the `count` alongside the page (default true). Load-more
+   * callers pass `false` — the first page already told the client the total,
+   * and re-counting on every appended page is a wasted query (a full scan
+   * under a search where-clause). When false, `total` is returned as -1 and
+   * MUST NOT be rendered.
+   */
+  withTotal?: boolean;
   /** Page size; clamped to [1, PAGE_SIZES.max]. */
   limit?: number;
 }
@@ -126,7 +140,10 @@ export interface DiscoverResult {
   items: (PublicProduct | PricedProduct)[];
   /** Cursor to pass as `cursor` for the next page, or null when exhausted. */
   nextCursor: string | null;
-  /** Total matches across all pages for the applied filters. */
+  /**
+   * Total matches across all pages for the applied filters — or -1 when the
+   * caller passed `withTotal: false` (load-more pages never re-count).
+   */
   total: number;
   /** Whether `priceBand` / price sort were honoured for this viewer. */
   priceApplied: boolean;
@@ -169,16 +186,45 @@ function searchClause(
 }
 
 /**
- * The ACTIVE categories the query canonically names. One small indexed read
- * (the collection holds dozens of rows); empty for empty/short queries.
+ * Per-instance short-TTL cache of the ACTIVE category id+name list backing
+ * {@link searchCategoryIds}. The read is tiny (dozens of rows) but ran on
+ * EVERY discover call — including every search load-more. Category names
+ * change rarely; a 60s memo (same pattern as the entry-gate settings cache)
+ * removes the per-call round-trip. PRICE-FREE (ids + names only) and
+ * viewer-independent, so one shared entry is safe for every gate class.
+ */
+const ACTIVE_CATEGORY_TTL_MS = 60_000;
+let activeCategoryCache: {
+  rows: { id: string; name: string }[];
+  expiresAt: number;
+} | null = null;
+
+async function activeCategoryRows(): Promise<{ id: string; name: string }[]> {
+  const now = Date.now();
+  if (activeCategoryCache && activeCategoryCache.expiresAt > now) {
+    return activeCategoryCache.rows;
+  }
+  const rows = await prisma.category.findMany({
+    where: { status: "ACTIVE" },
+    select: { id: true, name: true },
+  });
+  activeCategoryCache = { rows, expiresAt: now + ACTIVE_CATEGORY_TTL_MS };
+  return rows;
+}
+
+/** TEST-ONLY: drop the category memo so a just-created category is seen. */
+export function _resetActiveCategoryCacheForTests(): void {
+  activeCategoryCache = null;
+}
+
+/**
+ * The ACTIVE categories the query canonically names. Served from the 60s
+ * per-instance memo above; empty for empty/short queries.
  */
 async function searchCategoryIds(search: string | undefined): Promise<string[]> {
   const q = search?.trim() ?? "";
   if (q.length === 0) return [];
-  const categories = await prisma.category.findMany({
-    where: { status: "ACTIVE" },
-    select: { id: true, name: true },
-  });
+  const categories = await activeCategoryRows();
   return categories
     .filter((c) => categoryNameMatchesQuery(c.name, q))
     .map((c) => c.id);
@@ -198,6 +244,9 @@ function buildWhere(
 
   if (params.categoryId) {
     and.push({ categoryId: params.categoryId });
+  }
+  if (params.categoryIds && params.categoryIds.length > 0) {
+    and.push({ categoryId: { in: params.categoryIds } });
   }
   if (params.brandIds && params.brandIds.length > 0) {
     and.push({ brandId: { in: params.brandIds } });
@@ -310,6 +359,8 @@ export async function discoverProducts(
       params.sort === "price-asc" ||
       params.sort === "price-desc");
 
+  const withTotal = params.withTotal !== false;
+
   if (allowPrice) {
     const [rows, total] = await Promise.all([
       prisma.product.findMany({
@@ -319,7 +370,7 @@ export async function discoverProducts(
         take: take + 1,
         ...cursorArgs,
       }),
-      prisma.product.count({ where }),
+      withTotal ? prisma.product.count({ where }) : Promise.resolve(-1),
     ]);
     const hasMore = rows.length > take;
     const page = hasMore ? rows.slice(0, take) : rows;
@@ -339,7 +390,7 @@ export async function discoverProducts(
       take: take + 1,
       ...cursorArgs,
     }),
-    prisma.product.count({ where }),
+    withTotal ? prisma.product.count({ where }) : Promise.resolve(-1),
   ]);
   const hasMore = rows.length > take;
   const page = hasMore ? rows.slice(0, take) : rows;
@@ -349,4 +400,99 @@ export async function discoverProducts(
     total,
     priceApplied: false,
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* Context-scoped facets (ADDITIVE — owner: "if i am on boat brand     */
+/* page, why i am seeing filter for zebronics")                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * One refinement available on a listing page, scoped to that page's context:
+ * on a CATEGORY page these are the brands with visible products in the
+ * category; on a BRAND page, the categories the brand actually stocks.
+ * PRICE-FREE by construction — id, name, slug, count only.
+ */
+export interface ContextFacetItem {
+  id: string;
+  name: string;
+  slug: string;
+  count: number;
+}
+
+/**
+ * PURE assembly step (unit-tested): join grouped product counts with their
+ * master rows. Groups whose master is missing (deleted, or not ACTIVE — the
+ * caller queries ACTIVE masters only) or whose count is zero are DROPPED, so
+ * the facet never offers a refinement that would land on an empty page.
+ * Sorted by count descending, then name, for a stable chip order.
+ */
+export function assembleContextFacets(
+  grouped: ReadonlyArray<{ id: string | null; count: number }>,
+  masters: ReadonlyArray<{ id: string; name: string; slug: string }>,
+): ContextFacetItem[] {
+  const masterById = new Map(masters.map((m) => [m.id, m]));
+  const items: ContextFacetItem[] = [];
+  for (const g of grouped) {
+    if (g.id === null || g.count <= 0) continue;
+    const master = masterById.get(g.id);
+    if (!master) continue;
+    items.push({ id: master.id, name: master.name, slug: master.slug, count: g.count });
+  }
+  return items.sort(
+    (a, b) => b.count - a.count || a.name.localeCompare(b.name),
+  );
+}
+
+/**
+ * Brands that actually have VISIBLE products in this category, with counts.
+ * Backing for the category page's brand chips — a brand with nothing in the
+ * category never appears. Bounded: an index-backed `groupBy` on `brandId`
+ * plus one name lookup; never a row scan into Node. PRICE-FREE.
+ */
+export async function brandFacetsForCategory(
+  categoryId: string,
+): Promise<ContextFacetItem[]> {
+  const grouped = await prisma.product.groupBy({
+    by: ["brandId"],
+    where: { ...VISIBLE_WHERE, categoryId, brandId: { not: null } },
+    _count: { _all: true },
+  });
+  const ids = grouped
+    .map((g) => g.brandId)
+    .filter((id): id is string => id !== null);
+  if (ids.length === 0) return [];
+  const brands = await prisma.brand.findMany({
+    where: { id: { in: ids }, status: "ACTIVE" },
+    select: { id: true, name: true, slug: true },
+  });
+  return assembleContextFacets(
+    grouped.map((g) => ({ id: g.brandId, count: g._count._all })),
+    brands,
+  );
+}
+
+/**
+ * Categories this brand actually has VISIBLE products in, with counts.
+ * Backing for the brand page's category chips (a brand page NEVER shows a
+ * brand facet — you are already inside one brand). Bounded groupBy + one
+ * name lookup. PRICE-FREE.
+ */
+export async function categoryFacetsForBrand(
+  brandId: string,
+): Promise<ContextFacetItem[]> {
+  const grouped = await prisma.product.groupBy({
+    by: ["categoryId"],
+    where: { ...VISIBLE_WHERE, brandId },
+    _count: { _all: true },
+  });
+  if (grouped.length === 0) return [];
+  const categories = await prisma.category.findMany({
+    where: { id: { in: grouped.map((g) => g.categoryId) }, status: "ACTIVE" },
+    select: { id: true, name: true, slug: true },
+  });
+  return assembleContextFacets(
+    grouped.map((g) => ({ id: g.categoryId, count: g._count._all })),
+    categories,
+  );
 }

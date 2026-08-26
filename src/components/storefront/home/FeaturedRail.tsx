@@ -41,6 +41,13 @@ const itemVariants: Variants = {
   },
 };
 
+/**
+ * How many leading cards load their image eagerly with high fetch priority —
+ * the rail sits near the top of the home page, so its first cards are LCP
+ * candidates on phones.
+ */
+const PRIORITY_IMAGE_COUNT = 4;
+
 export function FeaturedRail({ items }: { items: ProductCardItem[] }) {
   const reduced = useReducedMotion();
 
@@ -51,20 +58,30 @@ export function FeaturedRail({ items }: { items: ProductCardItem[] }) {
       initial={reduced ? "show" : "hidden"}
       animate="show"
     >
-      {items.map((item) => (
+      {items.map((item, index) => (
         <motion.li
           key={item.product.id}
           variants={itemVariants}
           className="snap-start"
         >
-          <FeaturedCard item={item} />
+          <FeaturedCard
+            item={item}
+            priorityImage={index < PRIORITY_IMAGE_COUNT}
+          />
         </motion.li>
       ))}
     </motion.ul>
   );
 }
 
-function FeaturedCard({ item }: { item: ProductCardItem }) {
+function FeaturedCard({
+  item,
+  priorityImage = false,
+}: {
+  item: ProductCardItem;
+  /** First-viewport card: load the image eagerly with high fetch priority (LCP). */
+  priorityImage?: boolean;
+}) {
   const { product } = item;
   const image =
     product.images.find((img) => img.isPrimary) ?? product.images[0] ?? null;
@@ -80,6 +97,7 @@ function FeaturedCard({ item }: { item: ProductCardItem }) {
             src={image.thumbUrl ?? image.url}
             alt={product.name}
             fill
+            priority={priorityImage}
             sizes="(min-width: 1024px) 22vw, (min-width: 640px) 30vw, 45vw"
             className={`${GALLERY_HERO_CLASS} object-cover transition-transform duration-300 ease-out group-hover:scale-105`}
             style={{ viewTransitionName: galleryTransitionName(product.id) }}

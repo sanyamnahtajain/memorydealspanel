@@ -8,34 +8,45 @@ import { PAGE_SIZES } from "@/lib/constants";
 import { getBrandBySlug, listBrandCategories } from "@/server/dal/brands";
 import { getViewer } from "@/server/auth/viewer";
 import { canSeePrices } from "@/server/types/viewer";
-import { discoverProducts } from "@/server/storefront/discovery";
+import {
+  categoryFacetsForBrand,
+  discoverProducts,
+} from "@/server/storefront/discovery";
+import { stockFacet } from "@/server/dal/facets";
 import { wishlistStateForViewer } from "@/server/services/wishlist";
 import { cartCountForViewer } from "@/server/services/cart";
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
 import { FadeUp } from "@/components/motion/primitives";
 import {
+  ListingFilters,
   StorefrontListing,
   buildListingItems,
   type ListingItem,
+  type LoadMoreResult,
 } from "@/components/storefront/listing";
+import {
+  CONTEXT_FILTER_PARAMS,
+  isObjectId,
+  parseListParam,
+} from "@/components/storefront/listing/filter-params";
 import { BrandCategoryGrid } from "@/components/storefront/BrandCategoryGrid";
 import { SectionHeading } from "@/components/storefront/home";
-import { DiscoveryFilters } from "@/components/storefront/filters";
 import {
-  loadFacetData,
   selectionToDiscoverParams,
   toDiscoverSort,
 } from "@/components/storefront/filters/adapter";
 import { parseSelection } from "@/components/storefront/filters/types";
 
 /**
- * Brand landing — brand → category → products, WITH faceted filters.
+ * Brand landing — brand → category → products, with CONTEXT-SCOPED filters.
  *
  * Multi-category brands lead with a category drill-down; every brand then gets
- * an "All {brand} products" listing scoped to the brand and filterable by the
- * same facets as /search (category / spec / stock / tag, and — approved only —
- * a price band). The brand scope is fixed server-side, so filters only ever
- * narrow WITHIN the brand. Price gate intact (gated viewers get locked pills).
+ * an "All {brand} products" listing scoped to the brand. THE CORE RULE: a
+ * brand page NEVER shows a brand facet (you are already inside one brand) —
+ * its chips are the CATEGORIES this brand actually has visible products in
+ * (with counts), plus stock, applied server-side via the `cat` URL param. The
+ * brand scope is fixed server-side, so filters only ever narrow WITHIN the
+ * brand. Price gate intact (gated viewers get locked pills).
  */
 export const dynamic = "force-dynamic";
 
@@ -83,18 +94,29 @@ export default async function BrandPage({
   const selection = parseSelection(urlParams, approved);
   const sort = toDiscoverSort(urlParams.get("sort"));
   const brandIds = [brand.id];
+  // Category chips selection (`cat` param) — malformed ids narrow to nothing,
+  // never reach a Prisma ObjectId filter.
+  const categoryIds = parseListParam(
+    urlParams,
+    CONTEXT_FILTER_PARAMS.category,
+  ).filter(isObjectId);
 
-  const [categories, facets, firstPage, wishlistState, cartCount] =
+  const [categories, categoryFacets, stockCounts, firstPage, wishlistState, cartCount] =
     await Promise.all([
       listBrandCategories(brand.id),
-      loadFacetData(viewer, { brandIds }),
+      // CONTEXT SCOPE: only the categories THIS brand has visible products in.
+      categoryFacetsForBrand(brand.id),
+      stockFacet({ brandIds }),
       discoverProducts(viewer, {
         ...selectionToDiscoverParams(selection, {
           approved,
           sort,
           limit: PAGE_SIZES.storefront,
         }),
+        // The brand scope is FIXED server-side; the URL can never widen it
+        // (selection.brands is overridden here, so a brand facet is moot).
         brandIds,
+        categoryIds: categoryIds.length > 0 ? categoryIds : undefined,
       }),
       wishlistStateForViewer(viewer),
       cartCountForViewer(viewer),
@@ -102,24 +124,32 @@ export default async function BrandPage({
 
   const items: ListingItem[] = buildListingItems(firstPage.items, viewer);
 
+  // Load-more fetches exactly ONE page after the given cursor (an opaque
+  // product id, no price); the total is never re-counted (finding 6).
   const selectionSnapshot = selection;
   const sortSnapshot = sort;
-  async function loadMore(nextPage: number): Promise<ListingItem[]> {
+  const categoryIdsSnapshot = categoryIds;
+  async function loadMore(cursor: string): Promise<LoadMoreResult> {
     "use server";
-    const page = Math.max(1, Math.trunc(nextPage));
+    // Client-supplied cursor: a malformed id ends the list, never throws.
+    if (!isObjectId(cursor)) return { items: [], nextCursor: null };
     const v = await getViewer();
     const result = await discoverProducts(v, {
       ...selectionToDiscoverParams(selectionSnapshot, {
         approved: canSeePrices(v),
         sort: sortSnapshot,
-        limit: page * PAGE_SIZES.storefront,
+        cursor,
+        limit: PAGE_SIZES.storefront,
       }),
       brandIds,
+      categoryIds:
+        categoryIdsSnapshot.length > 0 ? categoryIdsSnapshot : undefined,
+      withTotal: false,
     });
-    return buildListingItems(
-      result.items.slice((page - 1) * PAGE_SIZES.storefront),
-      v,
-    );
+    return {
+      items: buildListingItems(result.items, v),
+      nextCursor: result.nextCursor,
+    };
   }
 
   return (
@@ -164,22 +194,34 @@ export default async function BrandPage({
         </section>
       ) : null}
 
-      {/* Filterable product listing, scoped to the brand. */}
+      {/* Filterable product listing, scoped to the brand. NEVER a brand facet
+          here — the chips are this brand's own categories, plus stock. */}
       <section aria-labelledby="brand-all">
         <SectionHeading id="brand-all" title={`All ${brand.name} products`} />
-        <DiscoveryFilters facets={facets} resultCount={firstPage.total}>
-          <StorefrontListing
-            initialItems={items}
-            loadMore={loadMore}
-            pageSize={PAGE_SIZES.storefront}
-            initialPage={1}
-            canSeePrices={approved}
-            total={firstPage.total}
-            emptyTitle={`No ${brand.name} products match`}
-            emptyDescription="Try clearing a filter, or check back as we add stock."
-            savedProductIds={wishlistState.savedProductIds}
-          />
-        </DiscoveryFilters>
+        <StorefrontListing
+          initialItems={items}
+          loadMore={loadMore}
+          initialNextCursor={firstPage.nextCursor}
+          canSeePrices={approved}
+          total={firstPage.total}
+          emptyTitle={`No ${brand.name} products match`}
+          emptyDescription="Try clearing a filter, or check back as we add stock."
+          savedProductIds={wishlistState.savedProductIds}
+          filterSlot={
+            <ListingFilters
+              contextFacet={{
+                param: CONTEXT_FILTER_PARAMS.category,
+                title: "Category",
+                buckets: categoryFacets.map((c) => ({
+                  value: c.id,
+                  label: c.name,
+                  count: c.count,
+                })),
+              }}
+              stockCounts={stockCounts}
+            />
+          }
+        />
       </section>
     </StorefrontShell>
   );

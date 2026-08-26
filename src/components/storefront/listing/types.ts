@@ -30,11 +30,23 @@ export interface ListingItem {
 }
 
 /**
- * Loads the next page of already-gated items. Returns fewer than `pageSize`
- * (or an empty array) when the list is exhausted. Implemented as a server
- * action so price slots stay server-side.
+ * One appended page of already-gated items plus the cursor for the page after
+ * it. `nextCursor` is an OPAQUE product id (it carries no price and no count);
+ * `null` means the list is exhausted — that, not a short page, is the
+ * authoritative end-of-list signal.
  */
-export type LoadMoreFn = (nextPage: number) => Promise<ListingItem[]>;
+export interface LoadMoreResult {
+  items: ListingItem[];
+  nextCursor: string | null;
+}
+
+/**
+ * Loads the page after `cursor` (the previous page's `nextCursor`).
+ * Implemented as a server action so price slots stay server-side; each call
+ * fetches exactly one page — never the whole prefix — and never re-counts
+ * the total (the first server-rendered page already carried it).
+ */
+export type LoadMoreFn = (cursor: string) => Promise<LoadMoreResult>;
 
 /** Sort keys offered in the listing. `price-asc` is gated (approved only). */
 export type SortKey = "newest" | "name" | "price-asc" | "price-desc";

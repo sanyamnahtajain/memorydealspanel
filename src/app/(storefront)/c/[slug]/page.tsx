@@ -7,19 +7,24 @@ import { PAGE_SIZES } from "@/lib/constants";
 import { getBySlug } from "@/server/dal/categories";
 import { getViewer } from "@/server/auth/viewer";
 import { canSeePrices } from "@/server/types/viewer";
-import { discoverProducts } from "@/server/storefront/discovery";
+import {
+  brandFacetsForCategory,
+  discoverProducts,
+} from "@/server/storefront/discovery";
+import { stockFacet } from "@/server/dal/facets";
 import { wishlistStateForViewer } from "@/server/services/wishlist";
 import { cartCountForViewer } from "@/server/services/cart";
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
 import { FadeUp } from "@/components/motion/primitives";
 import {
+  ListingFilters,
   StorefrontListing,
   buildListingItems,
   type ListingItem,
+  type LoadMoreResult,
 } from "@/components/storefront/listing";
-import { DiscoveryFilters } from "@/components/storefront/filters";
+import { isObjectId } from "@/components/storefront/listing/filter-params";
 import {
-  loadFacetData,
   selectionToDiscoverParams,
   toDiscoverSort,
 } from "@/components/storefront/filters/adapter";
@@ -33,11 +38,12 @@ import { parseSelection } from "@/components/storefront/filters/types";
  * embeds a price for a gated viewer — the DAL projects prices away and each
  * listing item renders a locked pill.
  *
- * DISCOVERY (7.7): the URL search params carry the active facet selection
- * (brand / spec / stock / tag, plus — for approved viewers only — a price
- * band). The page parses that selection, loads the FACETS (bounded aggregate
- * counts) and the first faceted PAGE server-side via `discoverProducts`, and
- * hands both to the client {@link DiscoveryFilters} + {@link StorefrontListing}.
+ * DISCOVERY (7.7): the URL search params carry the active facet selection.
+ * The page parses that selection, loads the CONTEXT-SCOPED facets (only the
+ * brands with visible products in THIS category, with counts, plus stock) and
+ * the first faceted PAGE server-side via `discoverProducts`, and hands both to
+ * {@link StorefrontListing} with a {@link ListingFilters} chip bar. Legacy
+ * spec/tag/band params from older shared links are still honoured server-side.
  *
  * PRICE GATE: `canSeePrices(viewer)` decides whether the price-band facet is a
  * real control (approved) or a "log in to filter by price" chip (everyone
@@ -98,54 +104,71 @@ export default async function CategoryPage({
 
   const approved = canSeePrices(viewer);
   const urlParams = toSearchParams(raw);
-  const selection = parseSelection(urlParams, approved);
+  const rawSelection = parseSelection(urlParams, approved);
+  // A malformed brand id in a hand-edited link must narrow to nothing —
+  // never reach a Prisma ObjectId filter and throw.
+  const selection = {
+    ...rawSelection,
+    brands: rawSelection.brands.filter(isObjectId),
+  };
   const sort = toDiscoverSort(urlParams.get("sort"));
   const categoryId = category.id;
 
-  // ONE parallel round: facets + first page (viewer-gated) alongside the
-  // viewer-scoped chrome reads (wishlist, cart badge). These used to run as
-  // three sequential awaits — on a remote database that is three round-trips
-  // of pure added latency on every category view.
-  const [facets, firstPage, wishlistState, cartCount] = await Promise.all([
-    loadFacetData(viewer, { categoryId }),
-    discoverProducts(
-      viewer,
-      selectionToDiscoverParams(selection, {
-        approved,
-        categoryId,
-        sort,
-        limit: PAGE_SIZES.storefront,
-      }),
-    ),
-    // Wishlist state: header badge + heart fills. Empty for anon/admin.
-    wishlistStateForViewer(viewer),
-    // Header cart badge — a count only for an approved customer.
-    cartCountForViewer(viewer),
-  ]);
+  // ONE parallel round: context facets + first page (viewer-gated) alongside
+  // the viewer-scoped chrome reads (wishlist, cart badge). These used to run
+  // as sequential awaits — on a remote database that is round-trips of pure
+  // added latency on every category view.
+  const [brandFacets, stockCounts, firstPage, wishlistState, cartCount] =
+    await Promise.all([
+      // CONTEXT SCOPE: only brands with visible products in THIS category.
+      brandFacetsForCategory(categoryId),
+      stockFacet({ categoryId }),
+      discoverProducts(
+        viewer,
+        selectionToDiscoverParams(selection, {
+          approved,
+          categoryId,
+          sort,
+          limit: PAGE_SIZES.storefront,
+        }),
+      ),
+      // Wishlist state: header badge + heart fills. Empty for anon/admin.
+      wishlistStateForViewer(viewer),
+      // Header cart badge — a count only for an approved customer.
+      cartCountForViewer(viewer),
+    ]);
 
   const items: ListingItem[] = buildListingItems(firstPage.items, viewer);
 
-  // Load-more re-runs the SAME faceted query for the next offset window. The
-  // selection is captured server-side so gated viewers can never inject a price
-  // band via the client. Price slots stay server-rendered.
+  // Load-more fetches exactly ONE page after the given cursor (the previous
+  // page's `nextCursor` — an opaque product id, no price). The selection is
+  // captured server-side so gated viewers can never inject a price band via
+  // the client. Price slots stay server-rendered, and the total is never
+  // re-counted (the first page already carried it).
   const selectionSnapshot = selection;
   const sortSnapshot = sort;
-  async function loadMore(nextPage: number): Promise<ListingItem[]> {
+  async function loadMore(cursor: string): Promise<LoadMoreResult> {
     "use server";
-    const page = Math.max(1, Math.trunc(nextPage));
+    // The cursor is client-supplied: a malformed id must end the list, never
+    // reach Prisma's ObjectId cursor and throw.
+    if (!isObjectId(cursor)) return { items: [], nextCursor: null };
     const v = await getViewer();
-    const result = await discoverProducts(
-      v,
-      selectionToDiscoverParams(selectionSnapshot, {
+    const result = await discoverProducts(v, {
+      ...selectionToDiscoverParams(selectionSnapshot, {
         approved: canSeePrices(v),
         categoryId,
         sort: sortSnapshot,
-        limit: page * PAGE_SIZES.storefront,
+        cursor,
+        limit: PAGE_SIZES.storefront,
       }),
-    );
-    // Offset paging over the bounded faceted set: return only the new window.
-    const start = (page - 1) * PAGE_SIZES.storefront;
-    return buildListingItems(result.items.slice(start), v);
+      // The first page already reported the total; appended pages never
+      // re-count (finding 6).
+      withTotal: false,
+    });
+    return {
+      items: buildListingItems(result.items, v),
+      nextCursor: result.nextCursor,
+    };
   }
 
   return (
@@ -165,19 +188,33 @@ export default async function CategoryPage({
         </div>
       </FadeUp>
 
-      <DiscoveryFilters facets={facets} resultCount={firstPage.total}>
-        <StorefrontListing
-          initialItems={items}
-          loadMore={loadMore}
-          pageSize={PAGE_SIZES.storefront}
-          initialPage={1}
-          canSeePrices={approved}
-          total={firstPage.total}
-          emptyTitle="Nothing in this category yet"
-          emptyDescription="We're adding stock here soon — check back shortly."
-          savedProductIds={wishlistState.savedProductIds}
-        />
-      </DiscoveryFilters>
+      {/* CONTEXT-SCOPED FILTERS: brand chips limited to brands that actually
+          have visible products in THIS category (never the whole brand list),
+          plus stock — in a chip bar + bottom sheet. */}
+      <StorefrontListing
+        initialItems={items}
+        loadMore={loadMore}
+        initialNextCursor={firstPage.nextCursor}
+        canSeePrices={approved}
+        total={firstPage.total}
+        emptyTitle="Nothing in this category yet"
+        emptyDescription="We're adding stock here soon — check back shortly."
+        savedProductIds={wishlistState.savedProductIds}
+        filterSlot={
+          <ListingFilters
+            contextFacet={{
+              param: "brand",
+              title: "Brand",
+              buckets: brandFacets.map((b) => ({
+                value: b.id,
+                label: b.name,
+                count: b.count,
+              })),
+            }}
+            stockCounts={stockCounts}
+          />
+        }
+      />
     </StorefrontShell>
   );
 }

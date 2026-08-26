@@ -156,9 +156,23 @@ export async function loadFacetData(
   scope?: FacetScope,
 ): Promise<FacetData> {
   const approved = canSeePrices(viewer);
-  // Search-scoped facets have an unbounded key space — compute those live.
   if (scope?.search) {
-    return loadFacetDataLive(approved, scope);
+    // Normalize ONLY whitespace (trim + collapse runs) — both the facet DAL
+    // and discovery split terms on whitespace, so "usb  hub" and "usb hub"
+    // are the same query and may share a cache entry. Case is deliberately
+    // PRESERVED: tag matching (`tags: { has: term }`) is case-sensitive, so
+    // folding case would conflate queries with different results.
+    const normalized = scope.search.trim().replace(/\s+/g, " ");
+    if (normalized.length > 0) {
+      return loadSearchFacetDataCached(
+        approved,
+        normalized,
+        scope.categoryId ?? null,
+        scope.brandIds ?? null,
+      );
+    }
+    // A whitespace-only query adds no clause — fall through to the
+    // category/brand cache exactly as if no search was given.
   }
   return loadFacetDataCached(approved, scope?.categoryId ?? null, scope?.brandIds ?? null);
 }
@@ -203,6 +217,34 @@ const loadFacetDataCached = unstable_cache(
     }),
   ["storefront-facets"],
   { revalidate: 120 },
+);
+
+/**
+ * Data-cached SEARCH facet fan-out (perf finding 2). A search facet payload is
+ * identical for every visitor in the same gate class asking the same
+ * (whitespace-normalized) query — the same key reasoning as the category cache
+ * above — yet it previously ran ~5 uncached regex collection scans per view.
+ * The key space is unbounded (any query), so the TTL is shorter (60s): popular
+ * queries stay hot, one-off queries age out. Counts may lag admin edits by up
+ * to a minute — harmless for filter chips. NEVER keyed on user identity; the
+ * approved flag keeps priced band payloads and gated payloads apart, and a
+ * gated entry structurally contains no band/count/amount (priceBandCounts is
+ * skipped BEFORE the cache boundary in loadFacetDataLive).
+ */
+const loadSearchFacetDataCached = unstable_cache(
+  async (
+    approved: boolean,
+    search: string,
+    categoryId: string | null,
+    brandIds: string[] | null,
+  ): Promise<FacetData> =>
+    loadFacetDataLive(approved, {
+      search,
+      categoryId: categoryId ?? undefined,
+      brandIds: brandIds ?? undefined,
+    }),
+  ["storefront-search-facets"],
+  { revalidate: 60 },
 );
 
 /** All valid preset band ids (mirrors the DAL's `PriceBandId`). */

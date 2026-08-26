@@ -47,6 +47,14 @@ interface ProductGridViewProps {
   canAddToCart?: boolean;
 }
 
+/**
+ * How many leading cards load their image eagerly with high fetch priority.
+ * On a phone the LCP element of a listing is the first card image; ~4 covers
+ * the first viewport (two rows of the 2-column mobile grid) without turning
+ * the whole below-fold grid eager.
+ */
+const PRIORITY_IMAGE_COUNT = 4;
+
 export function ProductGridView({
   items,
   compactDensity,
@@ -65,16 +73,18 @@ export function ProductGridView({
       initial={reduced ? "show" : "hidden"}
       animate="show"
     >
-      {items.map((item) => (
-        <motion.li
-          key={item.product.id}
-          variants={staggerItemVariants}
-          layout={!reduced}
-        >
+      {/* No `layout` prop on the items: layout projection re-measures EVERY
+          card on each append (100+ cards after a few load-mores) — jank on
+          low-end phones for a shuffle animation the grid doesn't need. The
+          entrance stagger stays; under reduced motion nothing animated before
+          and nothing does now. */}
+      {items.map((item, index) => (
+        <motion.li key={item.product.id} variants={staggerItemVariants}>
           <GridCard
             item={item}
             saved={savedProductIds?.has(item.product.id) ?? false}
             canAddToCart={canAddToCart}
+            priorityImage={index < PRIORITY_IMAGE_COUNT}
           />
         </motion.li>
       ))}
@@ -86,10 +96,13 @@ function GridCard({
   item,
   saved,
   canAddToCart,
+  priorityImage = false,
 }: {
   item: ListingItem;
   saved: boolean;
   canAddToCart: boolean;
+  /** First-viewport card: load the image eagerly with high fetch priority (LCP). */
+  priorityImage?: boolean;
 }) {
   const { product } = item;
   const image = primaryImage(product);
@@ -124,6 +137,7 @@ function GridCard({
             src={image.thumbUrl ?? image.url}
             alt={product.name}
             fill
+            priority={priorityImage}
             sizes="(min-width: 1024px) 22vw, (min-width: 640px) 30vw, 45vw"
             className={`${GALLERY_HERO_CLASS} object-cover transition-transform duration-300 ease-out group-hover:scale-105`}
             style={{ viewTransitionName: galleryTransitionName(product.id) }}

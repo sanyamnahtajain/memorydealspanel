@@ -18,7 +18,9 @@ import {
   StorefrontListing,
   buildListingItems,
   type ListingItem,
+  type LoadMoreResult,
 } from "@/components/storefront/listing";
+import { isObjectId } from "@/components/storefront/listing/filter-params";
 import { DiscoveryFilters } from "@/components/storefront/filters";
 import {
   loadFacetData,
@@ -104,25 +106,30 @@ export default async function BrandCategoryPage({
 
   const items: ListingItem[] = buildListingItems(firstPage.items, viewer);
 
+  // Load-more fetches exactly ONE page after the given cursor (an opaque
+  // product id, no price); the total is never re-counted (finding 6).
   const selectionSnapshot = selection;
   const sortSnapshot = sort;
-  async function loadMore(nextPage: number): Promise<ListingItem[]> {
+  async function loadMore(cursor: string): Promise<LoadMoreResult> {
     "use server";
-    const page = Math.max(1, Math.trunc(nextPage));
+    // Client-supplied cursor: a malformed id ends the list, never throws.
+    if (!isObjectId(cursor)) return { items: [], nextCursor: null };
     const v = await getViewer();
     const result = await discoverProducts(v, {
       ...selectionToDiscoverParams(selectionSnapshot, {
         approved: canSeePrices(v),
         categoryId,
         sort: sortSnapshot,
-        limit: page * PAGE_SIZES.storefront,
+        cursor,
+        limit: PAGE_SIZES.storefront,
       }),
       brandIds,
+      withTotal: false,
     });
-    return buildListingItems(
-      result.items.slice((page - 1) * PAGE_SIZES.storefront),
-      v,
-    );
+    return {
+      items: buildListingItems(result.items, v),
+      nextCursor: result.nextCursor,
+    };
   }
 
   return (
@@ -165,8 +172,7 @@ export default async function BrandCategoryPage({
         <StorefrontListing
           initialItems={items}
           loadMore={loadMore}
-          pageSize={PAGE_SIZES.storefront}
-          initialPage={1}
+          initialNextCursor={firstPage.nextCursor}
           canSeePrices={approved}
           total={firstPage.total}
           emptyTitle={`No ${brand.name} ${category.name} match`}

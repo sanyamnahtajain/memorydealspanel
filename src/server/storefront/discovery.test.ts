@@ -12,7 +12,10 @@ import {
   tagFacet,
   computePriceBands,
 } from "@/server/dal/facets";
-import { discoverProducts } from "./discovery";
+import {
+  discoverProducts,
+  _resetActiveCategoryCacheForTests,
+} from "./discovery";
 
 /**
  * Integration tests against the SEEDED local MongoDB proving the price gate for
@@ -277,6 +280,9 @@ describe("forgiving search (variants + category route)", () => {
       },
       select: { id: true },
     });
+    // The ACTIVE-category list searchCategoryIds reads is memoised for 60s —
+    // drop the memo so the category created above is seen immediately.
+    _resetActiveCategoryCacheForTests();
     try {
       for (const q of [
         `power banks ${stamp}`,
@@ -299,6 +305,78 @@ describe("forgiving search (variants + category route)", () => {
       expect(byTitle.items.some((i) => i.id === product.id)).toBe(true);
     } finally {
       await prisma.product.delete({ where: { id: product.id } });
+      await prisma.category.delete({ where: { id: category.id } });
+    }
+  });
+});
+
+describe("cursor pagination has no result cap (perf finding 1)", () => {
+  it("pages a 130-product category via cursor and reaches EVERY product", async () => {
+    // The old load-more path re-queried with limit = page × 24, which the
+    // discovery layer clamps to 100 — so no listing could ever show more than
+    // 100 products. Cursor paging must walk past that line: 6 pages of ≤24
+    // over 130 seeded rows, >100 distinct ids, exhaustion signalled by
+    // nextCursor === null (never by a short page).
+    const stamp = `cap-${Date.now().toString(36)}`;
+    const category = await prisma.category.create({
+      data: {
+        name: `Cap Test ${stamp}`,
+        slug: `cap-test-${stamp}`,
+        status: "ACTIVE",
+      },
+      select: { id: true },
+    });
+    try {
+      await prisma.product.createMany({
+        data: Array.from({ length: 130 }, (_, i) => ({
+          categoryId: category.id,
+          name: `Cap Product ${stamp} ${i}`,
+          slug: `cap-product-${stamp}-${i}`,
+          sku: `CAP-${stamp}-${i}`.toUpperCase(),
+          price: 10_000 + i,
+          status: "ACTIVE",
+          deletedAt: null,
+        })),
+      });
+
+      const seen = new Set<string>();
+      let cursor: string | undefined;
+      let pages = 0;
+      let firstPageTotal = -1;
+      for (;;) {
+        const isFirstPage = cursor === undefined;
+        const res = await discoverProducts(ANON_VIEWER, {
+          categoryId: category.id,
+          limit: 24,
+          cursor,
+          // Mirrors the pages: count on the FIRST page only (finding 6).
+          withTotal: isFirstPage,
+        });
+        pages += 1;
+        if (isFirstPage) {
+          firstPageTotal = res.total;
+        } else {
+          // Load-more pages never re-count: the sentinel comes back instead.
+          expect(res.total).toBe(-1);
+        }
+        for (const item of res.items) {
+          // Stable cursor: no overlap between pages, and never a price.
+          expect(seen.has(item.id)).toBe(false);
+          seen.add(item.id);
+          assertNoPriceKeys(item as unknown as Record<string, unknown>);
+        }
+        if (res.nextCursor === null) break;
+        cursor = res.nextCursor;
+        // Safety net against an infinite loop on a regression.
+        expect(pages).toBeLessThan(20);
+      }
+
+      expect(firstPageTotal).toBe(130);
+      expect(pages).toBe(6); // ceil(130 / 24)
+      // THE point: well past the 100-row clamp that capped the old path.
+      expect(seen.size).toBe(130);
+    } finally {
+      await prisma.product.deleteMany({ where: { categoryId: category.id } });
       await prisma.category.delete({ where: { id: category.id } });
     }
   });
