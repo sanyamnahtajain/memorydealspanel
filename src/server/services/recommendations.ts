@@ -41,6 +41,9 @@ import {
 
 const CACHE_TTL_MS = 15 * 60 * 1000;
 
+/** How far back the co-purchase index reads. See the query for why 365. */
+const COPURCHASE_WINDOW_DAYS = 365;
+
 const globalForRec = globalThis as unknown as {
   __mdRecIndex: { at: number; index: RecommendIndex } | undefined;
   __mdTrendingAlgo: { at: number; ids: string[] } | undefined;
@@ -63,7 +66,15 @@ async function getIndex(): Promise<RecommendIndex | null> {
 
   try {
     const rows = await prisma.order.findMany({
-      where: { status: { not: "CANCELLED" } },
+      where: {
+        status: { not: "CANCELLED" },
+        // Windowed like the trending scorer: an unbounded scan of the whole
+        // order history grows forever on a shared-CPU tier. A year covers
+        // several full restock cycles, and the 90-day recency half-life has
+        // already reduced anything older to ~6% of its weight — so the
+        // rankings this produces are the same ones the full scan produced.
+        placedAt: { gte: new Date(Date.now() - COPURCHASE_WINDOW_DAYS * DAY_MS) },
+      },
       select: { items: true, placedAt: true },
     });
     const orders: RecommendOrder[] = rows.map((row) => ({

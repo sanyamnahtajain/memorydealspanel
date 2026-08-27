@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { after } from "next/server";
 
 import { requireAdminPage } from "@/server/auth/require-admin-page";
 import { assertPermission } from "@/server/auth/require-permission";
@@ -41,13 +42,24 @@ export default async function AdminOrderDetailPage({
   }
 
   // Opening an order (with buyer contact + full snapshot) is an explicit,
-  // audited admin access.
-  await writeAudit({
-    actorType: "admin",
-    actorId: viewer.adminId,
-    action: "order.view",
-    entity: "Order",
-    entityId: detail.id,
+  // audited admin access — but the admin must not WAIT for the audit write.
+  // It used to be awaited inline, adding a full round-trip to Atlas before a
+  // single byte of HTML was sent, which is most of why this page felt slow
+  // from the queue. after() still writes the record; it just runs once the
+  // response has been flushed.
+  after(async () => {
+    try {
+      await writeAudit({
+        actorType: "admin",
+        actorId: viewer.adminId,
+        action: "order.view",
+        entity: "Order",
+        entityId: detail.id,
+      });
+    } catch (error) {
+      // An audit failure must never take the page down with it.
+      console.error("[admin/orders] order.view audit failed:", error);
+    }
   });
 
   const order: OrderDetailDTO = {

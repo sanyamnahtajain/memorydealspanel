@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { expireDueGrants } from "@/server/services/access";
 import { writeAudit } from "@/server/security/audit";
+import { isCronAuthorized } from "@/server/security/cron-auth";
 
 /**
  * GET /api/cron/expiry
@@ -27,18 +28,7 @@ import { writeAudit } from "@/server/security/audit";
 
 export const dynamic = "force-dynamic";
 
-function isAuthorized(request: Request): boolean {
-  const secret = process.env.CRON_SECRET;
-  // Fail closed: without a configured secret there is no safe way to gate a
-  // mutating endpoint, so we do not run.
-  if (!secret) return false;
 
-  const auth = request.headers.get("authorization");
-  if (auth === `Bearer ${secret}`) return true;
-
-  const headerSecret = request.headers.get("x-cron-secret");
-  return headerSecret === secret;
-}
 
 interface ExpirySummary {
   ok: true;
@@ -49,7 +39,7 @@ interface ExpirySummary {
 }
 
 export async function GET(request: Request): Promise<Response> {
-  if (!isAuthorized(request)) {
+  if (!isCronAuthorized(request)) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 

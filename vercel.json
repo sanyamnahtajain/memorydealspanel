@@ -8,6 +8,10 @@
     {
       "path": "/api/cron/notify",
       "schedule": "30 4 * * *"
+    },
+    {
+      "path": "/api/cron/backup",
+      "schedule": "40 19 * * *"
     }
   ],
   "regions": [

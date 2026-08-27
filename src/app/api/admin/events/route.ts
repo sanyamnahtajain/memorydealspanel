@@ -57,7 +57,15 @@ export async function GET(request: Request): Promise<Response> {
    * EventSource replays the last `id:` we sent as the `Last-Event-ID` header on
    * reconnect, so we resume from exactly there and the gap closes.
    */
-  const cursorStart = resolveResumeCursor(request.headers.get("last-event-id"));
+  // The browser sends `last-event-id` only on its OWN automatic reconnects.
+  // The client also closes this stream while the tab is hidden (it is the
+  // app's biggest function-hours consumer) and reopens a FRESH EventSource on
+  // return — which sends no header — so the cursor is accepted as a query
+  // param too. Same 10-minute bound either way; nothing is lost on resume.
+  const cursorStart = resolveResumeCursor(
+    request.headers.get("last-event-id") ??
+      new URL(request.url).searchParams.get("lastEventId"),
+  );
   let cursor = cursorStart;
   let closed = false;
 

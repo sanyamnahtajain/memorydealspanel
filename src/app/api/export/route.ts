@@ -19,6 +19,12 @@ import { beautifyXlsx } from "@/server/services/xlsx-friendly";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * A full catalogue/orders export on a shared-CPU tier can outrun the
+ * platform default (~15s) and return an unexplained gateway error.
+ */
+export const maxDuration = 120;
+
 const XLSX_CONTENT_TYPE =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const CSV_CONTENT_TYPE = "text/csv; charset=utf-8";

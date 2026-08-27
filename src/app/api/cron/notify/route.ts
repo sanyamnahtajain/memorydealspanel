@@ -21,6 +21,7 @@ import { prisma } from "@/server/db";
 import { customerIdsWithLiveGrant } from "@/server/services/access";
 import { notifyCustomer } from "@/server/notify/push";
 import { writeAudit } from "@/server/security/audit";
+import { isCronAuthorized } from "@/server/security/cron-auth";
 
 /**
  * GET /api/cron/notify
@@ -98,18 +99,7 @@ const TOPIC: Record<ExpiryMilestone, NotifyTopicKey> = {
  */
 const DEDUPE_LOOKBACK_DAYS = 30;
 
-function isAuthorized(request: Request): boolean {
-  const secret = process.env.CRON_SECRET;
-  // Fail closed: without a configured secret there is no safe way to gate an
-  // endpoint that sends notifications, so we do not run.
-  if (!secret) return false;
 
-  const auth = request.headers.get("authorization");
-  if (auth === `Bearer ${secret}`) return true;
-
-  const headerSecret = request.headers.get("x-cron-secret");
-  return headerSecret === secret;
-}
 
 function dedupeKey(type: string, customerId: string, expiresOn: string): string {
   return `${type}|${customerId}|${expiresOn}`;
@@ -171,7 +161,7 @@ interface NotifySummary {
 }
 
 export async function GET(request: Request): Promise<Response> {
-  if (!isAuthorized(request)) {
+  if (!isCronAuthorized(request)) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 

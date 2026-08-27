@@ -15,6 +15,12 @@ import { parseOrderPdfSize } from "@/lib/order-pdf-size";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Rendering a long multi-page order PDF can outrun the platform default
+ * (~15s) and return an unexplained gateway error.
+ */
+export const maxDuration = 120;
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },

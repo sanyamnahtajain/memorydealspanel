@@ -158,6 +158,9 @@ model Product {
   // into Trending (pinned first, newest pin first) regardless of the algo;
   // absent/null = algo decides. Timestamp, not boolean, so pins order
   // deterministically and "unpin" is just clearing it.
+  // Indexed: the home page reads pins FRESH on every render (so an admin's
+  // pin shows up immediately), which without an index is a full product scan
+  // on the hottest page in the app.
   trendingPinnedAt DateTime?
   optionTypes Json?
   // Per-model quantity allocation (screen protectors etc.). Shape:
@@ -173,6 +176,7 @@ model Product {
   @@index([categoryId, status])
   @@index([deletedAt])
   @@index([brandId])
+  @@index([trendingPinnedAt])
   // Hot storefront listing: filter {status, deletedAt} sorted by createdAt.
   @@index([status, deletedAt, createdAt])
 }
@@ -439,6 +443,11 @@ model PageView {
 
   @@index([productId, createdAt])
   @@index([customerId, createdAt])
+  // Trending scores a time WINDOW across all products, so it filters on
+  // createdAt alone — which neither compound index above can serve (a
+  // compound index needs its LEADING field named). Without this the scorer
+  // scanned the whole collection every 15 minutes.
+  @@index([createdAt])
 }
 
 model Brand {

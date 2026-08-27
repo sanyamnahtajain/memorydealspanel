@@ -239,11 +239,17 @@ export function AdminLiveEvents() {
   const [queue, setQueue] = React.useState<AdminEventDTO[]>([]);
   const current = queue[0] ?? null;
 
+  // Last event this tab actually saw. Carried by hand on reopen: a fresh
+  // EventSource does NOT send the browser's automatic Last-Event-ID header,
+  // so without this a hidden tab would miss whatever arrived while it slept.
+  const lastEventIdRef = React.useRef<string | null>(null);
+
   React.useEffect(() => {
     installAudioUnlockListeners();
-    const source = new EventSource("/api/admin/events");
+    let source: EventSource | null = null;
 
     const onEvent = (raw: MessageEvent) => {
+      lastEventIdRef.current = raw.lastEventId || lastEventIdRef.current;
       let event: AdminEventDTO;
       try {
         event = JSON.parse(raw.data as string) as AdminEventDTO;
@@ -269,11 +275,40 @@ export function AdminLiveEvents() {
       router.refresh();
     };
 
-    source.addEventListener(ADMIN_EVENT_NAME, onEvent);
-    // EventSource reconnects automatically on error — nothing to do.
-    return () => {
+    const open = () => {
+      if (source) return;
+      const cursor = lastEventIdRef.current;
+      source = new EventSource(
+        cursor
+          ? `/api/admin/events?lastEventId=${encodeURIComponent(cursor)}`
+          : "/api/admin/events",
+      );
+      source.addEventListener(ADMIN_EVENT_NAME, onEvent);
+      // EventSource reconnects automatically on error — nothing to do.
+    };
+
+    const close = () => {
+      if (!source) return;
       source.removeEventListener(ADMIN_EVENT_NAME, onEvent);
       source.close();
+      source = null;
+    };
+
+    // A backgrounded admin tab used to hold a serverless function open all
+    // day, reconnecting every 60s and pinning a Mongo connection each time,
+    // while nobody was looking at it. Now the stream lives only while the tab
+    // is on screen and resumes from its cursor on return — no missed events.
+    const onVisibility = () => {
+      if (document.hidden) close();
+      else open();
+    };
+
+    if (!document.hidden) open();
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      close();
     };
   }, [router]);
 
