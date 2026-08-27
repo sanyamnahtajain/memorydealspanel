@@ -13,6 +13,10 @@ themselves carry the deep detail; this file is the map.
 
 | Commit | What it is |
 |---|---|
+| `c86369d` | **Cart billing notice** (admin-edited, audited; owner's GST-bill copy under the cart summary) + **Order.fulfilledAt** ("Completed <date>" on the admin order page, stamped once on the FULFILLED transition) + **orders dashboard** (orders/day, ₹/day, top products by units, status pipeline — cancelled excluded). E2E at the action + SSR layers. |
+| `7af9bfa` | **/api/me/context**: four per-viewer endpoints (access-status, last-order, buy-again, price-labels) collapsed into ONE sliced request — home 6→2 invocations, every page 3→2; old routes deleted. Price gate byte-identical. |
+| `c7a48e6` | **Cost**: /api/slaby-branding CDN-cached (was a function per page view); admin SSE router.refresh coalesced per burst. |
+| `28029c6` | **Nightly DB snapshot cron** to a private R2 bucket (M0 has no backups; 7-day rotation, fails loud) + admin order page opens fast (deferred audit via after(), loading skeleton) + risk-register fixes: PageView/trendingPinnedAt indexes, recommender 12-month window, SSE visibility-gating with cursor resume, timing-safe cron auth, export/PDF maxDuration. |
 | `67b64f4` | **Category-level pack default**: "Packs of (pcs per model)" number on the category's per-model toggle — one number gives the whole tempered shelf 10/20/30 stepping; a product's own pack (e.g. 5) always overrides (effectivePerModelPack). QA'd through both roles end-to-end. |
 | `db4576c` | **Typed-models QA + mobile containment**: full-flow QA caught a layout class — fr grid tracks without a 0 floor let one long name blow pages out sideways. Floored every user-text grid (PDP, order views, cart, footer), overflow-wrap:anywhere on name text, PDF split sub-rows now wrap. Owner styling: names never truncate, no "custom" badge, +pack button removed. |
 | `d1915eb` | **Type any model**: the per-model picker is a true auto-suggest — unmatched text gets an Add "…" row; typed lines ride every pack/min rule, merge case-insensitively, survive to order snapshots and WhatsApp untouched; paste mode accepts unknown names. |
@@ -97,9 +101,13 @@ Everything above is committed. Remaining, small and unblocked:
 
 ### Deploy notes for whatever ships next
 
-- `npx prisma db push` needed once (ContactMessage model + Order.tracking —
-  additive; the earlier DeviceModel dedupe must be done first if still
-  pending).
+- `npx prisma db push` needed once — additive: ContactMessage, Order.tracking,
+  Product.trendingPinnedAt, the PageView/trendingPinnedAt indexes,
+  Order.fulfilledAt, StoreSettings.cartNotice. (DeviceModel dedupe first if
+  still pending.)
+- New env var: `R2_BACKUP_BUCKET` → a PRIVATE R2 bucket (the backup cron
+  refuses the public images bucket). Cron registers from vercel.json.
+- After deploy: type the GST-bill notice once in Settings → Ordering.
 - The service worker is at v5; devices refresh on next visit.
 - `NEXT_PUBLIC_VAPID_PUBLIC_KEY` must be present at **build** time for push
   to work at all.
