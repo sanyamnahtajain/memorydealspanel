@@ -275,6 +275,100 @@ export async function catalogGrowth(days = 30): Promise<TimeBucket[]> {
 }
 
 /* ------------------------------------------------------------------ */
+/* Orders — the daily trade story (owner ask: "better analytics")      */
+/* ------------------------------------------------------------------ */
+
+export interface OrderBucket extends TimeBucket {
+  /** Sum of order subtotals that day, integer paise. CANCELLED excluded. */
+  valuePaise: number;
+}
+
+/**
+ * Orders per day + order value per day, last N days. CANCELLED orders are
+ * excluded from BOTH series — a walked-back basket is neither demand nor
+ * money. Value is the order subtotal (what the admin quotes), not net of
+ * later discounts, so the chart matches the queue's numbers.
+ */
+export async function ordersOverTime(days = 30): Promise<OrderBucket[]> {
+  const viewer = await resolveViewer();
+  assertAdmin(viewer);
+
+  const now = new Date();
+  const since = new Date(now.getTime() - days * DAY_MS);
+  const rows = await prisma.order.findMany({
+    where: { status: { not: "CANCELLED" }, placedAt: { gte: since } },
+    select: { placedAt: true, subtotalPaise: true },
+  });
+
+  // Same day-bucketing as every other chart (emptyDailyBuckets), widened
+  // with the money column.
+  const base = emptyDailyBuckets(days, now);
+  const buckets = new Map<number, OrderBucket>();
+  for (const [key, bucket] of base) {
+    buckets.set(key, { ...bucket, valuePaise: 0 });
+  }
+  for (const row of rows) {
+    const bucket = buckets.get(dayKey(row.placedAt));
+    if (bucket) {
+      bucket.count += 1;
+      bucket.valuePaise += row.subtotalPaise;
+    }
+  }
+  return [...buckets.values()];
+}
+
+/** Open-vs-done pipeline: order counts per status (whole history). */
+export async function orderStatusBreakdown(): Promise<StatusSlice[]> {
+  const viewer = await resolveViewer();
+  assertAdmin(viewer);
+
+  const grouped = await prisma.order.groupBy({
+    by: ["status"],
+    _count: { _all: true },
+  });
+  return grouped.map((g) => ({ status: g.status, count: g._count._all }));
+}
+
+/**
+ * Top products by UNITS ORDERED in the window (not views — money follows
+ * units). Read from the frozen order-item snapshots so renamed or deleted
+ * products still report under the name the order was placed with. CANCELLED
+ * orders excluded.
+ */
+export async function topOrderedProducts(
+  k = 8,
+  days = 30,
+): Promise<NamedCount[]> {
+  const viewer = await resolveViewer();
+  assertAdmin(viewer);
+
+  const since = new Date(Date.now() - days * DAY_MS);
+  const rows = await prisma.order.findMany({
+    where: { status: { not: "CANCELLED" }, placedAt: { gte: since } },
+    select: { items: true },
+  });
+
+  const units = new Map<string, number>();
+  for (const row of rows) {
+    if (!Array.isArray(row.items)) continue;
+    for (const item of row.items) {
+      const line = item as { name?: unknown; quantity?: unknown } | null;
+      if (typeof line?.name !== "string" || typeof line?.quantity !== "number") {
+        continue;
+      }
+      units.set(line.name, (units.get(line.name) ?? 0) + line.quantity);
+    }
+  }
+
+  return [...units.entries()]
+    // The frozen snapshot NAME is the identity here (see the doc comment) —
+    // it doubles as the id, which only keys the chart rows.
+    .map(([name, count]) => ({ id: name, name, count, hint: `${count} pcs` }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, k);
+}
+
+/* ------------------------------------------------------------------ */
 /* Bundled loader — one call for the dashboard charts section          */
 /* ------------------------------------------------------------------ */
 
@@ -285,6 +379,9 @@ export interface DashboardCharts {
   mostViewed: NamedCount[];
   expiring: ExpiryBuckets;
   catalog: TimeBucket[];
+  orders: OrderBucket[];
+  orderStatuses: StatusSlice[];
+  topOrdered: NamedCount[];
 }
 
 /**
@@ -296,15 +393,37 @@ export async function getDashboardCharts(): Promise<DashboardCharts> {
   const viewer = await resolveViewer();
   assertAdmin(viewer);
 
-  const [accessRequests, decisions, customers, mostViewed, expiring, catalog] =
-    await Promise.all([
-      accessRequestsOverTime(30),
-      approvalsVsRejections(30),
-      customersByStatus(),
-      mostViewedProducts(8, 30),
-      accessesExpiringSoon(),
-      catalogGrowth(30),
-    ]);
+  const [
+    accessRequests,
+    decisions,
+    customers,
+    mostViewed,
+    expiring,
+    catalog,
+    orders,
+    orderStatuses,
+    topOrdered,
+  ] = await Promise.all([
+    accessRequestsOverTime(30),
+    approvalsVsRejections(30),
+    customersByStatus(),
+    mostViewedProducts(8, 30),
+    accessesExpiringSoon(),
+    catalogGrowth(30),
+    ordersOverTime(30),
+    orderStatusBreakdown(),
+    topOrderedProducts(8, 30),
+  ]);
 
-  return { accessRequests, decisions, customers, mostViewed, expiring, catalog };
+  return {
+    accessRequests,
+    decisions,
+    customers,
+    mostViewed,
+    expiring,
+    catalog,
+    orders,
+    orderStatuses,
+    topOrdered,
+  };
 }

@@ -9,6 +9,8 @@ import { assertAdmin, isForbiddenError } from "@/server/dal/guard";
 import { assertPermission } from "@/server/auth/require-permission";
 import { writeAudit } from "@/server/security/audit";
 import {
+  updateCartNotice,
+  InvalidCartNoticeError,
   InvalidMinOrderValueError,
   updateMinOrderValue,
   updateSlabyBranding,
@@ -87,6 +89,62 @@ export async function saveStoreSettingsAction(
       return { ok: false, error: error.message };
     }
     console.error("[actions/store-settings] unexpected error:", error);
+    return { ok: false, error: "Something went wrong. Please try again." };
+  }
+}
+
+const cartNoticeSchema = z.object({
+  // Plain text; the service trims and treats empty as "clear".
+  cartNotice: z.string().max(2000).nullable(),
+});
+
+/**
+ * Save the cart notice (the owner's free-text copy under the cart's order
+ * summary — e.g. which brands are billed WITH GST). Same guard pipeline as
+ * every settings action above.
+ */
+export async function saveCartNoticeAction(
+  input: unknown,
+): Promise<StoreSettingsResult> {
+  try {
+    const viewer = await resolveViewer();
+    assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.SETTINGS_MANAGE);
+
+    const parsed = cartNoticeSchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        error: parsed.error.issues[0]?.message ?? "Invalid input.",
+      };
+    }
+
+    const settings = await updateCartNotice(parsed.data.cartNotice);
+
+    await writeAudit({
+      actorType: "admin",
+      actorId: viewer.adminId,
+      action: "store_settings.cart_notice",
+      entity: "StoreSettings",
+      entityId: settings.id,
+      diff: { cartNotice: settings.cartNotice },
+    });
+
+    revalidatePath(SETTINGS_PATH);
+    // The cart renders the notice server-side — refresh it.
+    revalidatePath("/account/cart");
+    return { ok: true };
+  } catch (error) {
+    if (isForbiddenError(error)) {
+      return {
+        ok: false,
+        error: "You don't have permission to manage store settings.",
+      };
+    }
+    if (error instanceof InvalidCartNoticeError) {
+      return { ok: false, error: error.message };
+    }
+    console.error("[actions/store-settings] cart notice error:", error);
     return { ok: false, error: "Something went wrong. Please try again." };
   }
 }

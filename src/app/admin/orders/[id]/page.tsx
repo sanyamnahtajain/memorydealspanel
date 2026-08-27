@@ -76,6 +76,7 @@ export default async function AdminOrderDetailPage({
     tracking: detail.tracking,
     placedAt: detail.placedAt.toISOString(),
     updatedAt: detail.updatedAt.toISOString(),
+    fulfilledAt: detail.fulfilledAt ? detail.fulfilledAt.toISOString() : null,
     customer: detail.customer
       ? {
           id: detail.customer.id,

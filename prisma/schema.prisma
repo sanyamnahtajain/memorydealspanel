@@ -547,6 +547,10 @@ model Order {
   customerId    String      @db.ObjectId
   customer      Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
   status        OrderStatus @default(PLACED)
+  // Set ONCE when the order transitions to FULFILLED (the "completed"
+  // moment shown to admins). updatedAt can't serve this — it moves on any
+  // later edit (tracking, notes), which would silently rewrite history.
+  fulfilledAt   DateTime?
   items         Json
   subtotalPaise Int
   itemCount     Int
@@ -645,6 +649,9 @@ model StoreSettings {
   // Entry gate (shop code required before requesting access) —
   // src/lib/entry-gate.ts; absent => OFF.
   entryGate          Json?
+  // Free-text notice under the cart's order summary (owner-editable copy,
+  // e.g. which brands are billed with GST). null/empty => nothing shown.
+  cartNotice         String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

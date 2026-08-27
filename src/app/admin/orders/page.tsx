@@ -72,6 +72,7 @@ export default async function AdminOrdersPage({
     id: o.id,
     orderNumber: o.orderNumber,
     status: o.status,
+    fulfilledAt: o.fulfilledAt ? o.fulfilledAt.toISOString() : null,
     itemCount: o.itemCount,
     subtotalPaise: o.subtotalPaise,
     placedAt: o.placedAt.toISOString(),

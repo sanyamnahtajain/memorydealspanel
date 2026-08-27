@@ -22,6 +22,7 @@ import { PageHeader } from "@/components/common";
 import { SignOutButton } from "@/components/admin/SignOutButton";
 import { ExportMenu } from "@/components/admin/ExportMenu";
 import { PreferencesPanel } from "@/components/preferences/PreferencesPanel";
+import { CartNoticeForm } from "@/components/admin/settings/CartNoticeForm";
 import { StoreSettingsForm } from "@/components/admin/settings/StoreSettingsForm";
 import { DeliverySettingsForm } from "@/components/admin/settings/DeliverySettingsForm";
 import { parseDeliveryRules } from "@/lib/delivery";
@@ -79,6 +80,9 @@ export default async function AdminSettingsPage() {
           <StoreSettingsForm
             initialMinOrderValuePaise={storeSettings.minOrderValuePaise}
           />
+          <div className="mt-6 border-t border-border pt-6">
+            <CartNoticeForm initial={storeSettings.cartNotice} />
+          </div>
         </SettingsSection>
 
         {/* Delivery — the minimum-charge disclosure (owner request). */}

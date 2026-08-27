@@ -96,6 +96,18 @@ export function OrderDetailPanel({ order }: { order: OrderDetailDTO }) {
           <p className="text-sm text-muted-foreground">
             Placed {formatDateTime(order.placedAt)} · {order.itemCount}{" "}
             {order.itemCount === 1 ? "item" : "items"}
+            {/* The completed moment — stamped once on the transition into
+                FULFILLED, so later edits (tracking, notes) never move it.
+                Legacy orders fulfilled before the stamp existed show nothing
+                rather than a guessed date. */}
+            {order.fulfilledAt ? (
+              <>
+                {" · "}
+                <span className="font-medium text-foreground">
+                  Completed {formatDateTime(order.fulfilledAt)}
+                </span>
+              </>
+            ) : null}
           </p>
         </div>
         <div className="flex items-center gap-2">

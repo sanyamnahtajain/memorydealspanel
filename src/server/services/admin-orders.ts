@@ -233,6 +233,8 @@ export interface OrderListItem {
   subtotalPaise: number;
   placedAt: Date;
   updatedAt: Date;
+  /** When the order entered FULFILLED — the "completed" moment. */
+  fulfilledAt: Date | null;
   /** Present only on admin reads. */
   customer?: OrderCustomerSummary;
 }
@@ -326,6 +328,7 @@ const LIST_SELECT = {
   subtotalPaise: true,
   placedAt: true,
   updatedAt: true,
+  fulfilledAt: true,
 } satisfies Prisma.OrderSelect;
 
 const ADMIN_LIST_SELECT = {
@@ -356,6 +359,7 @@ function toAdminListItem(row: AdminListRow): OrderListItem {
     subtotalPaise: row.subtotalPaise,
     placedAt: row.placedAt,
     updatedAt: row.updatedAt,
+    fulfilledAt: row.fulfilledAt ?? null,
     customer: toCustomerSummary(row.customer),
   };
 }
@@ -523,7 +527,16 @@ export async function setOrderStatus(
   if (!canTransition(current.status, next)) {
     return { ok: false, reason: "illegal" };
   }
-  await prisma.order.update({ where: { id }, data: { status: next } });
+  await prisma.order.update({
+    where: { id },
+    data: {
+      status: next,
+      // The "completed" moment, stamped exactly once on the transition INTO
+      // FULFILLED. updatedAt can't serve this — it moves on any later edit
+      // (tracking, notes) and would silently rewrite history.
+      ...(next === "FULFILLED" ? { fulfilledAt: new Date() } : {}),
+    },
+  });
   return {
     ok: true,
     from: current.status,
@@ -736,6 +749,7 @@ export async function listCustomerOrders(
     id: row.id,
     orderNumber: row.orderNumber,
     status: row.status,
+    fulfilledAt: row.fulfilledAt ?? null,
     itemCount: row.itemCount,
     subtotalPaise: row.subtotalPaise,
     placedAt: row.placedAt,
@@ -779,6 +793,7 @@ export async function getCustomerOrderByNumber(
     id: row.id,
     orderNumber: row.orderNumber,
     status: row.status,
+    fulfilledAt: row.fulfilledAt ?? null,
     itemCount: row.itemCount,
     subtotalPaise: row.subtotalPaise,
     placedAt: row.placedAt,

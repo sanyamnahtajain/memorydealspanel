@@ -36,6 +36,7 @@ const SETTINGS_SELECT = {
   minOrderValuePaise: true,
   slabyBranding: true,
   deliveryRules: true,
+  cartNotice: true,
   updatedAt: true,
 } as const;
 
@@ -47,6 +48,8 @@ export interface StoreSettings {
   slabyBranding: unknown;
   /** Raw JSON — parse with `parseDeliveryRules` (defensive, off default). */
   deliveryRules: unknown;
+  /** Free-text cart notice (order-summary card); null/empty => hidden. */
+  cartNotice: string | null;
   updatedAt: Date;
 }
 
@@ -116,6 +119,50 @@ export async function updateMinOrderValue(
     where: { key: SETTINGS_KEY },
     create: { key: SETTINGS_KEY, minOrderValuePaise: value },
     update: { minOrderValuePaise: value },
+    select: SETTINGS_SELECT,
+  });
+}
+
+/** Longest cart notice we accept — plenty for a few sentences of copy. */
+export const MAX_CART_NOTICE_CHARS = 500;
+
+/**
+ * The cart notice: free-text copy the owner shows under the cart's order
+ * summary (e.g. which brands are billed WITH GST and how to ask for a GST
+ * bill). Trimmed; null/empty means the cart shows nothing. Direct read so an
+ * admin edit reflects on the next cart view.
+ */
+export async function getCartNotice(): Promise<string | null> {
+  const row = await prisma.storeSettings.findUnique({
+    where: { key: SETTINGS_KEY },
+    select: { cartNotice: true },
+  });
+  const text = row?.cartNotice?.trim();
+  return text ? text : null;
+}
+
+export class InvalidCartNoticeError extends Error {
+  constructor() {
+    super(
+      `Cart notice must be at most ${MAX_CART_NOTICE_CHARS} characters.`,
+    );
+    this.name = "InvalidCartNoticeError";
+  }
+}
+
+/** Update the cart notice. Empty/whitespace clears it (the cart hides it). */
+export async function updateCartNotice(
+  cartNotice: string | null,
+): Promise<StoreSettings> {
+  const trimmed = cartNotice?.trim() ?? "";
+  if (trimmed.length > MAX_CART_NOTICE_CHARS) {
+    throw new InvalidCartNoticeError();
+  }
+  const value = trimmed === "" ? null : trimmed;
+  return prisma.storeSettings.upsert({
+    where: { key: SETTINGS_KEY },
+    create: { key: SETTINGS_KEY, cartNotice: value },
+    update: { cartNotice: value },
     select: SETTINGS_SELECT,
   });
 }

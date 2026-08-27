@@ -148,6 +148,8 @@ export interface CartLineData {
 export interface CartViewProps {
   /** Delivery minimum-charge disclosure (owner request) — shown to ALL. */
   deliveryDisclosure?: DeliveryDisclosure | null;
+  /** Owner's free-text billing notice under the summary (null = hidden). */
+  cartNotice?: string | null;
   /**
    * The delivery charge ADDED to the cart total, in paise (0 when delivery is
    * off). A store-wide charge rather than a catalog price, so it is shown to
@@ -197,6 +199,7 @@ export function CartView({
   initialSubtotalPaise,
   minOrderValuePaise = null,
   deliveryDisclosure = null,
+  cartNotice = null,
   deliveryChargePaise = 0,
   priced,
   canOrder,
@@ -581,6 +584,7 @@ export function CartView({
             priced={priced}
             subtotalPaise={subtotalPaise ?? initialSubtotalPaise}
             deliveryDisclosure={deliveryDisclosure}
+            cartNotice={cartNotice}
             deliveryChargePaise={deliveryChargePaise}
             itemCount={itemCount}
             note={note}
@@ -608,6 +612,7 @@ export function CartView({
             priced={priced}
             subtotalPaise={subtotalPaise ?? initialSubtotalPaise}
             deliveryDisclosure={deliveryDisclosure}
+            cartNotice={cartNotice}
             deliveryChargePaise={deliveryChargePaise}
             itemCount={itemCount}
             note={note}
@@ -680,6 +685,8 @@ export function CartView({
 interface SummaryProps {
   priced: boolean;
   deliveryDisclosure?: DeliveryDisclosure | null;
+  /** Owner's free-text billing notice under the summary (null = hidden). */
+  cartNotice?: string | null;
   /** Delivery charge added to the grand total (paise); 0 when off. */
   deliveryChargePaise?: number;
   subtotalPaise: number | null;
@@ -721,6 +728,7 @@ function Summary({
   movShortfallPaise = null,
   minOrderValuePaise = null,
   deliveryDisclosure = null,
+  cartNotice = null,
   deliveryChargePaise = 0,
   itemCount,
   note,
@@ -850,6 +858,16 @@ function Summary({
           </dd>
         </div>
       </dl>
+
+      {/* Owner's billing notice (admin-editable, Settings → Ordering): e.g.
+          which brands are billed WITH GST and how to ask for a GST bill.
+          Plain text, whitespace-preserving; renders for EVERY viewer since it
+          carries no amounts. */}
+      {cartNotice ? (
+        <p className="rounded-lg bg-muted/60 px-3 py-2 text-[0.75rem] leading-relaxed whitespace-pre-line [overflow-wrap:anywhere] text-muted-foreground">
+          {cartNotice}
+        </p>
+      ) : null}
 
       {/* ONE minimum-order-value line (the mobile sticky bar carries its own).
           The server re-checks the minimum at placement — this only explains

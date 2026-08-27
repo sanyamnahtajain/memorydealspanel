@@ -38,6 +38,9 @@ import { isForbiddenError } from "@/server/dal/guard";
 import {
   accessRequestsOverTime,
   customersByStatus,
+  ordersOverTime,
+  orderStatusBreakdown,
+  topOrderedProducts,
 } from "./dashboard-metrics";
 
 /** Track ids we create so each test leaves the seed untouched. */
@@ -123,6 +126,97 @@ describe("customersByStatus", () => {
     ]);
     for (const slice of slices) {
       expect(slice.count).toBeGreaterThanOrEqual(0);
+    }
+  });
+});
+
+describe("order metrics", () => {
+  const createdOrderIds: string[] = [];
+
+  afterEach(async () => {
+    if (createdOrderIds.length > 0) {
+      await prisma.order.deleteMany({ where: { id: { in: createdOrderIds } } });
+      createdOrderIds.length = 0;
+    }
+  });
+
+  async function seedOrder(data: {
+    status: "PLACED" | "FULFILLED" | "CANCELLED";
+    subtotalPaise: number;
+    items?: unknown;
+  }) {
+    const customer = await prisma.customer.findFirst({ select: { id: true } });
+    const order = await prisma.order.create({
+      data: {
+        orderNumber: `QA-METRIC-${createdOrderIds.length}-${Date.now()}`,
+        customerId: customer!.id,
+        status: data.status,
+        itemCount: 1,
+        subtotalPaise: data.subtotalPaise,
+        items: data.items ?? [
+          { productId: "x", name: "Metric Widget", quantity: 5 },
+        ],
+        placedAt: new Date(),
+      },
+    });
+    createdOrderIds.push(order.id);
+    return order;
+  }
+
+  it("buckets today's orders and their value; CANCELLED is excluded from both", async () => {
+    const before = await ordersOverTime(30);
+    const todayBefore = before[before.length - 1];
+
+    await seedOrder({ status: "PLACED", subtotalPaise: 10_000 });
+    await seedOrder({ status: "CANCELLED", subtotalPaise: 99_999 });
+
+    const after = await ordersOverTime(30);
+    const today = after[after.length - 1];
+    expect(after).toHaveLength(30);
+    expect(today.count).toBe(todayBefore.count + 1);
+    expect(today.valuePaise).toBe(todayBefore.valuePaise + 10_000);
+  });
+
+  it("breaks orders down by status", async () => {
+    const before = await orderStatusBreakdown();
+    const placedBefore =
+      before.find((s) => s.status === "PLACED")?.count ?? 0;
+    await seedOrder({ status: "PLACED", subtotalPaise: 5_000 });
+    const after = await orderStatusBreakdown();
+    expect(after.find((s) => s.status === "PLACED")?.count).toBe(
+      placedBefore + 1,
+    );
+  });
+
+  it("ranks products by units from frozen snapshots and skips malformed lines", async () => {
+    await seedOrder({
+      status: "PLACED",
+      subtotalPaise: 1_000,
+      items: [
+        { productId: "a", name: "Units Champ", quantity: 40 },
+        { productId: "b", name: "Runner Up", quantity: 15 },
+        { productId: "c", quantity: 99 }, // no name — must be skipped
+        { productId: "d", name: "Bad Qty", quantity: "lots" }, // must be skipped
+      ],
+    });
+    const top = await topOrderedProducts(8, 30);
+    const champ = top.find((p) => p.name === "Units Champ");
+    const runner = top.find((p) => p.name === "Runner Up");
+    expect(champ).toBeDefined();
+    expect(champ!.count).toBeGreaterThanOrEqual(40);
+    expect(runner).toBeDefined();
+    expect(top.some((p) => p.name === "Bad Qty")).toBe(false);
+    expect(top.indexOf(champ!)).toBeLessThan(top.indexOf(runner!));
+  });
+
+  it("rejects non-admin viewers on every order metric", async () => {
+    viewerMock.current = ANON_VIEWER;
+    for (const call of [
+      () => ordersOverTime(30),
+      () => orderStatusBreakdown(),
+      () => topOrderedProducts(),
+    ]) {
+      await expect(call()).rejects.toSatisfy(isForbiddenError);
     }
   });
 });

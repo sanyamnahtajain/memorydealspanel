@@ -79,6 +79,8 @@ export interface OrderRowDTO {
   subtotalPaise: number;
   placedAt: string;
   updatedAt: string;
+  /** ISO timestamp of the transition into FULFILLED; null until then. */
+  fulfilledAt: string | null;
   customer: OrderCustomerDTO | null;
 }
 
@@ -173,6 +175,7 @@ function toRowDTO(item: OrderListItem): OrderRowDTO {
     subtotalPaise: item.subtotalPaise,
     placedAt: item.placedAt.toISOString(),
     updatedAt: item.updatedAt.toISOString(),
+    fulfilledAt: item.fulfilledAt ? item.fulfilledAt.toISOString() : null,
     customer: item.customer
       ? {
           id: item.customer.id,

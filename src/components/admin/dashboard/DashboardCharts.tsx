@@ -13,6 +13,7 @@ import type {
   DashboardCharts as DashboardChartsData,
   DualTimeBucket,
   NamedCount,
+  OrderBucket,
   StatusSlice,
   TimeBucket,
 } from "@/server/services/dashboard-metrics";
@@ -24,6 +25,22 @@ const CUSTOMER_STATUS_TONE: Record<string, DonutSlice["tone"]> = {
   REJECTED: "destructive",
   EXPIRED: "muted",
   BLOCKED: "primary",
+};
+
+const ORDER_STATUS_TONE: Record<string, DonutSlice["tone"]> = {
+  PLACED: "warning",
+  CONFIRMED: "primary",
+  PROCESSING: "primary",
+  FULFILLED: "success",
+  CANCELLED: "muted",
+};
+
+const ORDER_STATUS_TITLE: Record<string, string> = {
+  PLACED: "Placed",
+  CONFIRMED: "Confirmed",
+  PROCESSING: "Processing",
+  FULFILLED: "Completed",
+  CANCELLED: "Cancelled",
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -45,6 +62,42 @@ function hasCounts(buckets: { count: number }[]): boolean {
  * self-handles its empty state.
  */
 export function DashboardCharts({ data }: { data: DashboardChartsData }) {
+  const orderSeries: ChartSeries[] = [
+    {
+      name: "Orders",
+      tone: "primary",
+      points: data.orders.map(toPoint),
+    },
+  ];
+
+  // Charted in whole rupees — the axis reads ₹-scale numbers, and the exact
+  // paise never mattered at chart resolution.
+  const orderValueSeries: ChartSeries[] = [
+    {
+      name: "Order value",
+      tone: "success",
+      points: data.orders.map((b: OrderBucket) => ({
+        label: b.label,
+        value: Math.round(b.valuePaise / 100),
+      })),
+    },
+  ];
+
+  const orderStatusSlices: DonutSlice[] = data.orderStatuses
+    .filter((s: StatusSlice) => s.count > 0)
+    .map((s: StatusSlice) => ({
+      label: ORDER_STATUS_TITLE[s.status] ?? s.status,
+      value: s.count,
+      tone: ORDER_STATUS_TONE[s.status],
+    }));
+
+  const topOrderedBars: BarDatum[] = data.topOrdered.map((p: NamedCount) => ({
+    label: p.name,
+    value: p.count,
+    hint: p.hint,
+    tone: "success",
+  }));
+
   const requestSeries: ChartSeries[] = [
     {
       name: "Access requests",
@@ -111,6 +164,62 @@ export function DashboardCharts({ data }: { data: DashboardChartsData }) {
         className="grid grid-cols-1 gap-4 lg:grid-cols-2"
         itemClassName="min-w-0"
       >
+        <ChartCard
+          title="Orders"
+          subtitle="Orders placed per day, last 30 days (cancelled excluded)"
+          empty={!hasCounts(data.orders)}
+          emptyTitle="No orders yet"
+          emptyDescription="Daily order volume will chart here."
+        >
+          <LineChart
+            series={orderSeries}
+            area
+            ariaLabel="Orders placed per day over the last 30 days"
+          />
+        </ChartCard>
+
+        <ChartCard
+          title="Order value"
+          subtitle="₹ ordered per day, last 30 days (cancelled excluded)"
+          empty={!data.orders.some((b) => b.valuePaise > 0)}
+          emptyTitle="No order value yet"
+          emptyDescription="Daily ordered value will chart here."
+        >
+          <LineChart
+            series={orderValueSeries}
+            area
+            ariaLabel="Rupee value of orders placed per day over the last 30 days"
+          />
+        </ChartCard>
+
+        <ChartCard
+          title="Top ordered products"
+          subtitle="Top 8 by units ordered, last 30 days"
+          empty={topOrderedBars.length === 0}
+          emptyTitle="No units ordered yet"
+          emptyDescription="Products will rank here by units ordered."
+        >
+          <BarChart
+            data={topOrderedBars}
+            orientation="horizontal"
+            ariaLabel="Top products by units ordered over the last 30 days"
+          />
+        </ChartCard>
+
+        <ChartCard
+          title="Order pipeline"
+          subtitle="All orders by current status"
+          empty={orderStatusSlices.length === 0}
+          emptyTitle="No orders yet"
+          emptyDescription="The order status distribution will chart here."
+        >
+          <DonutChart
+            data={orderStatusSlices}
+            ariaLabel="Order count by status"
+            centerCaption="orders"
+          />
+        </ChartCard>
+
         <ChartCard
           title="Access requests"
           subtitle="New requests per day, last 30 days"
