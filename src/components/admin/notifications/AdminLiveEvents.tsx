@@ -243,6 +243,8 @@ export function AdminLiveEvents() {
   // EventSource does NOT send the browser's automatic Last-Event-ID header,
   // so without this a hidden tab would miss whatever arrived while it slept.
   const lastEventIdRef = React.useRef<string | null>(null);
+  /** Pending coalesced router.refresh() — see the call site for why. */
+  const refreshTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   React.useEffect(() => {
     installAudioUnlockListeners();
@@ -271,8 +273,16 @@ export function AdminLiveEvents() {
           action: { label: meta.actionLabel, onClick: () => router.push(meta.href) },
         });
       }
-      // Refresh server components so badges + queues update live.
-      router.refresh();
+      // Refresh server components so badges + queues update live — but ONCE
+      // per burst. Every refresh re-renders the whole admin page on the
+      // server (every admin route is force-dynamic), so a busy minute used to
+      // bill one full render per event. Coalescing costs at most 400ms of
+      // freshness and cuts a burst of ten events to a single render.
+      if (refreshTimer.current) clearTimeout(refreshTimer.current);
+      refreshTimer.current = setTimeout(() => {
+        refreshTimer.current = null;
+        router.refresh();
+      }, 400);
     };
 
     const open = () => {
@@ -308,6 +318,7 @@ export function AdminLiveEvents() {
 
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
+      if (refreshTimer.current) clearTimeout(refreshTimer.current);
       close();
     };
   }, [router]);
