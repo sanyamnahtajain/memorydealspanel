@@ -22,71 +22,27 @@
 
 import * as React from "react";
 
-type Labels = Record<string, string>;
+import {
+  getViewerContext,
+  needPriceLabel,
+  subscribe,
+} from "@/components/storefront/viewer-context-client";
 
-interface RevealContextValue {
-  register: (productId: string) => void;
-  labels: Labels;
-}
-
-const RevealContext = React.createContext<RevealContextValue | null>(null);
-
-function parseLabels(data: unknown): Labels {
-  const labels = (data as { labels?: unknown } | null)?.labels;
-  if (labels === null || typeof labels !== "object" || Array.isArray(labels)) {
-    return {};
-  }
-  const out: Labels = {};
-  for (const [id, label] of Object.entries(labels as Record<string, unknown>)) {
-    if (typeof label === "string") out[id] = label;
-  }
-  return out;
-}
-
+/**
+ * Kept as a component so the page's structure is unchanged, but it no longer
+ * owns a fetch or a context: each LivePriceSlot registers its own product id
+ * with the shared per-viewer request, which batches every id on the page into
+ * ONE call alongside the other slices. See viewer-context-client.
+ */
 export function HomePriceReveal({ children }: { children: React.ReactNode }) {
-  const [labels, setLabels] = React.useState<Labels>({});
-  // Leaves register during their mount effects — one commit, so React batches
-  // every registration into a single state update and ONE fetch effect run.
-  const [ids, setIds] = React.useState<readonly string[]>([]);
-  const fetchedKey = React.useRef("");
-
-  const register = React.useCallback((productId: string) => {
-    setIds((prev) =>
-      prev.includes(productId) ? prev : [...prev, productId],
-    );
-  }, []);
-
-  const idsKey = ids.join(",");
-  React.useEffect(() => {
-    if (idsKey === "" || idsKey === fetchedKey.current) return;
-    fetchedKey.current = idsKey;
-    const controller = new AbortController();
-    fetch(`/api/price-labels?ids=${idsKey}`, {
-      signal: controller.signal,
-      credentials: "same-origin",
-    })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        const parsed = parseLabels(data);
-        if (Object.keys(parsed).length > 0) setLabels(parsed);
-      })
-      .catch(() => {
-        // Pills stay locked — a broken reveal must never break the home page.
-      });
-    return () => controller.abort();
-  }, [idsKey]);
-
-  const value = React.useMemo(() => ({ register, labels }), [register, labels]);
-  return (
-    <RevealContext.Provider value={value}>{children}</RevealContext.Provider>
-  );
+  return <>{children}</>;
 }
 
 /**
  * Wraps one card's server-rendered anon price slot. Until (unless) a label
  * arrives for this product, it renders the children untouched — zero visual
  * difference from the pure server shell. With a label it renders the priced
- * pill (PricePill's default-variant look; the label is already formatted).
+ * pill (the label is already formatted; no raw money reaches this file).
  */
 export function LivePriceSlot({
   productId,
@@ -95,14 +51,18 @@ export function LivePriceSlot({
   productId: string;
   children: React.ReactNode;
 }) {
-  const ctx = React.useContext(RevealContext);
-  const register = ctx?.register;
+  const [label, setLabel] = React.useState<string | undefined>(
+    () => getViewerContext().priceLabels[productId],
+  );
 
   React.useEffect(() => {
-    register?.(productId);
-  }, [register, productId]);
+    const update = () => setLabel(getViewerContext().priceLabels[productId]);
+    const unsubscribe = subscribe(update);
+    needPriceLabel(productId);
+    update();
+    return unsubscribe;
+  }, [productId]);
 
-  const label = ctx?.labels[productId];
   if (!label) return <>{children}</>;
 
   return (

@@ -29,38 +29,13 @@ export interface AccessStatusSnapshot extends AccessSnapshot {
   orderCount?: number;
 }
 
-let cached: AccessStatusSnapshot | null = null;
-let inflight: Promise<AccessStatusSnapshot | null> | null = null;
-
-/** Mounted consumers, notified whenever the cached snapshot changes. */
-const listeners = new Set<() => void>();
-
-function notify(): void {
-  for (const listener of listeners) listener();
-}
-
-function load(): Promise<AccessStatusSnapshot | null> {
-  if (cached) return Promise.resolve(cached);
-  if (!inflight) {
-    inflight = fetch("/api/access-status")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((json: { snapshot?: AccessStatusSnapshot } | null) => {
-        const snapshot = json?.snapshot;
-        if (!snapshot || typeof snapshot.signedIn !== "boolean") {
-          inflight = null; // allow a retry on the next mount
-          return null;
-        }
-        cached = snapshot;
-        notify();
-        return cached;
-      })
-      .catch(() => {
-        inflight = null; // allow a retry on the next mount
-        return null;
-      });
-  }
-  return inflight;
-}
+import {
+  getViewerContext,
+  needSlice,
+  refreshViewerContext,
+  subscribe,
+} from "@/components/storefront/viewer-context-client";
+import { CONTEXT_SLICES } from "@/lib/viewer-context";
 
 export interface UseAccessStatusReturn {
   /** `null` until the (shared) fetch resolves — render nothing meanwhile. */
@@ -69,24 +44,27 @@ export interface UseAccessStatusReturn {
   refresh: () => void;
 }
 
+/**
+ * NOTE: this no longer owns a fetch. It registers the `access` slice with the
+ * shared per-viewer request (viewer-context-client) which batches it together
+ * with whatever else the page needs into ONE network call. The return shape is
+ * unchanged, so every existing consumer works untouched.
+ */
 export function useAccessStatus(): UseAccessStatusReturn {
   const [snapshot, setSnapshot] = React.useState<AccessStatusSnapshot | null>(
-    cached,
+    () => getViewerContext().access,
   );
 
   React.useEffect(() => {
-    const update = () => setSnapshot(cached);
-    listeners.add(update);
-    void load().then(() => update());
-    return () => {
-      listeners.delete(update);
-    };
+    const update = () => setSnapshot(getViewerContext().access);
+    const unsubscribe = subscribe(update);
+    needSlice(CONTEXT_SLICES.access);
+    update();
+    return unsubscribe;
   }, []);
 
   const refresh = React.useCallback(() => {
-    cached = null;
-    inflight = null;
-    void load();
+    refreshViewerContext();
   }, []);
 
   return { snapshot, refresh };

@@ -20,6 +20,13 @@
  */
 
 import * as React from "react";
+
+import {
+  getViewerContext,
+  needSlice,
+  subscribe,
+} from "@/components/storefront/viewer-context-client";
+import { CONTEXT_SLICES } from "@/lib/viewer-context";
 import Link from "next/link";
 import Image from "next/image";
 import { ImageOff, Lock } from "lucide-react";
@@ -35,35 +42,21 @@ interface BuyAgainItem {
   priceLabel: string | null;
 }
 
-function parseItems(data: unknown): BuyAgainItem[] {
-  const items = (data as { items?: unknown } | null)?.items;
-  if (!Array.isArray(items)) return [];
-  return items.filter(
-    (item): item is BuyAgainItem =>
-      typeof (item as BuyAgainItem | null)?.id === "string" &&
-      typeof (item as BuyAgainItem).slug === "string" &&
-      typeof (item as BuyAgainItem).name === "string",
-  );
-}
 
 export function BuyAgainRail() {
   const [items, setItems] = React.useState<BuyAgainItem[]>([]);
 
   React.useEffect(() => {
-    const controller = new AbortController();
-    fetch("/api/buy-again", {
-      signal: controller.signal,
-      credentials: "same-origin",
-    })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        const parsed = parseItems(data);
-        if (parsed.length > 0) setItems(parsed);
-      })
-      .catch(() => {
-        // Render nothing — a broken rail must never break the home page.
-      });
-    return () => controller.abort();
+    // Registers with the SHARED per-viewer request rather than fetching its
+    // own endpoint — see viewer-context-client for why one call, not four.
+    const update = () => {
+      const items = getViewerContext().buyAgain;
+      if (items.length > 0) setItems(items);
+    };
+    const unsubscribe = subscribe(update);
+    needSlice(CONTEXT_SLICES.buyAgain);
+    update();
+    return unsubscribe;
   }, []);
 
   if (items.length === 0) return null;

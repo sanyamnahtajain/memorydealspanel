@@ -18,6 +18,13 @@
  */
 
 import * as React from "react";
+
+import {
+  getViewerContext,
+  needSlice,
+  subscribe,
+} from "@/components/storefront/viewer-context-client";
+import { CONTEXT_SLICES } from "@/lib/viewer-context";
 import Link from "next/link";
 import { ChevronRight, Package } from "lucide-react";
 
@@ -27,17 +34,6 @@ interface LastOrderGlance {
   placedAt: string;
 }
 
-function parseGlance(data: unknown): LastOrderGlance | null {
-  const order = (data as { order?: unknown } | null)?.order;
-  if (
-    typeof (order as LastOrderGlance | null)?.orderNumber === "string" &&
-    typeof (order as LastOrderGlance).statusLabel === "string" &&
-    typeof (order as LastOrderGlance).placedAt === "string"
-  ) {
-    return order as LastOrderGlance;
-  }
-  return null;
-}
 
 function formatDate(iso: string): string {
   const date = new Date(iso);
@@ -53,20 +49,13 @@ export function LastOrderCard() {
   const [order, setOrder] = React.useState<LastOrderGlance | null>(null);
 
   React.useEffect(() => {
-    const controller = new AbortController();
-    fetch("/api/last-order", {
-      signal: controller.signal,
-      credentials: "same-origin",
-    })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        const parsed = parseGlance(data);
-        if (parsed) setOrder(parsed);
-      })
-      .catch(() => {
-        // Render nothing — a broken glance must never break the home page.
-      });
-    return () => controller.abort();
+    // Registers with the SHARED per-viewer request rather than fetching its
+    // own endpoint — see viewer-context-client for why one call, not four.
+    const update = () => setOrder(getViewerContext().lastOrder);
+    const unsubscribe = subscribe(update);
+    needSlice(CONTEXT_SLICES.lastOrder);
+    update();
+    return unsubscribe;
   }, []);
 
   if (!order) return null;
