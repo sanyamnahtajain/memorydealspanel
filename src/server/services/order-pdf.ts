@@ -14,6 +14,8 @@ import {
 } from "@/lib/delivery";
 import { bucketBillNumber } from "@/lib/billing-groups/engine";
 import { GENERAL_GROUP_CODE, GENERAL_GROUP_NAME } from "@/lib/billing-groups/types";
+import { parseStoredTracking, trackingSummary } from "@/lib/tracking";
+import { ORDER_STATUS_LABEL } from "@/components/storefront/orders/order-status";
 
 /**
  * Order PDF (owner request) — a received order rendered in the shop's
@@ -127,6 +129,21 @@ export interface OrderPdfData {
   placedAt: Date;
   partyName: string;
   partyPhone: string | null;
+  /** Buyer's GSTIN — a bill without it is incomplete for a GST-registered shop. */
+  partyGstin?: string | null;
+  /** Buyer's city, for the delivery/party block. */
+  partyCity?: string | null;
+  /** Plain-English order status ("Confirmed", "Completed", …). */
+  statusLabel?: string | null;
+  /**
+   * The customer's note on the WHOLE order (Order.note) — distinct from the
+   * per-line requirement notes. It used never to reach this document at all,
+   * which is exactly what a buyer's "please pack X separately" instruction
+   * looks like when it silently disappears.
+   */
+  orderNote?: string | null;
+  /** Courier tracking, once saved, so a printed copy carries the dispatch. */
+  tracking?: { summary: string; url: string | null } | null;
   lines: OrderPdfLine[];
   totalQty: number;
   /** The chargeable total in paise (grand total when GST applied, else subtotal). */
@@ -379,6 +396,26 @@ export async function renderOrderPdf(
       if (data.partyPhone) {
         y -= 12;
         text(data.partyPhone, M + 2, 9, helv, MUTED);
+      }
+      if (data.partyCity) {
+        y -= 12;
+        text(data.partyCity, M + 2, 9, helv, MUTED);
+      }
+      if (data.partyGstin) {
+        y -= 12;
+        text(`GSTIN  :  ${data.partyGstin}`, M + 2, 9, helv, MUTED);
+      }
+      if (data.statusLabel) {
+        y -= 12;
+        text(
+          `Status    :  ${data.statusLabel}`,
+          M + W / 2,
+          9.5,
+          helv,
+          INK,
+          "left",
+          0,
+        );
       }
       if (group) {
         y -= 12;
@@ -660,6 +697,44 @@ export async function renderOrderPdf(
     orderTotalBlock(bills);
   }
 
+  // ---- Customer's note on the WHOLE order -------------------------------
+  // Printed under the totals, boxed and headed, so a "pack these separately"
+  // or "call before dispatch" instruction can't be missed. Per-line notes
+  // still print inline against their item above; this is the order-level one,
+  // which previously never reached the document at all.
+  if (data.orderNote) {
+    const noteLines = wrapToWidth(data.orderNote, helv, 9, W - 12);
+    // Heading + the wrapped body must not be split across a page break.
+    if (y < M + 40 + noteLines.length * 11) newPage();
+    y -= 6;
+    dotted(y);
+    y -= 15;
+    text("CUSTOMER NOTE", M + 2, 9.5, bold);
+    y -= 13;
+    for (const nl of noteLines) {
+      if (y < M + 24) newPage();
+      text(nl, M + 6, 9, helv, INK);
+      y -= 11;
+    }
+    y -= 4;
+  }
+
+  // ---- Courier tracking, once dispatched --------------------------------
+  if (data.tracking) {
+    if (y < M + 48) newPage();
+    y -= 4;
+    text(`Courier   :  ${data.tracking.summary}`, M + 2, 9, helv, INK);
+    y -= 12;
+    if (data.tracking.url) {
+      for (const nl of wrapToWidth(data.tracking.url, helv, 8, W - 8)) {
+        if (y < M + 24) newPage();
+        text(nl, M + 6, 8, helv, MUTED);
+        y -= 10;
+      }
+    }
+    y -= 4;
+  }
+
   // ---- Delivery terms (owner request) — under the totals ---------------
   // The frozen minimum delivery charge + the weight/size/PIN-code caveat, in
   // simple English. Two eras, both printed verbatim as the buyer saw them:
@@ -853,7 +928,19 @@ export async function buildOrderPdf(
 ): Promise<{ bytes: Uint8Array; orderNumber: string } | null> {
   const order = await prisma.order.findUnique({
     where: { id: orderId },
-    include: { customer: { select: { businessName: true, contactName: true, phone: true } } },
+    include: {
+      customer: {
+        select: {
+          businessName: true,
+          contactName: true,
+          phone: true,
+          // A bill for a GST-registered buyer needs their GSTIN; the city
+          // rides along for the party block.
+          gstNumber: true,
+          city: true,
+        },
+      },
+    },
   });
   if (!order) return null;
 
@@ -941,6 +1028,19 @@ export async function buildOrderPdf(
     placedAt: order.placedAt,
     partyName: order.customer.businessName || order.customer.contactName,
     partyPhone: order.customer.phone ?? null,
+    partyGstin: order.customer.gstNumber ?? null,
+    partyCity: order.customer.city ?? null,
+    statusLabel: ORDER_STATUS_LABEL[order.status] ?? order.status,
+    // The customer's own note on the order. `adminNote` is deliberately NOT
+    // printed: it is internal, and this PDF gets forwarded to buyers.
+    orderNote:
+      typeof order.note === "string" && order.note.trim() !== ""
+        ? order.note.trim()
+        : null,
+    tracking: (() => {
+      const t = parseStoredTracking(order.tracking);
+      return t ? { summary: trackingSummary(t), url: t.url } : null;
+    })(),
     lines,
     totalQty: items.reduce((s, it) => s + it.quantity, 0),
     grandTotalPaise: orderPayablePaise(order),

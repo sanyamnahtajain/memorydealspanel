@@ -120,6 +120,44 @@ describe("renderOrderPdf", () => {
     expect(text).toContain("Seven Hundred Fifty Only");
   });
 
+  it("prints the customer's ORDER-LEVEL note, the buyer's GSTIN, city and status", async () => {
+    // The regression this covers: Order.note never reached the document at
+    // all, so a buyer's instruction for the whole order silently vanished
+    // from the one printed artefact staff work from.
+    const bytes = await renderOrderPdf({
+      ...DATA,
+      partyGstin: "27AABCU9603R1ZX",
+      partyCity: "Mumbai",
+      statusLabel: "Confirmed",
+      orderNote: "Please pack the tempered separately and call before dispatch.",
+      tracking: { summary: "Delhivery · 88112233", url: "https://track.example/88112233" },
+    });
+    const text = pdfText(bytes);
+    expect(text).toContain("CUSTOMER NOTE");
+    expect(text).toContain("Please pack the tempered separately");
+    expect(text).toContain("27AABCU9603R1ZX");
+    expect(text).toContain("Mumbai");
+    expect(text).toContain("Confirmed");
+    expect(text).toContain("Delhivery");
+  });
+
+  it("omits the note block entirely when the order carries no note", async () => {
+    const bytes = await renderOrderPdf({ ...DATA, orderNote: null });
+    expect(pdfText(bytes)).not.toContain("CUSTOMER NOTE");
+  });
+
+  it("wraps a long order note instead of running it off the page", async () => {
+    const bytes = await renderOrderPdf({
+      ...DATA,
+      orderNote:
+        "Please deliver only between 10am and 6pm on weekdays, ask for Rahul at the counter, " +
+        "and keep the tempered glass boxes on top of the carton so they do not get crushed " +
+        "under the chargers during transit. Call the shop number before the vehicle leaves.",
+    });
+    expect(bytes.byteLength).toBeGreaterThan(500);
+    expect(String.fromCharCode(...bytes.slice(0, 4))).toBe("%PDF");
+  });
+
   it("wraps an 80-char custom model name in the split sub-rows instead of running off the page", async () => {
     // Custom (typed) models are free text up to 80 chars; the split sub-rows
     // must go through wrapToWidth like the name/note lines do.
