@@ -652,6 +652,9 @@ model StoreSettings {
   // Free-text notice under the cart's order summary (owner-editable copy,
   // e.g. which brands are billed with GST). null/empty => nothing shown.
   cartNotice         String?
+  // Maintenance mode (owner kill-switch) — src/lib/maintenance.ts; absent or
+  // malformed => OFF, so a bad row can never take the shop down.
+  maintenance        Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

@@ -11,6 +11,7 @@ import {
   Truck,
   Palette,
   ShoppingCart,
+  Wrench,
   UserCog,
 } from "lucide-react";
 
@@ -23,6 +24,8 @@ import { SignOutButton } from "@/components/admin/SignOutButton";
 import { ExportMenu } from "@/components/admin/ExportMenu";
 import { PreferencesPanel } from "@/components/preferences/PreferencesPanel";
 import { CartNoticeForm } from "@/components/admin/settings/CartNoticeForm";
+import { MaintenanceForm } from "@/components/admin/settings/MaintenanceForm";
+import { getMaintenance } from "@/server/services/maintenance";
 import { StoreSettingsForm } from "@/components/admin/settings/StoreSettingsForm";
 import { DeliverySettingsForm } from "@/components/admin/settings/DeliverySettingsForm";
 import { parseDeliveryRules } from "@/lib/delivery";
@@ -52,6 +55,7 @@ export default async function AdminSettingsPage() {
     }),
     getStoreSettings(),
   ]);
+  const maintenance = await getMaintenance();
 
   return (
     <AdminShell title="Settings">
@@ -72,6 +76,20 @@ export default async function AdminSettingsPage() {
         </SettingsSection>
 
         {/* Ordering — the configurable minimum order value. */}
+        {/* First on the page on purpose: it is the only switch here that is
+            visible to every customer the moment it lands. */}
+        <SettingsSection
+          icon={Wrench}
+          title="Maintenance"
+          description="Take the storefront offline while you work. This console stays available."
+        >
+          <MaintenanceForm
+            initialEnabled={maintenance.enabled}
+            initialMessage={maintenance.message ?? null}
+            initialUntil={maintenance.until ?? null}
+          />
+        </SettingsSection>
+
         <SettingsSection
           icon={ShoppingCart}
           title="Ordering"

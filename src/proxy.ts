@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { ENTRY_GATE_COOKIE, getEntryGateCached } from "@/server/auth/entry-gate";
+import { getMaintenanceCached } from "@/server/services/maintenance";
+import { retryAfterSeconds } from "@/lib/maintenance";
 import {
   buildContentSecurityPolicy,
   securityHeaders,
@@ -133,6 +135,57 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
       // Preserve where the admin was headed so the login flow could restore it.
       loginUrl.searchParams.set("next", pathname);
       return withSecurityHeaders(NextResponse.redirect(loginUrl), nonce);
+    }
+  }
+
+  // ── Maintenance mode: the STOREFRONT is down, the console is not ─────────
+  // (Owner request.) Checked BEFORE the entry gate: maintenance is the
+  // broader shutdown, so when both are on a visitor sees the maintenance
+  // screen rather than being asked for a shop code to reach it.
+  //
+  // The exempt list is a safety mechanism, not a convenience:
+  //  - /admin and the admin host — the toggle lives there. An outage you
+  //    cannot switch off is the one genuinely unrecoverable failure here,
+  //    so the console is never covered;
+  //  - /auth/* — an admin who is signed out must still be able to sign in;
+  //  - /api/* — routes self-authenticate, and the crons (backup, expiry,
+  //    notify) must keep running while the shop is dark;
+  //  - /maintenance itself — otherwise the rewrite loops;
+  //  - PWA plumbing, so an installed app still boots to the notice.
+  //
+  // Signed-in customers ARE covered: the shop is down for everyone. Only the
+  // admin console stays reachable, and it is reachable from any device.
+  //
+  // GET navigations only, matching the gate: POSTs are server actions and
+  // route handlers carrying their own checks.
+  const maintenanceExempt =
+    onAdminHost ||
+    isAdminArea ||
+    pathname === "/maintenance" ||
+    pathname.startsWith("/auth/") ||
+    pathname.startsWith("/api/") ||
+    pathname.startsWith("/manifest") ||
+    pathname === "/sw.js" ||
+    pathname === "/offline";
+
+  if (request.method === "GET" && !maintenanceExempt) {
+    try {
+      const maintenance = await getMaintenanceCached();
+      if (maintenance.enabled) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/maintenance";
+        url.search = "";
+        const response = NextResponse.rewrite(url, {
+          request: { headers: requestHeaders },
+        });
+        // Tell crawlers and PWAs when to come back, when a time was set.
+        const retry = retryAfterSeconds(maintenance.until ?? null);
+        if (retry !== null) response.headers.set("Retry-After", String(retry));
+        return withSecurityHeaders(response, nonce);
+      }
+    } catch (error) {
+      // Fail OPEN — an unreadable setting must never take the shop down.
+      console.error("[middleware] maintenance check failed:", error);
     }
   }
 
