@@ -429,6 +429,7 @@ export default async function ProductDetailPage({ params }: PageParams) {
             googleGateHref={googleGateHref}
             whatsappNumber={whatsappNumber}
             productName={product.name}
+            videos={product.videos}
             productImages={product.images}
             productId={product.id}
             moq={product.moq}
@@ -448,6 +449,7 @@ export default async function ProductDetailPage({ params }: PageParams) {
               <div className="relative md:sticky md:top-20">
                 <ProductGallery
                   images={product.images}
+                  videos={product.videos}
                   productName={product.name}
                   productId={product.id}
                 />
@@ -622,6 +624,8 @@ function toPublicShape(p: PublicProduct | PricedProduct): PublicProduct {
     status: p.status,
     tags: p.tags,
     images: p.images,
+    // Non-monetary, like the images beside it.
+    videos: p.videos,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
     // The related rail renders cards off the denormalized "from" price only —

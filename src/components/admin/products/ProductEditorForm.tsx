@@ -42,6 +42,8 @@ import {
 } from "./SpecEditor";
 import { TagEditor } from "./TagEditor";
 import { ProductImagesField } from "./ProductImagesField";
+import { ProductVideosField } from "./ProductVideosField";
+import { MAX_VIDEOS_PER_PRODUCT, MAX_VIDEO_MB } from "@/lib/video";
 import {
   AllocationField,
   type AllocationModelRef,
@@ -49,6 +51,7 @@ import {
 import type { Allocation } from "@/lib/allocation";
 import { VariantsSection } from "./variants";
 import { variantsActions as wiredVariantsActions } from "./variants/actions";
+import type { ProductVideo } from "@prisma/client";
 import type {
   EditorVariant,
   OptionType,
@@ -99,6 +102,11 @@ export type EditorProduct = Pick<
   taxTreatment?: TaxTreatment | null;
   /** Whether the product is pinned into the "Trending now" rail. */
   trendingPinned?: boolean;
+  /**
+   * Demo clips. Managed by ProductVideosField, which persists immediately —
+   * so unlike `images` these never ride the form's save payload.
+   */
+  videos?: ProductVideo[];
 };
 
 /**
@@ -543,6 +551,31 @@ export function ProductEditorForm({
                 Photos upload straight to storage, so the product needs to exist
                 first. Create it now — you&rsquo;ll land on the editor where you
                 can drop images or snap them with the camera.
+              </p>
+            </div>
+          )}
+        </Section>
+      </FadeUp>
+
+      <FadeUp delay={0.035}>
+        <Section
+          title="Videos"
+          description={`Up to ${MAX_VIDEOS_PER_PRODUCT} demo clips, ${MAX_VIDEO_MB}MB each. They appear after the photos on the product page.`}
+        >
+          {product?.id ? (
+            <ProductVideosField
+              productId={product.id}
+              initialVideos={product.videos ?? []}
+              disabled={pending}
+            />
+          ) : (
+            <div className="rounded-lg border border-dashed border-border bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">
+                Save the product to add videos
+              </p>
+              <p className="mt-1 text-xs">
+                Clips upload straight to storage, so the product needs to exist
+                first.
               </p>
             </div>
           )}

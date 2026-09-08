@@ -80,6 +80,14 @@ export function buildContentSecurityPolicy(
   const imgSrc = ["'self'", "data:", "blob:"];
   if (imgOrigin) imgSrc.push(imgOrigin);
 
+  // Product demo videos stream from the SAME public bucket as the images.
+  // Without an explicit `media-src`, <video> falls back to `default-src
+  // 'self'` and every clip is blocked with no visible error — the player just
+  // renders empty. `blob:` covers the local object URL used to preview a clip
+  // in the admin before it has finished uploading.
+  const mediaSrc = ["'self'", "blob:"];
+  if (imgOrigin) mediaSrc.push(imgOrigin);
+
   const scriptSrc = ["'self'", TURNSTILE_ORIGIN];
   const connectSrc = ["'self'", TURNSTILE_ORIGIN];
   if (imgOrigin) connectSrc.push(imgOrigin);
@@ -112,6 +120,7 @@ export function buildContentSecurityPolicy(
     // Tailwind / Next emit inline <style>; scripts stay locked down.
     "style-src": ["'self'", "'unsafe-inline'"],
     "img-src": imgSrc,
+    "media-src": mediaSrc,
     "font-src": ["'self'", "data:"],
     "connect-src": connectSrc,
     // Turnstile renders inside an iframe from its own origin.

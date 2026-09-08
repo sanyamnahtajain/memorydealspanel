@@ -53,6 +53,7 @@ const EDIT_SELECT = {
   status: true,
   tags: true,
   images: true,
+  videos: true,
   price: true,
   mrp: true,
   // GST override columns + the owning category's defaults, for the editor's
@@ -152,6 +153,7 @@ export default async function EditProductPage({
     status: priced.status,
     tags: priced.tags,
     images: priced.images,
+    videos: priced.videos,
     specs: priced.specs,
     // Variant editor state. `toEditorVariants` sorts + guarantees one default;
     // `parseOptionTypes` defensively parses the embedded Json axis defs. Both

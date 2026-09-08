@@ -2,7 +2,7 @@
 
 import * as React from "react";
 
-import type {
+import type { PublicProductVideo,
   ProductOptionType,
   PublicProductImage,
 } from "@/server/dto/product";
@@ -33,6 +33,8 @@ export interface VariantProductViewProps {
   productName: string;
   /** Product-level images — the fallback when a variant has none of its own. */
   productImages: PublicProductImage[];
+  /** Product-level demo clips; shown for every variant selection. */
+  videos?: PublicProductVideo[];
   productId: string;
   /** Product-level MOQ — the add-to-cart quantity floor. */
   moq?: number | null;
@@ -61,6 +63,7 @@ export interface VariantProductViewProps {
 export function VariantProductView({
   productName,
   productImages,
+  videos = [],
   productId,
   moq,
   packMultiple,
@@ -93,6 +96,9 @@ export function VariantProductView({
         <div className="relative md:sticky md:top-20">
           <ProductGallery
             images={selectedImages}
+            // Product-level, unlike the images: a demo clip shows the product,
+            // not one variant, so it stays put as the selection changes.
+            videos={videos}
             productName={productName}
             productId={productId}
           />

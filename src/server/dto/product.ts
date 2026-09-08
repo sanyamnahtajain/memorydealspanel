@@ -3,7 +3,7 @@ import {
   toPublicAllocation,
   type PublicAllocation,
 } from "@/lib/allocation";
-import type { Prisma, ProductImage } from "@prisma/client";
+import type { Prisma, ProductImage, ProductVideo } from "@prisma/client";
 import type { EntityStatus, StockStatus } from "@/lib/schemas/shared";
 import type { TaxTreatment } from "@/lib/gst";
 import { computeLineTax } from "@/lib/gst";
@@ -34,6 +34,14 @@ import {
  */
 
 /** Public projection of a product image (identical shape, explicit copy). */
+/** A product demo clip as the storefront sees it. Never carries money. */
+export interface PublicProductVideo {
+  url: string;
+  /** Still frame; null means "use the product's primary image". */
+  posterUrl: string | null;
+  sortOrder: number;
+}
+
 export interface PublicProductImage {
   url: string;
   thumbUrl: string | null;
@@ -96,6 +104,11 @@ export interface PublicProduct {
   status: EntityStatus;
   tags: string[];
   images: PublicProductImage[];
+  /**
+   * Demo clips. Present on the DETAIL path only — listing projections omit
+   * them (see the DAL selects), so this is empty on a card. Carries no money.
+   */
+  videos: PublicProductVideo[];
   createdAt: Date;
   updatedAt: Date;
   /**
@@ -175,6 +188,8 @@ export interface PublicSource {
   status: EntityStatus;
   tags: string[];
   images: ProductImage[];
+  /** Absent on listing rows — the detail selects add it. */
+  videos?: ProductVideo[] | null;
   createdAt: Date;
   updatedAt: Date;
   price?: number;
@@ -305,6 +320,21 @@ export function pricedTaxBreakdownOf(
  * Public projection of product images (identical shape, explicit copy).
  * Exported so the variant mapper can reuse it (variant images share the shape).
  */
+/**
+ * Public projection of a demo video. `posterUrl` may be null; the gallery
+ * falls back to the product's primary image so a clip never renders as a
+ * black rectangle before playback.
+ */
+export function toPublicVideos(videos: ProductVideo[]): PublicProductVideo[] {
+  return [...videos]
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((video) => ({
+      url: video.url,
+      posterUrl: video.posterUrl ?? null,
+      sortOrder: video.sortOrder,
+    }));
+}
+
 export function toPublicImages(images: ProductImage[]): PublicProductImage[] {
   return images.map((image) => ({
     url: image.url,
@@ -369,6 +399,7 @@ export function toPublicProduct(
     status: row.status,
     tags: row.tags ?? [],
     images: toPublicImages(row.images ?? []),
+    videos: toPublicVideos(row.videos ?? []),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     hasVariants: row.hasVariants ?? false,

@@ -68,6 +68,7 @@ const publicProduct: PublicProduct = {
   status: "ACTIVE",
   tags: ["ddr4"],
   images: [],
+  videos: [],
   createdAt: new Date("2026-01-01T00:00:00Z"),
   updatedAt: new Date("2026-01-01T00:00:00Z"),
   hasVariants: false,

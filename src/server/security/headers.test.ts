@@ -22,6 +22,9 @@ describe("buildContentSecurityPolicy", () => {
     expect(value).toContain("https://challenges.cloudflare.com");
     expect(value).toContain("frame-src https://challenges.cloudflare.com");
     expect(value).toContain("frame-ancestors 'none'");
+    // Without media-src, <video> falls back to default-src 'self' and every
+    // product clip on the R2 bucket is blocked with no visible error.
+    expect(value).toContain("media-src");
     expect(value).toContain("object-src 'none'");
   });
 
@@ -180,5 +183,26 @@ describe("securityHeaders", () => {
     expect(
       dev.find((h) => h.key === "Strict-Transport-Security"),
     ).toBeUndefined();
+  });
+});
+
+describe("media-src — product videos", () => {
+  it("allows the R2 public origin so clips can actually play", () => {
+    const previous = process.env.R2_PUBLIC_URL;
+    process.env.R2_PUBLIC_URL = "https://pub-test.r2.dev";
+    try {
+      const value = buildContentSecurityPolicy(false, "abc123");
+      const media = value
+        .split(";")
+        .map((d) => d.trim())
+        .find((d) => d.startsWith("media-src"));
+      expect(media).toBeDefined();
+      expect(media).toContain("'self'");
+      expect(media).toContain("https://pub-test.r2.dev");
+      // blob: covers the admin's local preview before the upload finishes.
+      expect(media).toContain("blob:");
+    } finally {
+      process.env.R2_PUBLIC_URL = previous;
+    }
   });
 });

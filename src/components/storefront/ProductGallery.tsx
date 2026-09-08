@@ -3,9 +3,13 @@
 import * as React from "react";
 import useEmblaCarousel from "embla-carousel-react";
 import { useReducedMotion } from "motion/react";
-import { ChevronLeft, ChevronRight, ImageOff, Maximize2 } from "lucide-react";
-import type { PublicProductImage } from "@/server/dto/product";
+import { ChevronLeft, ChevronRight, ImageOff, Maximize2, Play } from "lucide-react";
+import type {
+  PublicProductImage,
+  PublicProductVideo,
+} from "@/server/dto/product";
 import { Lightbox } from "@/components/storefront/Lightbox";
+import { isVideoSlideActive } from "@/lib/video";
 import { cn } from "@/lib/utils";
 
 /**
@@ -27,6 +31,8 @@ export function galleryTransitionName(productId: string): string {
 
 export interface ProductGalleryProps {
   images: PublicProductImage[];
+  /** Demo clips, shown after the photos in the same strip. */
+  videos?: PublicProductVideo[];
   /** Product name — used for descriptive alt text. */
   productName: string;
   /** Product id — seeds the shared-element View Transition name. */
@@ -51,6 +57,7 @@ export interface ProductGalleryProps {
  */
 export function ProductGallery({
   images,
+  videos = [],
   productName,
   productId,
   className,
@@ -61,6 +68,27 @@ export function ProductGallery({
     () => [...images].sort((a, b) => a.sortOrder - b.sortOrder),
     [images],
   );
+
+  const orderedVideos = React.useMemo(
+    () => [...videos].sort((a, b) => a.sortOrder - b.sortOrder),
+    [videos],
+  );
+
+  /**
+   * VIDEOS COME AFTER THE PHOTOS, always. Slide 0 stays the primary image:
+   * it is the page's LCP element and the shared-element View Transition
+   * target from the listing card, and a <video> can be neither. This also
+   * makes the index maths trivial — image slides are 0..images-1, so a slide
+   * index doubles as a lightbox index without a lookup table.
+   */
+  const videoStart = ordered.length;
+  const slideCount = ordered.length + orderedVideos.length;
+
+  /** Poster fallback: a clip with no still shows the product's main photo. */
+  const posterFallback =
+    ordered.find((image) => image.isPrimary)?.url ?? ordered[0]?.url ?? undefined;
+
+  const videoRefs = React.useRef<(HTMLVideoElement | null)[]>([]);
 
   const [mainRef, mainApi] = useEmblaCarousel({
     loop: false,
@@ -97,6 +125,16 @@ export function ProductGallery({
     };
   }, [mainApi, thumbApi]);
 
+  // Swiping away from a playing clip must stop it — otherwise its audio keeps
+  // going over the next photo, which reads as a bug.
+  React.useEffect(() => {
+    videoRefs.current.forEach((video, index) => {
+      if (video && !isVideoSlideActive(index, selected, videoStart)) {
+        video.pause();
+      }
+    });
+  }, [selected, videoStart]);
+
   const scrollTo = React.useCallback(
     (index: number) => mainApi?.scrollTo(index),
     [mainApi],
@@ -105,9 +143,10 @@ export function ProductGallery({
   const scrollNext = React.useCallback(() => mainApi?.scrollNext(), [mainApi]);
 
   const canPrev = selected > 0;
-  const canNext = selected < ordered.length - 1;
+  const canNext = selected < slideCount - 1;
 
-  if (ordered.length === 0) {
+  // Only truly empty when there is no photo AND no clip.
+  if (slideCount === 0) {
     return (
       <div
         className={cn(
@@ -121,7 +160,7 @@ export function ProductGallery({
     );
   }
 
-  const showControls = ordered.length > 1;
+  const showControls = slideCount > 1;
 
   return (
     <div className={cn("flex flex-col gap-3", className)}>
@@ -181,6 +220,31 @@ export function ProductGallery({
                 </div>
               );
             })}
+
+            {orderedVideos.map((video, index) => (
+              <div
+                key={`video-${video.url}`}
+                className="relative min-w-0 shrink-0 grow-0 basis-full"
+              >
+                {/* A real <video> with native controls: buyers already know
+                    this UI, it gives them scrubbing and fullscreen for free,
+                    and it needs no player library. `preload="metadata"` fetches
+                    only the header — a 30MB clip costs a few KB until someone
+                    actually presses play, which matters on mobile data. */}
+                <video
+                  ref={(el) => {
+                    videoRefs.current[index] = el;
+                  }}
+                  src={video.url}
+                  poster={video.posterUrl ?? posterFallback}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  aria-label={`${productName} — video ${index + 1}`}
+                  className="aspect-square w-full bg-black object-contain"
+                />
+              </div>
+            ))}
           </div>
         </div>
 
@@ -197,7 +261,7 @@ export function ProductGallery({
               onClick={scrollNext}
             />
             <div className="pointer-events-none absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-background/75 px-2 py-1.5 backdrop-blur-sm sm:hidden">
-              {ordered.map((_, index) => (
+              {Array.from({ length: slideCount }).map((_, index) => (
                 <span
                   key={index}
                   className={cn(
@@ -238,6 +302,48 @@ export function ProductGallery({
                     loading="lazy"
                     className="h-full w-full object-contain"
                   />
+                </button>
+              );
+            })}
+
+            {orderedVideos.map((video, index) => {
+              const slide = videoStart + index;
+              const isActive = slide === selected;
+              return (
+                <button
+                  key={`thumb-video-${video.url}`}
+                  type="button"
+                  onClick={() => scrollTo(slide)}
+                  aria-label={`Show video ${index + 1}`}
+                  aria-current={isActive}
+                  className={cn(
+                    "relative aspect-square w-16 shrink-0 overflow-hidden rounded-xl border bg-muted/30 transition-[border-color,opacity,box-shadow] sm:w-20",
+                    isActive
+                      ? "border-primary ring-2 ring-primary/40"
+                      : "border-border opacity-80 hover:border-foreground/30 hover:opacity-100",
+                  )}
+                >
+                  {video.posterUrl ?? posterFallback ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={video.posterUrl ?? posterFallback}
+                      alt=""
+                      draggable={false}
+                      loading="lazy"
+                      className="h-full w-full object-contain"
+                    />
+                  ) : (
+                    <span className="block h-full w-full bg-foreground/10" />
+                  )}
+                  {/* The badge is what tells a buyer this thumb is a clip. */}
+                  <span
+                    aria-hidden
+                    className="absolute inset-0 grid place-items-center bg-foreground/25"
+                  >
+                    <span className="grid size-6 place-items-center rounded-full bg-background/90 text-foreground shadow-sm">
+                      <Play className="size-3 translate-x-px fill-current" />
+                    </span>
+                  </span>
                 </button>
               );
             })}

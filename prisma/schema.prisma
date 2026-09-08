@@ -109,6 +109,18 @@ type ProductImage {
   isPrimary Boolean @default(false)
 }
 
+/// A product demo clip. Stored alongside the images but kept as its own
+/// embedded list: videos have different limits (size, count), no thumbnail
+/// pipeline, and no "primary" concept — the primary IMAGE is what represents
+/// a product everywhere a single still is needed.
+type ProductVideo {
+  url       String
+  /// Still frame shown before playback. Falls back to the product's primary
+  /// image when absent, so a video never renders as a black rectangle.
+  posterUrl String?
+  sortOrder Int     @default(0)
+}
+
 model Product {
   id          String         @id @default(auto()) @map("_id") @db.ObjectId
   categoryId  String         @db.ObjectId
@@ -144,6 +156,7 @@ model Product {
   status      EntityStatus   @default(ACTIVE)
   tags        String[]       @default([])
   images      ProductImage[]
+  videos      ProductVideo[]
   pageViews   PageView[]
   wishlistedBy WishlistItem[]
   cartItems   CartItem[]

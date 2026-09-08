@@ -264,6 +264,10 @@ const PUBLIC_DETAIL_SELECT = {
   ...PUBLIC_FIELDS,
   hasVariants: true,
   optionTypes: true,
+  // DETAIL ONLY, deliberately not in PUBLIC_FIELDS: a listing card shows a
+  // still, so shipping video URLs in every card would inflate the payload of
+  // pages that never play one.
+  videos: true,
   variants: { where: VARIANT_WHERE, orderBy: VARIANT_ORDER, select: PUBLIC_VARIANT_SELECT },
 } satisfies Prisma.ProductSelect;
 
@@ -272,6 +276,9 @@ const PRICED_DETAIL_SELECT = {
   ...PRICED_SELECT,
   hasVariants: true,
   optionTypes: true,
+  // See PUBLIC_DETAIL_SELECT: detail-only, and identical for both gate classes
+  // — a demo clip carries no price.
+  videos: true,
   variants: { where: VARIANT_WHERE, orderBy: VARIANT_ORDER, select: PRICED_VARIANT_SELECT },
 } satisfies Prisma.ProductSelect;
 
