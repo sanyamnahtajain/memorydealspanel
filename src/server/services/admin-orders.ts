@@ -532,10 +532,16 @@ export async function setOrderStatus(
     where: { id },
     data: {
       status: next,
-      // The "completed" moment, stamped exactly once on the transition INTO
-      // FULFILLED. updatedAt can't serve this — it moves on any later edit
-      // (tracking, notes) and would silently rewrite history.
+      // The "completed" moment, stamped on the transition INTO FULFILLED.
+      // updatedAt can't serve this — it moves on any later edit (tracking,
+      // notes) and would silently rewrite history.
       ...(next === "FULFILLED" ? { fulfilledAt: new Date() } : {}),
+      // ...and CLEARED when an order leaves FULFILLED. Staff can now move an
+      // order backwards to fix a mistake, and an order that is no longer
+      // complete must not keep showing a completed date.
+      ...(current.status === "FULFILLED" && next !== "FULFILLED"
+        ? { fulfilledAt: null }
+        : {}),
     },
   });
   return {

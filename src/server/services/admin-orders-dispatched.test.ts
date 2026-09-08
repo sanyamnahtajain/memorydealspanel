@@ -67,11 +67,41 @@ describe("setOrderStatus → DISPATCHED", () => {
     expect(row?.fulfilledAt).toBeInstanceOf(Date);
   });
 
-  it("refuses a backwards move out of DISPATCHED", async () => {
+  it("ALLOWS a backwards move out of DISPATCHED (staff fixing a mis-tap)", async () => {
     const order = await seedOrder("DISPATCHED");
     const result = await setOrderStatus(order.id, "PROCESSING");
+    expect(result.ok).toBe(true);
+    const row = await prisma.order.findUnique({
+      where: { id: order.id },
+      select: { status: true },
+    });
+    expect(row?.status).toBe("PROCESSING");
+  });
+
+  it("CLEARS the completed date when an order leaves FULFILLED", async () => {
+    // The correctness issue free movement introduces: an order moved back out
+    // of Fulfilled must not keep showing a completed date on the order page.
+    const order = await seedOrder("DISPATCHED");
+    await setOrderStatus(order.id, "FULFILLED");
+    const done = await prisma.order.findUnique({
+      where: { id: order.id },
+      select: { fulfilledAt: true },
+    });
+    expect(done?.fulfilledAt).toBeInstanceOf(Date);
+
+    await setOrderStatus(order.id, "PROCESSING");
+    const reopened = await prisma.order.findUnique({
+      where: { id: order.id },
+      select: { status: true, fulfilledAt: true },
+    });
+    expect(reopened?.status).toBe("PROCESSING");
+    expect(reopened?.fulfilledAt ?? null).toBeNull();
+  });
+
+  it("still refuses a no-op move to the same status", async () => {
+    const order = await seedOrder("DISPATCHED");
+    const result = await setOrderStatus(order.id, "DISPATCHED");
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toBe("illegal");
   });
 });
 

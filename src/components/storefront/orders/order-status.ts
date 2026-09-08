@@ -67,25 +67,85 @@ export function isCancellable(status: OrderStatus): boolean {
   return status === "PLACED";
 }
 
+/** Every status, in lifecycle order, with the terminal off-ramp last. */
+export const ORDER_STATUSES: OrderStatus[] = [
+  "PLACED",
+  "CONFIRMED",
+  "PROCESSING",
+  "DISPATCHED",
+  "FULFILLED",
+  "CANCELLED",
+];
+
 /**
- * Allowed forward transitions per status. Pure data (no server deps) so the
- * CUSTOM admin status control can import it client-side; the server service
- * re-exports this same table and enforces it authoritatively at mutation time.
- * PLACED can still be CANCELLED; FULFILLED / CANCELLED are terminal.
+ * Where an order may go from here: ANY other status (owner request).
+ *
+ * This used to be forward-only, which read as tidy but left an admin stuck
+ * with an order they could not correct — one mis-tap on "Dispatched" and the
+ * only way back was the database. Real shops fix mistakes, so any state can
+ * now reach any other, and the guard against accidents is a CONFIRMATION step
+ * in the UI rather than a locked door (see OrderStatusControl).
+ *
+ * Pure data (no server deps) so the admin control can import it client-side;
+ * the server re-exports the same table and enforces it at mutation time.
+ *
+ * NOTE this is the STAFF-side table. A buyer's own cancel window is separate
+ * and unchanged — see {@link isCancellable}.
  */
-export const ORDER_STATUS_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
-  PLACED: ["CONFIRMED", "PROCESSING", "DISPATCHED", "FULFILLED", "CANCELLED"],
-  CONFIRMED: ["PROCESSING", "DISPATCHED", "FULFILLED", "CANCELLED"],
-  PROCESSING: ["DISPATCHED", "FULFILLED", "CANCELLED"],
-  // Still cancellable: a courier can hand a parcel back, and the alternative
-  // is an admin stuck with an order they cannot correct.
-  DISPATCHED: ["FULFILLED", "CANCELLED"],
-  FULFILLED: [],
-  CANCELLED: [],
-};
+export const ORDER_STATUS_TRANSITIONS: Record<OrderStatus, OrderStatus[]> =
+  Object.fromEntries(
+    ORDER_STATUSES.map((from) => [
+      from,
+      ORDER_STATUSES.filter((to) => to !== from),
+    ]),
+  ) as Record<OrderStatus, OrderStatus[]>;
 
 /** Whether `next` is a permitted transition from `current`. */
 export function canTransition(current: OrderStatus, next: OrderStatus): boolean {
   if (current === next) return false;
   return ORDER_STATUS_TRANSITIONS[current].includes(next);
+}
+
+/**
+ * Whether this move walks the lifecycle BACKWARDS (Dispatched → Placed) or
+ * re-opens a closed order (Cancelled → anything). Not forbidden — just the
+ * kind of change worth naming in a confirmation, because it contradicts what
+ * the buyer was last told.
+ */
+export function isBackwardsMove(
+  current: OrderStatus,
+  next: OrderStatus,
+): boolean {
+  if (current === next) return false;
+  if (current === "CANCELLED") return true;
+  if (next === "CANCELLED") return false;
+  const from = ORDER_TIMELINE.indexOf(current);
+  const to = ORDER_TIMELINE.indexOf(next);
+  // A status off the timeline can't be compared; treat it as forward.
+  if (from < 0 || to < 0) return false;
+  return to < from;
+}
+
+/**
+ * The extra sentence a confirmation should show for this move, or null when
+ * it is an ordinary step forward. Pure so both the copy and the decision are
+ * testable without rendering anything.
+ */
+export function statusChangeWarning(
+  current: OrderStatus,
+  next: OrderStatus,
+): string | null {
+  if (current === "CANCELLED") {
+    return "This re-opens an order you had cancelled.";
+  }
+  if (current === "FULFILLED") {
+    return "This re-opens a completed order and clears its completed date.";
+  }
+  if (isBackwardsMove(current, next)) {
+    return "This moves the order backwards, contradicting what the buyer was last told.";
+  }
+  if (next === "CANCELLED") {
+    return "This cancels the order.";
+  }
+  return null;
 }

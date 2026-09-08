@@ -15,6 +15,7 @@ import { OrderQueueTable } from "@/components/admin/orders/OrderQueueTable";
 import { OrderAbuseView } from "@/components/admin/orders/OrderAbuseView";
 import type { OrderRowDTO } from "@/server/actions/admin-orders";
 import type { OrderStatus } from "@prisma/client";
+import { ORDER_STATUSES } from "@/components/storefront/orders/order-status";
 
 export const metadata: Metadata = {
   title: "Orders — MemoryDeals Admin",
@@ -24,14 +25,8 @@ export const metadata: Metadata = {
 // Admin surface — always live so new orders + status changes reflect at once.
 export const dynamic = "force-dynamic";
 
-const ORDER_STATUSES: OrderStatus[] = [
-  "PLACED",
-  "CONFIRMED",
-  "PROCESSING",
-  "DISPATCHED",
-  "FULFILLED",
-  "CANCELLED",
-];
+// Imported, not re-listed: a second copy of this list is exactly how a new
+// status ends up filterable in one place and invisible in another.
 
 function parseStatus(value: string | undefined): OrderStatus | undefined {
   return value && (ORDER_STATUSES as string[]).includes(value)

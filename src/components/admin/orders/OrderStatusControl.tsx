@@ -4,17 +4,28 @@
  * OrderStatusControl — a CUSTOM status picker (never a native <select>).
  *
  * Renders the current status as a chip-styled trigger; clicking opens a Dialog
- * (desktop) / bottom Sheet (mobile) of the ALLOWED forward transitions only
- * (from the shared transition table), each an accessible radio-like option.
- * Selecting one calls `setOrderStatusAction` and, on success, refreshes.
+ * (desktop) / bottom Sheet (mobile) listing every OTHER status, each an
+ * accessible radio-like option.
  *
- * The allowed set is enforced again server-side, so this control is a
- * convenience/UX layer — it can never widen what the server permits.
+ * TWO STEPS, ALWAYS. Picking a status does not apply it — it shows a
+ * confirmation naming the exact move ("Dispatched → Placed"), because every
+ * status change pushes a message to a real buyer's phone. Moves that
+ * contradict what the buyer was last told (backwards, or re-opening a closed
+ * order) say so in as many words. This confirmation IS the safety mechanism:
+ * staff can now move an order to any state to fix a mistake, so the guard is
+ * a deliberate second tap rather than a locked door.
+ *
+ * The transition set is enforced again server-side; this control is a
+ * convenience/UX layer and can never widen what the server permits.
  */
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDownIcon } from "lucide-react";
+import {
+  AlertTriangleIcon,
+  ArrowRightIcon,
+  ChevronDownIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 import type { OrderStatus } from "@prisma/client";
 
@@ -41,6 +52,7 @@ import {
   ORDER_STATUS_LABEL,
   ORDER_STATUS_TRANSITIONS,
   orderStatusVariant,
+  statusChangeWarning,
 } from "@/components/storefront/orders/order-status";
 import { setOrderStatusAction } from "@/server/actions/admin-orders";
 
@@ -57,8 +69,17 @@ export function OrderStatusControl({
   const isMobile = useIsMobile();
   const [open, setOpen] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
+  /** The status the operator picked, awaiting confirmation. */
+  const [pending, setPending] = React.useState<OrderStatus | null>(null);
 
   const options = ORDER_STATUS_TRANSITIONS[status];
+
+  // Reset the confirmation whenever the surface closes, so re-opening never
+  // lands mid-flow on a stale choice.
+  const onOpenChange = React.useCallback((next: boolean) => {
+    setOpen(next);
+    if (!next) setPending(null);
+  }, []);
 
   const apply = React.useCallback(
     async (next: OrderStatus) => {
@@ -70,6 +91,7 @@ export function OrderStatusControl({
           return;
         }
         toast.success(`Marked ${ORDER_STATUS_LABEL[next].toLowerCase()}.`);
+        setPending(null);
         setOpen(false);
         router.refresh();
       } catch {
@@ -123,7 +145,7 @@ export function OrderStatusControl({
           role="radio"
           aria-checked={false}
           disabled={busy}
-          onClick={() => void apply(opt)}
+          onClick={() => setPending(opt)}
           className="flex w-full items-start gap-3 rounded-lg border border-transparent p-2.5 text-left transition-colors hover:border-border hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none disabled:opacity-60"
         >
           <StatusChip
@@ -138,28 +160,88 @@ export function OrderStatusControl({
     </div>
   );
 
+  const warning = pending ? statusChangeWarning(status, pending) : null;
+
+  const confirmPanel = pending ? (
+    <div className="space-y-4 p-1">
+      {/* The exact move, spelled out. "Are you sure?" on its own tells an
+          operator nothing they can check. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <StatusChip
+          variant={orderStatusVariant(status)}
+          label={ORDER_STATUS_LABEL[status]}
+        />
+        <ArrowRightIcon className="size-4 text-muted-foreground" aria-hidden />
+        <StatusChip
+          variant={orderStatusVariant(pending)}
+          label={ORDER_STATUS_LABEL[pending]}
+        />
+      </div>
+
+      <p className="text-sm text-muted-foreground">
+        {ORDER_STATUS_HINT[pending]}
+      </p>
+
+      {warning ? (
+        <p className="flex items-start gap-2 rounded-lg border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+          <AlertTriangleIcon className="mt-px size-3.5 shrink-0" aria-hidden />
+          <span>{warning}</span>
+        </p>
+      ) : null}
+
+      {/* Said plainly every time: this is the consequence operators forget. */}
+      <p className="text-xs text-muted-foreground">
+        The customer is notified of this change.
+      </p>
+
+      <div className="flex justify-end gap-2">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => setPending(null)}
+          className="rounded-lg border border-border px-3 py-2 text-sm font-medium outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60"
+        >
+          Back
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          aria-busy={busy || undefined}
+          onClick={() => void apply(pending)}
+          className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground outline-none transition-opacity hover:opacity-90 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60"
+        >
+          {busy ? <Spinner size="sm" label="" /> : null}
+          Mark {ORDER_STATUS_LABEL[pending].toLowerCase()}
+        </button>
+      </div>
+    </div>
+  ) : null;
+
+  const title = pending ? "Confirm status change" : "Update status";
+  const body = pending ? confirmPanel : optionList;
+
   if (isMobile) {
     return (
-      <Sheet open={open} onOpenChange={setOpen}>
+      <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetTrigger render={trigger} />
         <SheetContent side="bottom" className="rounded-t-2xl pb-safe">
           <SheetHeader>
-            <SheetTitle>Update status</SheetTitle>
+            <SheetTitle>{title}</SheetTitle>
           </SheetHeader>
-          <div className="px-2 pb-2">{optionList}</div>
+          <div className="px-2 pb-2">{body}</div>
         </SheetContent>
       </Sheet>
     );
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger render={trigger} />
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Update status</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
-        {optionList}
+        {body}
       </DialogContent>
     </Dialog>
   );
