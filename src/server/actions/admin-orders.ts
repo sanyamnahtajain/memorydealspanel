@@ -263,6 +263,7 @@ const orderStatusSchema = z.enum([
   "PLACED",
   "CONFIRMED",
   "PROCESSING",
+  "DISPATCHED",
   "FULFILLED",
   "CANCELLED",
 ]);

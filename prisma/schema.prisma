@@ -43,6 +43,9 @@ enum OrderStatus {
   PLACED
   CONFIRMED
   PROCESSING
+  // Handed to the courier. Sits between PROCESSING (being packed) and
+  // FULFILLED (delivered), and is the status the tracking card pairs with.
+  DISPATCHED
   FULFILLED
   CANCELLED
 }

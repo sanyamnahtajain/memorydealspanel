@@ -13,6 +13,7 @@ export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
   PLACED: "Placed",
   CONFIRMED: "Confirmed",
   PROCESSING: "Processing",
+  DISPATCHED: "Dispatched",
   FULFILLED: "Fulfilled",
   CANCELLED: "Cancelled",
 };
@@ -22,6 +23,7 @@ export const ORDER_STATUS_HINT: Record<OrderStatus, string> = {
   PLACED: "Received — awaiting confirmation from the wholesaler.",
   CONFIRMED: "Confirmed by the wholesaler and queued for processing.",
   PROCESSING: "Being prepared for dispatch / collection.",
+  DISPATCHED: "Handed to the courier and on its way.",
   FULFILLED: "Completed — items handed over.",
   CANCELLED: "This order was cancelled.",
 };
@@ -35,6 +37,12 @@ export function orderStatusVariant(status: OrderStatus): StatusChipVariant {
       return "approved";
     case "PROCESSING":
       return "low";
+    case "DISPATCHED":
+      // Shares CONFIRMED's tone: both are "agreed and moving", and it stays
+      // visibly distinct from PROCESSING (amber) and FULFILLED (green) so an
+      // admin scanning the queue can tell "still with us" from "with the
+      // courier" at a glance.
+      return "approved";
     case "FULFILLED":
       return "active";
     case "CANCELLED":
@@ -50,6 +58,7 @@ export const ORDER_TIMELINE: OrderStatus[] = [
   "PLACED",
   "CONFIRMED",
   "PROCESSING",
+  "DISPATCHED",
   "FULFILLED",
 ];
 
@@ -65,9 +74,12 @@ export function isCancellable(status: OrderStatus): boolean {
  * PLACED can still be CANCELLED; FULFILLED / CANCELLED are terminal.
  */
 export const ORDER_STATUS_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
-  PLACED: ["CONFIRMED", "PROCESSING", "FULFILLED", "CANCELLED"],
-  CONFIRMED: ["PROCESSING", "FULFILLED", "CANCELLED"],
-  PROCESSING: ["FULFILLED", "CANCELLED"],
+  PLACED: ["CONFIRMED", "PROCESSING", "DISPATCHED", "FULFILLED", "CANCELLED"],
+  CONFIRMED: ["PROCESSING", "DISPATCHED", "FULFILLED", "CANCELLED"],
+  PROCESSING: ["DISPATCHED", "FULFILLED", "CANCELLED"],
+  // Still cancellable: a courier can hand a parcel back, and the alternative
+  // is an admin stuck with an order they cannot correct.
+  DISPATCHED: ["FULFILLED", "CANCELLED"],
   FULFILLED: [],
   CANCELLED: [],
 };

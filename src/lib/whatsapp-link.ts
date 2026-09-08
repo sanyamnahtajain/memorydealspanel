@@ -69,6 +69,10 @@ const ORDER_STATUS_BODY: Partial<
     hasTracking
       ? `your order ${n} is packed and on the way.`
       : `your order ${n} is packed and will ship soon.`,
+  DISPATCHED: (n, hasTracking) =>
+    hasTracking
+      ? `your order ${n} is dispatched. You can track it with the link below.`
+      : `your order ${n} is dispatched and on the way.`,
   FULFILLED: (n) => `your order ${n} is complete. Thank you for shopping with us.`,
   CANCELLED: (n) => `your order ${n} was cancelled. Please call us if you have any question.`,
 };

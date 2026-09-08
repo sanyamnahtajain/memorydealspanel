@@ -438,6 +438,7 @@ export async function orderStatusCounts(): Promise<Record<OrderStatus, number>> 
     PLACED: 0,
     CONFIRMED: 0,
     PROCESSING: 0,
+    DISPATCHED: 0,
     FULFILLED: 0,
     CANCELLED: 0,
   };

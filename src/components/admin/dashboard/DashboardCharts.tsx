@@ -31,6 +31,7 @@ const ORDER_STATUS_TONE: Record<string, DonutSlice["tone"]> = {
   PLACED: "warning",
   CONFIRMED: "primary",
   PROCESSING: "primary",
+  DISPATCHED: "primary",
   FULFILLED: "success",
   CANCELLED: "muted",
 };
@@ -39,6 +40,7 @@ const ORDER_STATUS_TITLE: Record<string, string> = {
   PLACED: "Placed",
   CONFIRMED: "Confirmed",
   PROCESSING: "Processing",
+  DISPATCHED: "Dispatched",
   FULFILLED: "Completed",
   CANCELLED: "Cancelled",
 };

@@ -28,6 +28,7 @@ const ORDER_STATUSES: OrderStatus[] = [
   "PLACED",
   "CONFIRMED",
   "PROCESSING",
+  "DISPATCHED",
   "FULFILLED",
   "CANCELLED",
 ];

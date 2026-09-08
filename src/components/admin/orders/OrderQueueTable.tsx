@@ -35,6 +35,7 @@ const FILTERS: { key: OrderStatus | "ALL"; label: string }[] = [
   { key: "PLACED", label: "New" },
   { key: "CONFIRMED", label: "Confirmed" },
   { key: "PROCESSING", label: "Processing" },
+  { key: "DISPATCHED", label: "Dispatched" },
   { key: "FULFILLED", label: "Fulfilled" },
   { key: "CANCELLED", label: "Cancelled" },
 ];
