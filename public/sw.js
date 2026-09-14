@@ -26,9 +26,23 @@
  * open — while the OS handles the background case.
  */
 
-const CACHE_VERSION = "v5";
+const CACHE_VERSION = "v6";
 const CACHE_NAME = `memorydeals-${CACHE_VERSION}`;
 const OFFLINE_URL = "/offline";
+
+// Artwork (banners, product photos) lives on object storage — a DIFFERENT
+// origin from the app. It gets its own cache so the entry cap below can be
+// enforced without ever evicting the app shell.
+//
+// DELIBERATELY NOT VERSIONED. Every other cache is keyed to CACHE_VERSION so
+// a deploy discards it, but artwork is immutable and content-addressed (a new
+// upload is a new UUID key), so nothing in here can go stale. Versioning it
+// would make every deploy re-download every image on every installed phone.
+const IMAGE_CACHE_NAME = "memorydeals-img";
+// Cap, in entries. Artwork is immutable (every upload gets a fresh UUID key),
+// so the cache only ever grows; without a ceiling an installed PWA would
+// quietly accumulate every product photo the buyer has ever scrolled past.
+const MAX_IMAGE_CACHE_ENTRIES = 80;
 
 // Minimal app shell precached on install. Kept small and static — real pages
 // are cached on demand by the fetch handler.
@@ -235,7 +249,10 @@ self.addEventListener("activate", (event) => {
         Promise.all(
           keys
             .filter(
-              (key) => key.startsWith("memorydeals-") && key !== CACHE_NAME,
+              (key) =>
+                key.startsWith("memorydeals-") &&
+                key !== CACHE_NAME &&
+                key !== IMAGE_CACHE_NAME,
             )
             .map((key) => caches.delete(key)),
         ),
@@ -269,6 +286,22 @@ function isStaticAsset(pathname) {
   );
 }
 
+/**
+ * Is this a request for artwork on our object storage?
+ *
+ * Deliberately conservative, because anything matched here is served from
+ * cache on a repeat view and so must be CONTENT-ADDRESSED — safe to replay
+ * forever. Uploads are keyed by UUID, which satisfies that. The query-string
+ * exclusion keeps out both signed URLs (whose response is tied to one
+ * request) and the tracking pixels that dress themselves up as images.
+ */
+function isCacheableRemoteImage(request, url) {
+  if (url.protocol !== "https:") return false;
+  if (url.search !== "") return false;
+  if (request.destination !== "image") return false;
+  return /\.(?:png|jpe?g|gif|svg|webp|avif)$/i.test(url.pathname);
+}
+
 self.addEventListener("fetch", (event) => {
   const { request } = event;
 
@@ -282,8 +315,16 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Only intercept same-origin requests.
-  if (url.origin !== self.location.origin) return;
+  // Cross-origin: the ONLY thing worth handling is artwork on object
+  // storage. Without this the home banners and every product photo are
+  // re-downloaded on each launch, and render as empty boxes on a flaky
+  // connection — the failure the installed app is supposed to avoid.
+  if (url.origin !== self.location.origin) {
+    if (isCacheableRemoteImage(request, url)) {
+      event.respondWith(cacheFirstImage(request));
+    }
+    return;
+  }
 
   // Never touch gated data — always straight to network.
   if (isNonCacheablePath(url.pathname)) return;
@@ -321,6 +362,79 @@ async function handleNavigation(request) {
       headers: { "Content-Type": "text/plain; charset=utf-8" },
     });
   }
+}
+
+/**
+ * Cache-first for immutable artwork: a hit costs no network at all, which is
+ * the whole point on a phone. A miss fetches, stores, and trims.
+ *
+ * Never throws in a way that changes what the page sees — if both the cache
+ * and the network have nothing, the image request simply fails as it would
+ * have without a service worker, and the carousel draws its own fallback.
+ */
+async function cacheFirstImage(request) {
+  let cache;
+  try {
+    cache = await caches.open(IMAGE_CACHE_NAME);
+    const cached = await cache.match(request);
+    if (cached) return cached;
+  } catch (_err) {
+    // Storage unavailable (private mode, quota wedged) — just go to network.
+    return fetch(request);
+  }
+
+  try {
+    const response = await fetchImageForCache(request);
+    // `opaque` is what a plain <img> to another origin yields when the host
+    // sends no CORS headers: unreadable to us, but still replayable.
+    if (response && (response.ok || response.type === "opaque")) {
+      await cache.put(request, response.clone());
+      trimImageCache(cache);
+    }
+    return response;
+  } catch (err) {
+    const cached = await cache.match(request).catch(() => undefined);
+    if (cached) return cached;
+    throw err;
+  }
+}
+
+/**
+ * Prefer a CORS fetch. An opaque response is padded by several megabytes
+ * against the storage quota in some browsers, so a couple of dozen of them
+ * can get the whole cache evicted; a readable response is stored at its real
+ * size. Falls back to the original request when the host sends no CORS
+ * headers, which costs one extra round trip on a cache miss and nothing after.
+ */
+async function fetchImageForCache(request) {
+  try {
+    const cors = await fetch(request.url, {
+      mode: "cors",
+      credentials: "omit",
+    });
+    if (cors && cors.ok) return cors;
+  } catch (_err) {
+    /* no CORS headers on that host — fall through */
+  }
+  return fetch(request);
+}
+
+/**
+ * Keep the artwork cache bounded, oldest-first. `cache.keys()` returns
+ * insertion order, so the head of the list is the least recently ADDED.
+ * Fire-and-forget: a failed trim must never fail the image it was trimming for.
+ */
+function trimImageCache(cache) {
+  void (async () => {
+    try {
+      const keys = await cache.keys();
+      const excess = keys.length - MAX_IMAGE_CACHE_ENTRIES;
+      if (excess <= 0) return;
+      await Promise.all(keys.slice(0, excess).map((key) => cache.delete(key)));
+    } catch (_err) {
+      /* nothing to do; the next trim tries again */
+    }
+  })();
 }
 
 async function staleWhileRevalidate(request) {

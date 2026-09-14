@@ -24,6 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ImageError, compressImage } from "@/lib/image";
 import {
   BANNER_PLACEMENTS,
   MAX_BANNER_ALT,
@@ -46,7 +47,14 @@ import type { AdminBanner } from "@/server/services/banners";
  * failure mode a scheduled banner invites.
  */
 
-const ACCEPT = "image/jpeg,image/png,image/webp";
+/**
+ * Banner artwork types. Narrower than the product-image list on purpose —
+ * AVIF compresses beautifully but Safari only learned it recently, and a
+ * banner that renders as a blank box for a slice of buyers is worse than a
+ * slightly bigger file.
+ */
+const ACCEPTED_BANNER_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const ACCEPT = ACCEPTED_BANNER_TYPES.join(",");
 
 export function BannerManager({ banners }: { banners: AdminBanner[] }) {
   const router = useRouter();
@@ -263,7 +271,30 @@ function BannerDialog({
   async function upload(file: File, which: "wide" | "mobile") {
     setUploading(which);
     try {
-      const target = await presignBannerUpload(file.name, file.type);
+      // Compress in the browser first, exactly like product images do.
+      // A banner is the heaviest thing on the home page and EVERY visitor
+      // downloads it — shipping the 4 MB PNG that came out of Canva is the
+      // difference between a hero that paints instantly and one that
+      // trickles in over a phone connection. Also keeps the installed PWA's
+      // image cache small enough to actually survive.
+      if (!ACCEPTED_BANNER_TYPES.includes(file.type)) {
+        toast.error("Banner artwork must be a JPG, PNG or WebP.");
+        return;
+      }
+
+      let artwork: File;
+      try {
+        artwork = await compressImage(file);
+      } catch (error) {
+        toast.error(
+          error instanceof ImageError
+            ? error.message
+            : "That image could not be processed. Try a JPG, PNG or WebP.",
+        );
+        return;
+      }
+
+      const target = await presignBannerUpload(artwork.name, artwork.type);
       if (!target.ok) {
         toast.error(target.error);
         return;
@@ -271,7 +302,7 @@ function BannerDialog({
       const put = await fetch(target.uploadUrl, {
         method: "PUT",
         headers: target.headers,
-        body: file,
+        body: artwork,
       });
       if (!put.ok) {
         toast.error("The upload failed. Please try again.");

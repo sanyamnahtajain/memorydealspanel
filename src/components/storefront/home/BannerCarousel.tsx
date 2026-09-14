@@ -148,21 +148,46 @@ function BannerSlide({
   banner: StorefrontBanner;
   priority: boolean;
 }) {
+  // Artwork is on object storage, so it can fail independently of the page —
+  // offline, a flaky phone connection, a deleted object. A broken-image icon
+  // in a hero slot looks like a broken shop, so a failure degrades to the
+  // banner's own words on a plain card instead.
+  const [failed, setFailed] = React.useState(false);
+
+  // `onError` alone is NOT enough. The markup is server-rendered, so the
+  // browser can finish (and fail) the request before React hydrates and
+  // attaches the handler — the error event is long gone by then, and the slot
+  // is left showing the browser's own broken-image glyph. That is the NORMAL
+  // case offline, which is precisely when this fallback has to work. So the
+  // ref also asks the element directly: a finished image with no intrinsic
+  // width is a failed one.
+  const checkAlreadyFailed = React.useCallback((node: HTMLImageElement | null) => {
+    if (node && node.complete && node.naturalWidth === 0) setFailed(true);
+  }, []);
+
   // Aspect ratio is reserved by the wrapper, so the row never reflows when the
   // artwork arrives. Wide on desktop, squarer on phones where a 3:1 strip
   // would be a sliver.
-  const art = (
+  const art = failed ? (
+    <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-muted to-muted/40 px-6">
+      <span className="line-clamp-2 text-center text-sm font-medium text-muted-foreground sm:text-base">
+        {banner.alt}
+      </span>
+    </div>
+  ) : (
     <picture>
       {banner.mobileImageUrl ? (
         <source media="(max-width: 640px)" srcSet={banner.mobileImageUrl} />
       ) : null}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
+        ref={checkAlreadyFailed}
         src={banner.imageUrl}
         alt={banner.alt}
         draggable={false}
         loading={priority ? "eager" : "lazy"}
         fetchPriority={priority ? "high" : "auto"}
+        decoding={priority ? "sync" : "async"}
+        onError={() => setFailed(true)}
         className="h-full w-full object-cover"
       />
     </picture>
