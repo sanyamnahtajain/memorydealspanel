@@ -32,13 +32,14 @@ import type {
 } from "./types";
 import { isColumnEditable } from "./types";
 import {
-  buildRowHaystack,
-  cellMatchesTokens,
+  rowHaystackFor,
   rowMatchesTokens,
+  squashedCellMatchesTokens,
   tokenizeQuery,
   type RowHaystack,
 } from "./data/search";
 import { useGridSelection } from "./core/useGridSelection";
+import { useDebouncedValue } from "./core/useDebouncedValue";
 import { useAutosave, type RowStatus } from "./engine/useAutosave";
 import { useUndoRedo } from "./engine/useUndoRedo";
 import { cellRegistry, type CellActions } from "./cells";
@@ -176,6 +177,10 @@ export interface GridControllerResult<Row extends GridRow> {
   search: string;
   setSearch: (q: string) => void;
   searchMatches: CellCoord[];
+  /** O(1) "is this cell a match?" — every rendered cell asks, every frame. */
+  isSearchMatch: (rowId: string, colKey: string) => boolean;
+  /** True while the typed query is ahead of the one the grid has applied. */
+  searchPending: boolean;
   activeMatchIndex: number;
   gotoNextMatch: () => void;
   gotoPrevMatch: () => void;
@@ -191,6 +196,13 @@ export interface GridControllerResult<Row extends GridRow> {
 /* -------------------------------------------------------------------------- */
 /*  Hook                                                                      */
 /* -------------------------------------------------------------------------- */
+
+/**
+ * How long typing must pause before the catalogue is re-scanned. Short enough
+ * that it feels instant on a normal phrase, long enough that a fast typist
+ * triggers one scan instead of eight.
+ */
+const SEARCH_DEBOUNCE_MS = 150;
 
 export function useGridController<Row extends GridRow>(
   options: GridControllerOptions<Row>,
@@ -299,27 +311,54 @@ export function useGridController<Row extends GridRow>(
     return pinnedFirst;
   }, [pinnedColumns, columnOrder, hidden]);
 
-  // Global search is deferred: typing updates the input (and `search`) at the
-  // highest priority, while the expensive re-filter runs against this deferred
-  // value — so the keystroke never blocks on a large-catalog scan (React keeps
-  // the last result on screen until the new one is ready).
-  const deferredSearch = React.useDeferredValue(search);
+  // Global search runs on a DEBOUNCED, then deferred, copy of the query.
+  //
+  //  - Debounce (useDebouncedValue) decides WHEN: a burst of keystrokes
+  //    collapses into one pass over the catalogue instead of one per letter.
+  //  - useDeferredValue keeps that one pass INTERRUPTIBLE, so even on a big
+  //    catalogue the input never stutters mid-word.
+  //
+  // Clearing the box skips the wait entirely — a grid that stays filtered for
+  // a beat after you empty the search reads as stuck.
+  const debouncedSearch = useDebouncedValue(search, SEARCH_DEBOUNCE_MS);
+  // Clearing the box skips the wait: a grid that stays filtered for a beat
+  // after you empty the search reads as stuck, and showing MORE rows is never
+  // the expensive direction.
+  const appliedSearch = search.trim() === "" ? "" : debouncedSearch;
+  const deferredSearch = React.useDeferredValue(appliedSearch);
 
-  // Precomputed per-row search haystack (plain text for per-cell highlights,
-  // squashed text for the filter — see grid/data/search.ts for the matching
-  // semantics and the complaint they answer). Rebuilt ONLY when the data or
-  // columns change, so each keystroke is a few cheap `includes` calls instead
-  // of re-reading every cell across the whole catalog per character.
+  // Precomputed per-row search haystack — see grid/data/search.ts for the
+  // matching semantics and the complaint they answer. Rebuilt ONLY when the
+  // data or columns change, so each keystroke is a few cheap `includes` calls
+  // instead of re-reading every cell across the whole catalogue per
+  // character. `cellText` is genuinely expensive (computed columns run their
+  // `compute`, numbers go through `toLocaleString`, selects resolve labels),
+  // which is exactly why it must not be on the typing path.
+  // Memoised per (column set, row object) — see rowHaystackFor. Rows are
+  // replaced immutably, so committing one cell used to rebuild the haystack
+  // for the ENTIRE catalogue, which is the other half of why this grid
+  // stuttered while staff were editing. Now an edit re-reads one row.
   const rowHaystack = React.useMemo(() => {
     const map = new Map<string, RowHaystack>();
     for (const row of allRows) {
       map.set(
         row.id,
-        buildRowHaystack(columns.map((col) => cellText(row, col))),
+        rowHaystackFor(columns, row, () =>
+          columns.map((col) => cellText(row, col)),
+        ),
       );
     }
     return map;
   }, [allRows, columns]);
+
+  // Position of each column inside `columns` — the haystack cells are built
+  // in that order, while the highlight pass walks `viewColumns` (reordered,
+  // with hidden ones dropped). This is the bridge between the two.
+  const columnIndexByKey = React.useMemo(() => {
+    const map = new Map<string, number>();
+    columns.forEach((col, index) => map.set(col.key, index));
+    return map;
+  }, [columns]);
 
   // The query, tokenised once per (deferred) keystroke — every word must
   // match somewhere in the row, in any order, punctuation ignored.
@@ -328,15 +367,21 @@ export function useGridController<Row extends GridRow>(
     [deferredSearch],
   );
 
+  // Column filters are applied SEPARATELY from the search so that typing in
+  // the search box does not re-run every per-column filter on every keystroke.
+  const columnFilteredRows = React.useMemo(
+    () => applyFilters(allRows, filters, columns),
+    [allRows, filters, columns],
+  );
+
   // Filtered + sorted rows (the visible order the user navigates).
   const searchFilteredRows = React.useMemo(() => {
-    const byFilter = applyFilters(allRows, filters, columns);
-    if (searchTokens.length === 0) return byFilter;
-    return byFilter.filter((row) => {
+    if (searchTokens.length === 0) return columnFilteredRows;
+    return columnFilteredRows.filter((row) => {
       const haystack = rowHaystack.get(row.id);
       return haystack ? rowMatchesTokens(haystack, searchTokens) : false;
     });
-  }, [allRows, filters, columns, searchTokens, rowHaystack]);
+  }, [columnFilteredRows, searchTokens, rowHaystack]);
 
   const viewRows = React.useMemo(
     () => applySort(searchFilteredRows, sort, columns),
@@ -689,29 +734,72 @@ export function useGridController<Row extends GridRow>(
   );
 
   /* ------------------------------- search ------------------------------- */
-  const [activeMatchIndex, setActiveMatchIndex] = React.useState(0);
+  const [activeMatchIndexState, setActiveMatchIndex] = React.useState(0);
   const setSearch = React.useCallback((q: string) => {
     setSearchState(q);
     setActiveMatchIndex(0); // restart cycling whenever the query changes
   }, []);
 
+  // Match list + O(1) lookup set, built in ONE pass.
+  //
+  // The set matters as much as the list: every rendered cell asks "am I a
+  // match?", and answering that by scanning the match array made the cost
+  // cells x matches — on a few thousand rows that is millions of comparisons
+  // per frame, and it was the reason searching a full catalogue felt like the
+  // grid had hung.
+  //
+  // Only scans the ALREADY search-filtered rows, and reads pre-squashed cell
+  // text, so a keystroke costs `includes` and nothing else. Derived from the
+  // same tokens as the filter above, so highlighted cells can never disagree
+  // with the rows on screen. A cell lights up when it holds ANY of the
+  // query's words — the row as a whole already matched all of them.
   const searchMatches = React.useMemo<CellCoord[]>(() => {
-    if (searchTokens.length === 0) return [];
-    const out: CellCoord[] = [];
-    // Only scans the ALREADY search-filtered rows (viewRows), so this stays
-    // small; derived from the same tokens as the filter above so the
-    // highlighted cells always agree with the rows actually on screen. A cell
-    // lights up when it holds ANY of the query's words — the row as a whole
-    // already matched all of them.
+    const matches: CellCoord[] = [];
+    if (searchTokens.length === 0) return matches;
     for (const row of viewRows) {
+      const haystack = rowHaystack.get(row.id);
+      if (!haystack) continue;
       for (const col of viewColumns) {
-        if (cellMatchesTokens(cellText(row, col), searchTokens)) {
-          out.push({ rowId: row.id, colKey: col.key });
+        const index = columnIndexByKey.get(col.key);
+        if (index === undefined) continue;
+        const cell = haystack.cells[index];
+        if (cell === undefined) continue;
+        if (squashedCellMatchesTokens(cell, searchTokens)) {
+          matches.push({ rowId: row.id, colKey: col.key });
         }
       }
     }
-    return out;
-  }, [searchTokens, viewRows, viewColumns]);
+    return matches;
+  }, [searchTokens, viewRows, viewColumns, rowHaystack, columnIndexByKey]);
+
+  const searchMatchKeys = React.useMemo(() => {
+    const keys = new Set<string>();
+    for (const match of searchMatches) {
+      keys.add(matchKey(match.rowId, match.colKey));
+    }
+    return keys;
+  }, [searchMatches]);
+
+  const isSearchMatch = React.useCallback(
+    (rowId: string, colKey: string) =>
+      searchMatchKeys.has(matchKey(rowId, colKey)),
+    [searchMatchKeys],
+  );
+
+  // The list can shrink under a stale index — an edit that removes a match,
+  // a column filter narrowing the view — and "7 / 3" is nonsense. Clamped on
+  // read rather than reset in an effect, which would need an extra render.
+  const activeMatchIndex =
+    searchMatches.length === 0
+      ? 0
+      : Math.min(activeMatchIndexState, searchMatches.length - 1);
+
+  /**
+   * Is the applied query still catching up with what has been typed? Drives
+   * the "Searching…" hint, so the bar never flashes "No matches" at a query
+   * the grid has not looked at yet.
+   */
+  const searchPending = search.trim() !== deferredSearch.trim();
 
   const gotoMatch = React.useCallback(
     (index: number) => {
@@ -834,6 +922,8 @@ export function useGridController<Row extends GridRow>(
     search,
     setSearch,
     searchMatches,
+    isSearchMatch,
+    searchPending,
     activeMatchIndex,
     gotoNextMatch,
     gotoPrevMatch,
@@ -846,6 +936,15 @@ export function useGridController<Row extends GridRow>(
 /* -------------------------------------------------------------------------- */
 /*  Helpers                                                                   */
 /* -------------------------------------------------------------------------- */
+
+/**
+ * Key for the match lookup set. NUL separates the two halves because a row id
+ * or column key can contain anything else, and "a|b" + "c" must never collide
+ * with "a" + "b|c".
+ */
+function matchKey(rowId: string, colKey: string): string {
+  return `${rowId}\u0000${colKey}`;
+}
 
 function persistChanges<Row extends GridRow>(
   changes: import("./types").CellChange[],

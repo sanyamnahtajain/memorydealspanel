@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   buildRowHaystack,
   cellMatchesTokens,
+  rowHaystackFor,
   rowMatchesTokens,
+  squashedCellMatchesTokens,
   tokenizeQuery,
 } from "./search";
 
@@ -76,10 +78,18 @@ describe("grid search — precision is kept", () => {
   });
 
   it("a query cannot leak across cell boundaries in the plain haystack", () => {
-    // The squashed haystack deliberately joins the whole row (that is what
-    // lets brand + spec match from different cells); the PLAIN haystack keeps
-    // "\n" separators for the per-cell highlight pass.
+    // The PLAIN haystack keeps "\n" separators for the per-cell highlight pass.
     expect(powerbank.plain).toContain("\n");
+  });
+
+  it("a single word cannot fuse the end of one cell onto the start of the next", () => {
+    // Matching against one squashed blob of the whole row let the grid
+    // invent matches: here the SKU ends "…-C" and the very next column
+    // starts "27", and "c27" appears nowhere a human would recognise.
+    const cable = row("Type C Cable 1m", "ERD-TC-C", "27 Brands", "Cables");
+    expect(matches(cable, "c27")).toBe(false);
+    // …while each word still comes from whichever cell holds it.
+    expect(matches(cable, "erd cable")).toBe(true);
   });
 });
 
@@ -98,5 +108,47 @@ describe("grid search — the highlight pass", () => {
 
   it("highlights nothing for an empty query", () => {
     expect(cellMatchesTokens("Ambrane", tokenizeQuery(""))).toBe(false);
+  });
+});
+
+describe("grid search — the hot path", () => {
+  it("squashedCellMatchesTokens is the pre-squashed form of cellMatchesTokens", () => {
+    const tokens = tokenizeQuery("pp-20");
+    const haystack = row("Ambrane Powerbank 20000mAh PP-20", "AMB-PP20-BLK");
+    // Index 0 is the name cell, already squashed at build time.
+    expect(squashedCellMatchesTokens(haystack.cells[0]!, tokens)).toBe(
+      cellMatchesTokens("Ambrane Powerbank 20000mAh PP-20", tokens),
+    );
+    expect(squashedCellMatchesTokens("", tokens)).toBe(false);
+  });
+
+  it("builds one haystack per cell, index-aligned with the columns", () => {
+    const haystack = row("Wall Charger 25W", "UB-25", "Ubon");
+    expect(haystack.cells).toEqual(["wallcharger25w", "ub25", "ubon"]);
+  });
+
+  it("rowHaystackFor re-reads a row only when the row object changes", () => {
+    const columns = {};
+    const rowObject = { id: "p1" };
+    let reads = 0;
+    const read = () => {
+      reads += 1;
+      return ["Ambrane", "AMB-1"];
+    };
+
+    const first = rowHaystackFor(columns, rowObject, read);
+    const second = rowHaystackFor(columns, rowObject, read);
+    // Same row object: the second call must not touch the cells at all.
+    expect(reads).toBe(1);
+    expect(second).toBe(first);
+
+    // An edit replaces the row object — that one, and only that one, re-reads.
+    const edited = { id: "p1" };
+    rowHaystackFor(columns, edited, read);
+    expect(reads).toBe(2);
+
+    // A different column set invalidates everything built for the old one.
+    rowHaystackFor({}, rowObject, read);
+    expect(reads).toBe(3);
   });
 });

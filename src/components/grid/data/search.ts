@@ -20,9 +20,10 @@ import { singularize, squash } from "@/lib/search-normalize";
  *  3. Each word also matches through its singular form, so "chargers" finds
  *     "Charger" (same forgiveness the storefront search already has).
  *
- * Everything here is pure and cheap on the hot path: the row's squashed
- * haystack is built once per data change, and each keystroke costs only
- * `includes` calls against it.
+ * Everything here is pure and cheap ON THE HOT PATH, which is the point: the
+ * row's squashed text is built ONCE per data change, and each keystroke costs
+ * only `includes` calls against strings that already exist. Nothing here
+ * formats a cell, allocates, or walks the catalogue per character.
  */
 
 /** The per-row text the query is matched against. Build once per data change. */
@@ -32,14 +33,59 @@ export interface RowHaystack {
    * pass, where cell boundaries still matter.
    */
   plain: string;
-  /** The whole row squashed to letters+digits — what the filter matches on. */
-  squashed: string;
+  /**
+   * Each cell squashed to bare letters+digits, INDEX-ALIGNED with the columns
+   * it was built from. Both the row filter and the highlight pass read this,
+   * so the two can never disagree, and neither has to re-derive cell text
+   * while the operator is typing.
+   */
+  cells: string[];
 }
 
 export function buildRowHaystack(cellTexts: string[]): RowHaystack {
   let plain = "";
-  for (const text of cellTexts) plain += text.toLowerCase() + "\n";
-  return { plain, squashed: squash(plain) };
+  const cells: string[] = [];
+  for (const text of cellTexts) {
+    const lower = text.toLowerCase();
+    plain += lower + "\n";
+    cells.push(squash(lower));
+  }
+  return { plain, cells };
+}
+
+/**
+ * Haystacks memoised on OBJECT IDENTITY: the column set, then the row.
+ *
+ * Rows are replaced immutably on every edit, so without this, committing one
+ * cell re-derives the haystack for the whole catalogue — every row x every
+ * column, each one running `cellText` (computed columns execute, numbers go
+ * through `toLocaleString`, selects resolve their labels). With it, an edit
+ * costs exactly the one row that changed.
+ *
+ * Two nested WeakMaps, so a stale column set or a row that has been replaced
+ * is collectable the moment the grid drops its reference — this can't grow
+ * into a leak. Keyed on the columns array as well because the cells are
+ * index-aligned with it: a different column set means a different haystack.
+ *
+ * `buildCellTexts` is a thunk so the expensive read never happens on a hit.
+ */
+const haystackByColumns = new WeakMap<object, WeakMap<object, RowHaystack>>();
+
+export function rowHaystackFor(
+  columnsKey: object,
+  row: object,
+  buildCellTexts: () => string[],
+): RowHaystack {
+  let byRow = haystackByColumns.get(columnsKey);
+  if (!byRow) {
+    byRow = new WeakMap<object, RowHaystack>();
+    haystackByColumns.set(columnsKey, byRow);
+  }
+  const cached = byRow.get(row);
+  if (cached) return cached;
+  const built = buildRowHaystack(buildCellTexts());
+  byRow.set(row, built);
+  return built;
 }
 
 /**
@@ -64,14 +110,40 @@ export function tokenizeQuery(query: string): QueryToken[] {
     .filter((token) => token.forms[0]!.length > 0);
 }
 
-/** Does this row answer the query? Every token must match, any order. */
+/**
+ * Does this row answer the query? Every token must match, any order.
+ *
+ * Each token is looked for WITHIN A SINGLE CELL. Matching against one
+ * squashed blob of the whole row would let a query fuse the tail of one cell
+ * onto the head of the next — "c27" finding a row whose SKU ends in "…C" and
+ * whose next column starts "27" — which reads as the grid inventing matches.
+ * Words still come from different cells freely: that is per TOKEN, not per
+ * query, so "ambrane 20000" matches brand-cell + name-cell as it always has.
+ */
 export function rowMatchesTokens(
   haystack: RowHaystack,
   tokens: QueryToken[],
 ): boolean {
   if (tokens.length === 0) return true;
   return tokens.every((token) =>
-    token.forms.some((form) => haystack.squashed.includes(form)),
+    token.forms.some((form) =>
+      haystack.cells.some((cell) => cell.includes(form)),
+    ),
+  );
+}
+
+/**
+ * Does an already-squashed cell hold any of the query's words? The hot-path
+ * form of {@link cellMatchesTokens} — same rule, but the caller has done the
+ * squashing once at data-load time instead of once per keystroke per cell.
+ */
+export function squashedCellMatchesTokens(
+  squashedCell: string,
+  tokens: QueryToken[],
+): boolean {
+  if (tokens.length === 0 || squashedCell === "") return false;
+  return tokens.some((token) =>
+    token.forms.some((form) => squashedCell.includes(form)),
   );
 }
 
@@ -86,10 +158,5 @@ export function cellMatchesTokens(
   cellText: string,
   tokens: QueryToken[],
 ): boolean {
-  if (tokens.length === 0) return false;
-  const squashed = squash(cellText);
-  if (!squashed) return false;
-  return tokens.some((token) =>
-    token.forms.some((form) => squashed.includes(form)),
-  );
+  return squashedCellMatchesTokens(squash(cellText.toLowerCase()), tokens);
 }

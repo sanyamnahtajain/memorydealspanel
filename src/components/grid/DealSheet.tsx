@@ -114,6 +114,11 @@ export function DealSheet<Row extends GridRow = GridRow>({
 
   const [density, setDensity] = React.useState<GridDensity>(initialDensity);
   const [searchOpen, setSearchOpen] = React.useState(false);
+  // Bumped every time search is (re)opened, so Ctrl+F on an already-open bar
+  // puts the cursor back in it and selects what is there — otherwise the
+  // shortcut appeared to do nothing and people reached for the browser's own
+  // find, which searches only the handful of virtualised rows on screen.
+  const [searchFocusTick, setSearchFocusTick] = React.useState(0);
   const scrollRef = React.useRef<HTMLDivElement | null>(null);
   const [scrollEl, setScrollEl] = React.useState<HTMLElement | null>(null);
   const { prompt, element: promptElement } = usePromptDialog();
@@ -221,13 +226,26 @@ export function DealSheet<Row extends GridRow = GridRow>({
 
   const [shortcutsOpen, setShortcutsOpen] = React.useState(false);
 
+  const openSearch = React.useCallback(() => {
+    setSearchOpen(true);
+    setSearchFocusTick((tick) => tick + 1);
+  }, []);
+
+  // Closing CLEARS the query. Leaving it applied hid the only explanation for
+  // why rows were missing: the bar was gone, the filter was not, and the grid
+  // just looked like it had lost half the catalogue.
+  const closeSearch = React.useCallback(() => {
+    setSearchOpen(false);
+    ctrl.setSearch("");
+  }, [ctrl]);
+
   // Ctrl/Cmd+F opens the in-grid search bar, "?" the shortcut sheet; the rest
   // flows to the grid model.
   const onKeyDown = React.useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
         e.preventDefault();
-        setSearchOpen(true);
+        openSearch();
         return;
       }
       // "?" only when nothing is being typed — inside an editor it is a
@@ -239,7 +257,7 @@ export function DealSheet<Row extends GridRow = GridRow>({
       }
       keyboard.onKeyDown(e);
     },
-    [keyboard, ctrl.editing],
+    [keyboard, ctrl.editing, openSearch],
   );
 
   /* ----------------------------- scroll ref ----------------------------- */
@@ -274,11 +292,15 @@ export function DealSheet<Row extends GridRow = GridRow>({
         density={density}
         onDensity={setDensity}
         searchOpen={searchOpen}
-        onToggleSearch={() => setSearchOpen((v) => !v)}
+        onToggleSearch={() => (searchOpen ? closeSearch() : openSearch())}
       />
 
       {searchOpen ? (
-        <SearchBar ctrl={ctrl} onClose={() => setSearchOpen(false)} />
+        <SearchBar
+          ctrl={ctrl}
+          focusTick={searchFocusTick}
+          onClose={closeSearch}
+        />
       ) : null}
 
       <div
@@ -710,15 +732,30 @@ function SaveStatusSummary<Row extends GridRow>({
 
 function SearchBar<Row extends GridRow>({
   ctrl,
+  focusTick,
   onClose,
 }: {
   ctrl: ReturnType<typeof useGridController<Row>>;
+  focusTick: number;
   onClose: () => void;
 }) {
   const inputRef = React.useRef<HTMLInputElement>(null);
   React.useEffect(() => {
     inputRef.current?.focus();
-  }, []);
+    inputRef.current?.select();
+  }, [focusTick]);
+
+  const typed = ctrl.search.trim() !== "";
+  // The count reports on the query the grid has ACTUALLY applied. Reading it
+  // off the live input made every keystroke flash "No matches" during the
+  // debounce, which is the single most alarming thing a search box can say.
+  const status = !typed
+    ? ""
+    : ctrl.searchPending
+      ? "Searching…"
+      : ctrl.searchMatches.length
+        ? `${ctrl.activeMatchIndex + 1} / ${ctrl.searchMatches.length}`
+        : "No matches";
 
   return (
     <div className="flex items-center gap-2 border-b border-border bg-muted/20 px-3 py-1.5">
@@ -729,32 +766,42 @@ function SearchBar<Row extends GridRow>({
         onChange={(e) => ctrl.setSearch(e.target.value)}
         onKeyDown={(e) => {
           e.stopPropagation();
+          // Ctrl/Cmd+F with the cursor already in here would otherwise fall
+          // through to the BROWSER's find bar, which searches only the rows
+          // virtualisation happens to have rendered. Re-select instead.
+          if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
+            e.preventDefault();
+            e.currentTarget.select();
+            return;
+          }
           if (e.key === "Enter") {
             e.preventDefault();
+            // Cycling a match list the grid has not caught up to yet would
+            // jump the selection to a row the query no longer matches.
+            if (ctrl.searchPending) return;
             if (e.shiftKey) ctrl.gotoPrevMatch();
             else ctrl.gotoNextMatch();
           } else if (e.key === "Escape") {
             e.preventDefault();
-            ctrl.setSearch("");
             onClose();
           }
         }}
         placeholder="Find in grid…"
         className="h-7 max-w-xs"
       />
-      <span className="tabular-nums text-xs text-muted-foreground">
-        {ctrl.searchMatches.length
-          ? `${ctrl.activeMatchIndex + 1} / ${ctrl.searchMatches.length}`
-          : ctrl.search
-            ? "No matches"
-            : ""}
+      <span
+        role="status"
+        aria-live="polite"
+        className="min-w-16 tabular-nums text-xs text-muted-foreground"
+      >
+        {status}
       </span>
       <Button
         type="button"
         size="icon-sm"
         variant="ghost"
         aria-label="Previous match"
-        disabled={!ctrl.searchMatches.length}
+        disabled={ctrl.searchPending || !ctrl.searchMatches.length}
         onClick={ctrl.gotoPrevMatch}
       >
         <ChevronRight className="rotate-[-90deg]" />
@@ -764,7 +811,7 @@ function SearchBar<Row extends GridRow>({
         size="icon-sm"
         variant="ghost"
         aria-label="Next match"
-        disabled={!ctrl.searchMatches.length}
+        disabled={ctrl.searchPending || !ctrl.searchMatches.length}
         onClick={ctrl.gotoNextMatch}
       >
         <ChevronDown />
@@ -774,10 +821,7 @@ function SearchBar<Row extends GridRow>({
         size="icon-sm"
         variant="ghost"
         aria-label="Close search"
-        onClick={() => {
-          ctrl.setSearch("");
-          onClose();
-        }}
+        onClick={onClose}
       >
         <X />
       </Button>
@@ -892,11 +936,10 @@ function GridCell<Row extends GridRow>({
   const isEditing =
     ctrl.editing?.rowId === coord.rowId &&
     ctrl.editing?.colKey === coord.colKey;
-  const isSearchMatch =
-    ctrl.search.trim() !== "" &&
-    ctrl.searchMatches.some(
-      (m) => m.rowId === coord.rowId && m.colKey === coord.colKey,
-    );
+  // O(1) set lookup. Scanning the match ARRAY here made highlighting cost
+  // cells x matches, which is what made searching a full catalogue feel like
+  // the grid had frozen.
+  const isSearchMatch = ctrl.isSearchMatch(coord.rowId, coord.colKey);
 
   const value = row[column.key as keyof Row];
   const pinned = column.pinned === "left";
