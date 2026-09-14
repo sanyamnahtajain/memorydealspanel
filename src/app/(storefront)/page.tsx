@@ -22,6 +22,8 @@ import {
   HomePriceReveal,
   LivePriceSlot,
 } from "@/components/storefront/home/LivePriceSlot";
+import { BannerCarousel } from "@/components/storefront/home/BannerCarousel";
+import { listLiveBanners } from "@/server/services/banners";
 import { BuyAgainRail } from "@/components/storefront/home/BuyAgainRail";
 import { LastOrderCard } from "@/components/storefront/home/LastOrderCard";
 import { APP_NAME } from "@/lib/constants";
@@ -50,11 +52,15 @@ const FEATURED_LIMIT = 8;
 const BEST_SELLER_LIMIT = 8;
 
 export default async function HomePage() {
-  const [categories, brands, featured, bestSellerIds] = await Promise.all([
+  const [categories, brands, featured, bestSellerIds, heroBanners] =
+    await Promise.all([
     listActive(),
     listActivePublicBrands(),
     listForViewer(ANON_VIEWER, { take: FEATURED_LIMIT }),
     bestSellerProductIds(BEST_SELLER_LIMIT),
+    // Global and price-free, so it caches with the ISR shell like every other
+    // rail here. Fails to an empty list rather than throwing (see the service).
+    listLiveBanners("HOME_HERO"),
   ]);
 
   // Best sellers — the shop's recency-weighted top movers, resolved through
@@ -87,6 +93,16 @@ export default async function HomePage() {
 
   return (
     <StorefrontShell topNotice="Prices are subject to change without prior notice — please confirm current rates before placing your order.">
+      {/* Promo banners, first on the page (the Flipkart/Amazon position).
+          Renders NOTHING when no banner is live, so the page is byte-identical
+          to today's until the owner adds one — the sections below keep their
+          order untouched. */}
+      {heroBanners.length > 0 ? (
+        <div className="mt-3">
+          <BannerCarousel banners={heroBanners} />
+        </div>
+      ) : null}
+
       {/* "Your last order" + "Buy again" — the signed-in customer's own data,
           right under search. DO NOT move these into the server render: home is
           PUBLIC ISR (revalidate=300) and must never read cookies or embed

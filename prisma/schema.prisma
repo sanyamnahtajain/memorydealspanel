@@ -480,6 +480,39 @@ model Brand {
   @@index([status, sortOrder])
 }
 
+/// Storefront promo banners (the Flipkart/Amazon-style merchandising strip).
+///
+/// `placement` is a plain STRING, not an enum, on purpose: adding a new slot
+/// (a category-page strip, a cart banner) must not need a migration. The known
+/// slots are validated in src/lib/banners.ts, so a typo yields an inert banner
+/// rather than a broken page.
+model Banner {
+  id        String    @id @default(auto()) @map("_id") @db.ObjectId
+  placement String
+  /// Landscape artwork for tablet/desktop.
+  imageUrl  String
+  /// Optional tighter crop for phones; falls back to imageUrl.
+  mobileImageUrl String?
+  /// Describes the offer for screen readers — never decorative-empty, because
+  /// a banner IS content.
+  alt       String
+  /// Where a tap goes. Null = the banner is not clickable.
+  href      String?
+  sortOrder Int       @default(0)
+  active    Boolean   @default(true)
+  /// Optional schedule. Null start = live now; null end = never expires.
+  startsAt  DateTime?
+  endsAt    DateTime?
+  /// Soft delete. ALWAYS written as an explicit null on create — on MongoDB an
+  /// absent field does not match `{ deletedAt: null }`.
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([placement, active, sortOrder])
+  @@index([deletedAt])
+}
+
 model WishlistItem {
   id         String   @id @default(auto()) @map("_id") @db.ObjectId
   customerId String   @db.ObjectId

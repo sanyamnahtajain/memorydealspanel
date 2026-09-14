@@ -7,6 +7,7 @@ import {
   Layers,
   LayoutDashboard,
   LayoutGrid,
+  GalleryHorizontalEnd,
   Megaphone,
   MessageSquare,
   MonitorSmartphone,
@@ -69,6 +70,7 @@ export const adminPrimaryNav: readonly NavItem[] = [
  * under their own section label and inside the mobile "More" sheet.
  */
 export const adminSecondaryNav: readonly NavItem[] = [
+  { label: "Banners", href: "/admin/banners", icon: GalleryHorizontalEnd },
   { label: "Contact messages", href: "/admin/contact", icon: MessageSquare },
   { label: "Import", href: "/admin/import", icon: Upload },
   { label: "Coupons", href: "/admin/coupons", icon: TicketPercent },
