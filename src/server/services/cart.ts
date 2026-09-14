@@ -136,6 +136,8 @@ export interface CartLine {
   brand: string | null;
   /** Brand-master id (null for legacy free-text brands) — drives billing groups. */
   brandId: string | null;
+  /** Drives billing-group matching by category (src/lib/billing-groups). */
+  categoryId: string | null;
   /** Primary image url for the line thumbnail, when any. */
   imageUrl: string | null;
   /** Human option label for a variant line, e.g. "20000mAh · Black". */
@@ -319,6 +321,8 @@ interface ResolvedUnit {
   brand: string | null;
   /** Brand-master id (null for legacy free-text brands) — drives billing groups. */
   brandId: string | null;
+  /** Drives billing-group matching by category (src/lib/billing-groups). */
+  categoryId: string | null;
   imageUrl: string | null;
   variantLabel: string | null;
   moq: number;
@@ -348,6 +352,7 @@ const PRODUCT_SELECT = {
   sku: true,
   brand: true,
   brandId: true,
+  categoryId: true,
   brandRef: { select: { name: true } },
   price: true,
   moq: true,
@@ -523,6 +528,7 @@ async function resolveUnit(
         sku: product.sku,
         brand: baseBrand,
     brandId: product.brandId ?? null,
+    categoryId: product.categoryId ?? null,
         imageUrl: firstImageUrl(product),
         variantLabel: null,
         moq: normaliseMoq(product.moq),
@@ -550,6 +556,7 @@ async function resolveUnit(
     sku: product.sku,
     brand: baseBrand,
     brandId: product.brandId ?? null,
+    categoryId: product.categoryId ?? null,
     imageUrl: firstImageUrl(product),
     variantLabel: null,
     moq: normaliseMoq(product.moq),
@@ -581,6 +588,7 @@ function resolveVariantUnit(
     sku: variant.sku,
     brand: baseBrand,
     brandId: product.brandId ?? null,
+    categoryId: product.categoryId ?? null,
     imageUrl: firstImageUrl(product),
     variantLabel: variantLabel(variant.optionValues),
     moq: normaliseMoq(variant.moq ?? product.moq),
@@ -679,6 +687,7 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
     let sku: string;
     let brand: string | null;
     let brandId: string | null;
+    let categoryId: string | null;
     let imageUrl: string | null;
     let variantLbl: string | null;
     let moq: number;
@@ -695,6 +704,7 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
       sku = "";
       brand = null;
       brandId = null;
+      categoryId = null;
       imageUrl = null;
       variantLbl = null;
       moq = MIN_QTY_PER_LINE;
@@ -708,6 +718,7 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
       sku = unit.sku;
       brand = unit.brand;
       brandId = unit.brandId;
+      categoryId = unit.categoryId ?? null;
       imageUrl = unit.imageUrl;
       variantLbl = unit.variantLabel;
       moq = unit.moq;
@@ -785,6 +796,7 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
       sku,
       brand,
       brandId,
+      categoryId,
       imageUrl,
       variantLabel: variantLbl,
       quantity: row.quantity,
@@ -872,6 +884,7 @@ export async function getCart(viewer: CustomerViewer): Promise<Cart> {
         .map((l) => ({
           key: lineKey(l.productId, l.variantId),
           brandId: l.brandId,
+          categoryId: l.categoryId,
           lineTotalPaise: l.lineTotalPaise as number,
         })),
     );

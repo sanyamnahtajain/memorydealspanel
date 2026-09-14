@@ -186,6 +186,8 @@ export interface PricedCartLine {
   brand: string | null;
   /** Brand-master id (null for legacy free-text brands) — drives billing groups. */
   brandId: string | null;
+  /** Category id — also drives billing groups (src/lib/billing-groups). */
+  categoryId: string | null;
   variantLabel: string | null;
   slug: string;
   imageUrl: string | null;
@@ -280,6 +282,7 @@ const CART_PRODUCT_SELECT = {
   sku: true,
   brand: true,
   brandId: true,
+  categoryId: true,
   brandRef: { select: { name: true } },
   price: true,
   moq: true,
@@ -466,6 +469,7 @@ function priceLine(
     sku: product.sku,
     brand: product.brandRef?.name ?? product.brand ?? null,
     brandId: product.brandId ?? null,
+    categoryId: product.categoryId ?? null,
     variantLabel: null,
     slug: product.slug,
     imageUrl: primaryImageUrl(product.images),
@@ -746,6 +750,7 @@ export async function priceCartForCustomer(customerId: string): Promise<PricedCa
     orderableLines.map((l) => ({
       key: lineKey(l.productId, l.variantId),
       brandId: l.brandId,
+      categoryId: l.categoryId,
       lineTotalPaise: l.lineTotalPaise,
     })),
   );

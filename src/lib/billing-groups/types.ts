@@ -16,11 +16,37 @@
 /* Matchers                                                            */
 /* ------------------------------------------------------------------ */
 
-export type BillingGroupMatcher = {
-  kind: "brands";
-  /** Brand ids (Brand master) whose products belong to this group. */
+export type BillingGroupMatcher =
+  /**
+   * LEGACY, still read: groups saved before categories existed. Equivalent to
+   * a `catalog` matcher with no categories, and treated as one everywhere via
+   * {@link matcherSelection} — so no stored group needs rewriting.
+   */
+  | { kind: "brands"; brandIds: string[] }
+  | {
+      kind: "catalog";
+      /** Brand ids (Brand master) whose products belong to this group. */
+      brandIds: string[];
+      /** Category ids whose products belong to this group. */
+      categoryIds: string[];
+    };
+
+/**
+ * The matcher's selection as ONE shape, whichever kind it was stored as.
+ *
+ * Every consumer reads this instead of switching on `kind`: a legacy `brands`
+ * matcher and a `catalog` matcher with no categories are the same thing, and
+ * nothing outside this file should have to know that.
+ */
+export function matcherSelection(matcher: BillingGroupMatcher): {
   brandIds: string[];
-};
+  categoryIds: string[];
+} {
+  return {
+    brandIds: matcher.brandIds,
+    categoryIds: matcher.kind === "catalog" ? matcher.categoryIds : [],
+  };
+}
 
 /* ------------------------------------------------------------------ */
 /* Rules                                                               */
@@ -88,6 +114,12 @@ export interface BucketableLine {
   /** Stable line key (cartItem id / snapshot index). */
   key: string;
   brandId: string | null;
+  /**
+   * The product's category. Optional so existing callers keep compiling; a
+   * line without it simply can't match a category rule (it still matches on
+   * brand exactly as before).
+   */
+  categoryId?: string | null;
   /** Integer paise, the line's pre-discount total. */
   lineTotalPaise: number;
 }

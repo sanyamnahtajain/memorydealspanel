@@ -1,4 +1,5 @@
 import {
+  matcherSelection,
   GENERAL_GROUP_CODE,
   GENERAL_GROUP_NAME,
   type AppliedTier,
@@ -30,12 +31,19 @@ import {
 
 /** Does `line` belong to `group`? (Tagged-union switch: extend per matcher kind.) */
 export function lineMatchesGroup(line: BucketableLine, group: BillingGroupConfig): boolean {
-  switch (group.matcher.kind) {
-    case "brands":
-      return line.brandId !== null && group.matcher.brandIds.includes(line.brandId);
-    default:
-      return false;
+  const { brandIds, categoryIds } = matcherSelection(group.matcher);
+  // EITHER selection puts the line in the group — an admin picking "boat" and
+  // "Tempered glass" means both belong here, not their intersection (which
+  // would be almost always empty and silently bucket nothing).
+  if (line.brandId !== null && brandIds.includes(line.brandId)) return true;
+  if (
+    line.categoryId !== null &&
+    line.categoryId !== undefined &&
+    categoryIds.includes(line.categoryId)
+  ) {
+    return true;
   }
+  return false;
 }
 
 /**

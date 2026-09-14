@@ -48,10 +48,23 @@ export const tieredPercentRuleSchema = z.object({
 export const billingGroupRuleSchema = z.discriminatedUnion("kind", [tieredPercentRuleSchema]);
 
 export const billingGroupMatcherSchema = z.discriminatedUnion("kind", [
+  // LEGACY shape — still accepted so groups saved before categories existed
+  // keep validating. New saves write `catalog`.
   z.object({
     kind: z.literal("brands"),
     brandIds: z.array(objectIdSchema).min(1, "Pick at least one brand").max(200),
   }),
+  z
+    .object({
+      kind: z.literal("catalog"),
+      brandIds: z.array(objectIdSchema).max(200),
+      categoryIds: z.array(objectIdSchema).max(200),
+    })
+    // Either list may be empty, but not BOTH — a group that matches nothing
+    // would silently bucket no lines and look broken rather than misconfigured.
+    .refine((m) => m.brandIds.length > 0 || m.categoryIds.length > 0, {
+      message: "Pick at least one brand or category",
+    }),
 ]);
 
 export const billingGroupInputSchema = z.object({

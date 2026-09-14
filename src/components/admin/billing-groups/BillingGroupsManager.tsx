@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import {
+import { LayoutGrid,
   AlertTriangle,
   Layers,
   Pencil,
@@ -45,6 +45,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { ConfirmSheet, EmptyState, Tooltip, useIsMobile } from "@/components/common";
+import { matcherSelection } from "@/lib/billing-groups/types";
 
 /**
  * BillingGroupsManager — the admin surface for billing groups.
@@ -130,13 +131,21 @@ function suggestCode(name: string): string {
 export function BillingGroupsManager({
   groups,
   brands,
+  categories,
 }: {
   groups: BillingGroupConfig[];
   brands: BrandOption[];
+  /** Active categories, for the category half of a group's matcher. */
+  categories: { id: string; name: string }[];
 }) {
   const router = useRouter();
   const [editing, setEditing] = React.useState<BillingGroupConfig | null | "new">(null);
   const [openKey, setOpenKey] = React.useState(0);
+
+  const categoryName = React.useMemo(() => {
+    const map = new Map(categories.map((c) => [c.id, c.name]));
+    return (id: string) => map.get(id) ?? "Unknown category";
+  }, [categories]);
 
   const brandName = React.useMemo(() => {
     const map = new Map(brands.map((b) => [b.id, b.name]));
@@ -219,6 +228,7 @@ export function BillingGroupsManager({
               <GroupCard
                 group={group}
                 brandName={brandName}
+                categoryName={categoryName}
                 overlaps={
                   group.active &&
                   group.matcher.brandIds.some(
@@ -241,6 +251,7 @@ export function BillingGroupsManager({
         }}
         initial={editing === "new" || editing === null ? null : editing}
         brands={brands}
+        categories={categories}
         existingCodes={groups
           .filter((g) => editing === "new" || editing === null || g.id !== editing.id)
           .map((g) => g.code)}
@@ -260,12 +271,14 @@ export function BillingGroupsManager({
 function GroupCard({
   group,
   brandName,
+  categoryName,
   overlaps,
   onEdit,
   onChanged,
 }: {
   group: BillingGroupConfig;
   brandName: (id: string) => string;
+  categoryName: (id: string) => string;
   overlaps: boolean;
   onEdit: () => void;
   onChanged: () => void;
@@ -341,20 +354,39 @@ function GroupCard({
 
           <p className="text-sm text-muted-foreground">{tierSummary(tiers)}</p>
 
-          {group.matcher.brandIds.length > 0 ? (
-            <div className="flex flex-wrap gap-1.5">
-              {group.matcher.brandIds.map((id) => (
-                <span
-                  key={id}
-                  className="inline-flex items-center rounded-full border border-border bg-muted/40 px-2.5 py-0.5 text-xs"
-                >
-                  {brandName(id)}
-                </span>
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs text-muted-foreground">No brands selected.</p>
-          )}
+          {(() => {
+            // One chip row for the whole matcher: what an admin wants to see is
+            // "what lands in this bucket", not which dimension put it there.
+            const sel = matcherSelection(group.matcher);
+            if (sel.brandIds.length === 0 && sel.categoryIds.length === 0) {
+              return (
+                <p className="text-xs text-muted-foreground">
+                  Nothing selected — this group matches no lines.
+                </p>
+              );
+            }
+            return (
+              <div className="flex flex-wrap gap-1.5">
+                {sel.brandIds.map((id) => (
+                  <span
+                    key={`b-${id}`}
+                    className="inline-flex items-center rounded-full border border-border bg-muted/40 px-2.5 py-0.5 text-xs"
+                  >
+                    {brandName(id)}
+                  </span>
+                ))}
+                {sel.categoryIds.map((id) => (
+                  <span
+                    key={`c-${id}`}
+                    className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2.5 py-0.5 text-xs"
+                  >
+                    <LayoutGrid className="size-3 text-muted-foreground" aria-hidden />
+                    {categoryName(id)}
+                  </span>
+                ))}
+              </div>
+            );
+          })()}
         </div>
 
         <div className="flex shrink-0 flex-col items-end gap-2">
@@ -430,6 +462,7 @@ function GroupSheet({
   onOpenChange,
   initial,
   brands,
+  categories,
   existingCodes,
   onSaved,
 }: {
@@ -437,6 +470,7 @@ function GroupSheet({
   onOpenChange: (open: boolean) => void;
   initial: BillingGroupConfig | null;
   brands: BrandOption[];
+  categories: { id: string; name: string }[];
   existingCodes: string[];
   onSaved: () => void;
 }) {
@@ -450,7 +484,15 @@ function GroupSheet({
     initial && isGroupColor(initial.color) ? initial.color : "blue",
   );
   const [sortOrder, setSortOrder] = React.useState(String(initial?.sortOrder ?? 0));
-  const [brandIds, setBrandIds] = React.useState<string[]>(initial?.matcher.brandIds ?? []);
+  const initialSelection = initial
+    ? matcherSelection(initial.matcher)
+    : { brandIds: [], categoryIds: [] };
+  const [brandIds, setBrandIds] = React.useState<string[]>(
+    initialSelection.brandIds,
+  );
+  const [categoryIds, setCategoryIds] = React.useState<string[]>(
+    initialSelection.categoryIds,
+  );
   const [rows, setRows] = React.useState<TierRow[]>(
     initial ? toRows(tiersOf(initial)) : [{ key: 1, from: "0", percent: "" }],
   );
@@ -557,7 +599,9 @@ function GroupSheet({
 
     if (name.trim().length < 2) return toast.error("Give the group a name.");
     if (trimmedCode === "" || codeError) return toast.error("Fix the code before saving.");
-    if (brandIds.length === 0) return toast.error("Pick at least one brand.");
+    if (brandIds.length === 0 && categoryIds.length === 0) {
+      return toast.error("Pick at least one brand or category.");
+    }
     if (rowErrors.some(Boolean) || tiersError) return toast.error("Fix the discount tiers.");
     const order = Number(sortOrder);
     if (!Number.isInteger(order) || order < 0 || order > 1000) {
@@ -571,7 +615,9 @@ function GroupSheet({
       color,
       active: initial?.active ?? true,
       sortOrder: order,
-      matcher: { kind: "brands", brandIds },
+      // Always written as `catalog` now; legacy `brands` groups keep loading
+      // (matcherSelection treats them as catalog with no categories).
+      matcher: { kind: "catalog" as const, brandIds, categoryIds },
       rules: [
         {
           kind: "tieredPercent",
@@ -693,7 +739,25 @@ function GroupSheet({
           title="Brands"
           description="Products from these brands land in this bucket."
         >
-          <BrandPicker brands={brands} value={brandIds} onChange={setBrandIds} />
+          <CatalogPicker
+            options={brands}
+            value={brandIds}
+            onChange={setBrandIds}
+            noun="brand"
+          />
+        </Section>
+
+        {/* Categories */}
+        <Section
+          title="Categories"
+          description="Products in these categories land in this bucket too. A line matches on EITHER — its brand or its category — so you can mix the two."
+        >
+          <CatalogPicker
+            options={categories}
+            value={categoryIds}
+            onChange={setCategoryIds}
+            noun="category"
+          />
         </Section>
 
         {/* Tiers */}
@@ -899,14 +963,22 @@ function GroupSheet({
 /* Brand multi-picker (client-side filter over the server list)        */
 /* ------------------------------------------------------------------ */
 
-function BrandPicker({
-  brands,
+/**
+ * Multi-select over one catalog dimension. Brands and categories are the same
+ * shape ({id, name}) and want the same interaction, so this is one control
+ * used twice rather than two that drift apart.
+ */
+function CatalogPicker({
+  options: brands,
   value,
   onChange,
+  noun,
 }: {
-  brands: BrandOption[];
+  options: { id: string; name: string }[];
   value: string[];
   onChange: (ids: string[]) => void;
+  /** Singular, for the placeholder and empty copy ("brand" / "category"). */
+  noun: string;
 }) {
   const [query, setQuery] = React.useState("");
   const [open, setOpen] = React.useState(false);
@@ -952,9 +1024,9 @@ function BrandPicker({
               if (first) add(first.id);
             }
           }}
-          placeholder="Search brands to add…"
+          placeholder={`Search ${noun}s to add…`}
           className="pl-8"
-          aria-label="Search brands to add"
+          aria-label={`Search ${noun}s to add`}
           aria-expanded={open}
           aria-controls="bg-brand-results"
         />
@@ -962,12 +1034,14 @@ function BrandPicker({
           <ul
             id="bg-brand-results"
             role="listbox"
-            aria-label="Matching brands"
+            aria-label={`Matching ${noun}s`}
             className="absolute inset-x-0 top-full z-30 mt-1 max-h-56 overflow-auto rounded-lg border border-border bg-popover p-1 shadow-lg"
           >
             {results.length === 0 ? (
               <li className="px-2.5 py-2 text-sm text-muted-foreground">
-                {brands.length === 0 ? "No active brands yet." : `No brands match “${query}”.`}
+                {brands.length === 0
+                  ? `No active ${noun}s yet.`
+                  : `No ${noun}s match “${query}”.`}
               </li>
             ) : (
               results.map((b) => {
