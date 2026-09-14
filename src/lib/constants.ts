@@ -64,8 +64,16 @@ export const PAGE_SIZES = {
 
 /** Image constraints (F-A10). */
 export const MAX_IMAGES_PER_PRODUCT = 8;
-/** Max accepted file size BEFORE client-side compression: 5 MB. */
-export const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
+/**
+ * Max accepted file size BEFORE client-side compression: 15 MB.
+ *
+ * This is a guard against wedging the browser while it decodes a huge image,
+ * NOT a bandwidth budget — everything is re-encoded to well under 2 MB before
+ * it is uploaded (see src/lib/image.ts). It was 5 MB, which rejected ordinary
+ * phone photos and pushed the owner into resizing shots elsewhere first,
+ * usually losing more quality than the pipeline ever would.
+ */
+export const MAX_IMAGE_SIZE_BYTES = 15 * 1024 * 1024;
 export const ACCEPTED_IMAGE_MIME_TYPES = [
   "image/jpeg",
   "image/png",

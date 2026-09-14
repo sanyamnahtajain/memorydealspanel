@@ -179,7 +179,7 @@ export const ImageManager = React.forwardRef<
               </span>
             </p>
             <p className="text-xs text-muted-foreground">
-              JPEG, PNG, WebP or AVIF · up to 5 MB each · {remaining} slot
+              JPEG, PNG, WebP or AVIF · up to 15 MB each · {remaining} slot
               {remaining === 1 ? "" : "s"} left
             </p>
           </>

@@ -24,7 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ImageError, compressImage } from "@/lib/image";
+import { ImageError, compressBannerArtwork } from "@/lib/image";
 import {
   BANNER_PLACEMENTS,
   MAX_BANNER_ALT,
@@ -271,12 +271,12 @@ function BannerDialog({
   async function upload(file: File, which: "wide" | "mobile") {
     setUploading(which);
     try {
-      // Compress in the browser first, exactly like product images do.
-      // A banner is the heaviest thing on the home page and EVERY visitor
-      // downloads it — shipping the 4 MB PNG that came out of Canva is the
-      // difference between a hero that paints instantly and one that
-      // trickles in over a phone connection. Also keeps the installed PWA's
-      // image cache small enough to actually survive.
+      // Compress in the browser first, like product images — but on the
+      // banner budget (see src/lib/image.ts). A banner is the heaviest thing
+      // on the home page and EVERY visitor downloads it, so shipping the 4 MB
+      // PNG that came out of Canva is the difference between a hero that
+      // paints instantly and one that trickles in over a phone connection.
+      // It also keeps the installed PWA's image cache small enough to survive.
       if (!ACCEPTED_BANNER_TYPES.includes(file.type)) {
         toast.error("Banner artwork must be a JPG, PNG or WebP.");
         return;
@@ -284,7 +284,7 @@ function BannerDialog({
 
       let artwork: File;
       try {
-        artwork = await compressImage(file);
+        artwork = await compressBannerArtwork(file);
       } catch (error) {
         toast.error(
           error instanceof ImageError

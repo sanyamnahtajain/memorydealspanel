@@ -23,14 +23,54 @@ export {
   MAX_IMAGES_PER_PRODUCT,
 };
 
-/** Full-size longest-edge cap, in pixels (matches design brief). */
-const FULL_MAX_DIMENSION = 1600;
+/*
+ * SIZE AND QUALITY BUDGETS.
+ *
+ * These numbers decide what a buyer actually sees, because `images.unoptimized`
+ * is on in next.config.ts — what leaves this file is what gets served. There
+ * is no second chance to re-encode later: the original never leaves the
+ * browser, so an image compressed too hard here is permanently soft.
+ *
+ * The old budgets (1600px/0.5MB full, 400px/0.1MB thumb) were set to protect
+ * an image-optimisation quota that no longer applies, and they were visibly
+ * too tight:
+ *
+ *  - A 400px thumbnail is UPSCALED in every card it appears in. A grid card is
+ *    ~45vw on a phone and ~22vw on a desktop — roughly 580 and 630 device
+ *    pixels once screen density is counted. The card was being handed 400.
+ *  - 0.5 MB for a 1600x1600 detail photo lands around JPEG quality 60, and the
+ *    product gallery lets buyers ZOOM it, which is exactly where those
+ *    artifacts show.
+ *
+ * `initialQuality` matters as much as the byte budget: without it
+ * browser-image-compression starts at 0.7 and re-encodes at that quality even
+ * when the file would have fit comfortably at 0.9. Starting high and letting
+ * the size budget step it down only if needed is strictly better.
+ */
+
+/** Full-size longest-edge cap, in pixels. Covers a full-width retina zoom. */
+const FULL_MAX_DIMENSION = 2000;
 /** Full-size target byte budget after compression, in megabytes. */
-const FULL_MAX_SIZE_MB = 0.5;
-/** Thumbnail longest-edge cap, in pixels. */
-const THUMB_MAX_DIMENSION = 400;
+const FULL_MAX_SIZE_MB = 1.5;
+/** Encoder quality to start from before the size budget forces it down. */
+const FULL_INITIAL_QUALITY = 0.92;
+/** Thumbnail longest-edge cap, in pixels — 2x the largest card we render. */
+const THUMB_MAX_DIMENSION = 800;
 /** Thumbnail target byte budget after compression, in megabytes. */
-const THUMB_MAX_SIZE_MB = 0.1;
+const THUMB_MAX_SIZE_MB = 0.22;
+/** Thumbnails can start slightly lower; they are never zoomed. */
+const THUMB_INITIAL_QUALITY = 0.85;
+
+/*
+ * Banner artwork is a different problem from a product photo. It is WIDE, it
+ * is never zoomed, and it is the home page's LCP element — the single image
+ * whose arrival decides how fast the shop feels. So it gets a generous
+ * dimension (a 3:1 strip needs the width) on a tight byte budget, rather than
+ * the product photo's 1.5 MB.
+ */
+const BANNER_MAX_DIMENSION = 1800;
+const BANNER_MAX_SIZE_MB = 0.4;
+const BANNER_INITIAL_QUALITY = 0.85;
 
 /** A validation/compression failure that carries a user-facing message. */
 export class ImageError extends Error {
@@ -100,9 +140,9 @@ function withExtension(name: string, ext: string): string {
 }
 
 /**
- * Compress a full-size product image: longest edge <= 1600px, target <=
- * 0.5 MB. Preserves the source MIME type (JPEG/PNG/WebP/AVIF). Returns a new
- * `File` — the original is never mutated.
+ * Compress a full-size product image: longest edge <= FULL_MAX_DIMENSION,
+ * target <= FULL_MAX_SIZE_MB. Preserves the source MIME type
+ * (JPEG/PNG/WebP/AVIF). Returns a new `File` — the original is never mutated.
  */
 export async function compressImage(file: File): Promise<File> {
   assertValidImageFile(file);
@@ -110,6 +150,7 @@ export async function compressImage(file: File): Promise<File> {
     const compressed = await imageCompression(file, {
       maxWidthOrHeight: FULL_MAX_DIMENSION,
       maxSizeMB: FULL_MAX_SIZE_MB,
+      initialQuality: FULL_INITIAL_QUALITY,
       useWebWorker: true,
       fileType: file.type,
       // Only shrink — never upscale a small source.
@@ -126,8 +167,33 @@ export async function compressImage(file: File): Promise<File> {
 }
 
 /**
- * Produce a small thumbnail (longest edge <= 400px) from the source file.
- * Used for the storefront grid / admin strip so we don't ship full-size
+ * Compress banner artwork. Wide enough for a full-bleed promo strip, light
+ * enough to be the first thing a phone downloads. See the budget note above.
+ */
+export async function compressBannerArtwork(file: File): Promise<File> {
+  assertValidImageFile(file);
+  try {
+    const compressed = await imageCompression(file, {
+      maxWidthOrHeight: BANNER_MAX_DIMENSION,
+      maxSizeMB: BANNER_MAX_SIZE_MB,
+      initialQuality: BANNER_INITIAL_QUALITY,
+      useWebWorker: true,
+      fileType: file.type,
+      alwaysKeepResolution: false,
+    });
+    return normalizeCompressed(compressed, file);
+  } catch (error) {
+    throw new ImageError(
+      `Could not process "${file.name}": ${
+        error instanceof Error ? error.message : "compression failed"
+      }`,
+    );
+  }
+}
+
+/**
+ * Produce a thumbnail (longest edge <= THUMB_MAX_DIMENSION) from the source
+ * file. Used for the storefront grid / admin strip so we don't ship full-size
  * images into lists. Returns a new `File`.
  */
 export async function makeThumbnail(file: File): Promise<File> {
@@ -136,6 +202,7 @@ export async function makeThumbnail(file: File): Promise<File> {
     const thumb = await imageCompression(file, {
       maxWidthOrHeight: THUMB_MAX_DIMENSION,
       maxSizeMB: THUMB_MAX_SIZE_MB,
+      initialQuality: THUMB_INITIAL_QUALITY,
       useWebWorker: true,
       fileType: file.type,
     });

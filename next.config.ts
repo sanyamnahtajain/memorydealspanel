@@ -28,8 +28,8 @@ const nextConfig: NextConfig = {
   images: {
     remotePatterns,
     // Product/brand/category images are ALREADY resized + compressed in the
-    // browser BEFORE upload to R2 — full-size ≤1600px/~0.5MB and a dedicated
-    // ≤400px/~0.1MB thumbnail (see src/lib/image.ts). Vercel's image
+    // browser BEFORE upload to R2 — full-size ≤2000px/~1.5MB and a dedicated
+    // ≤800px/~0.22MB thumbnail (see src/lib/image.ts). Vercel's image
     // optimization therefore re-optimizes already-optimized images: pure
     // overhead that exhausted the Image-Optimization transformation quota and
     // caused images to stop loading in production. Serve the R2 objects
