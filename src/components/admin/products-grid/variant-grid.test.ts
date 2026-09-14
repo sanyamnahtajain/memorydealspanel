@@ -27,6 +27,7 @@ function makeRow(overrides: Partial<ProductRow> = {}): ProductRow {
     categoryId: "c1",
     price: 49900,
     mrp: 59900,
+    moq: null,
     stockStatus: "IN_STOCK",
     status: "ACTIVE",
     tags: [],

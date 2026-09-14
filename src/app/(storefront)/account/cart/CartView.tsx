@@ -941,7 +941,12 @@ function Summary({
         </div>
       ) : null}
 
-      {priced && canOrder && !coupon ? (
+      {/* The code box appears only when the shop actually HAS active coupons
+          (owner request). `suggestions` is quoted from every active,
+          non-deleted coupon, so an empty list means there is no code a buyer
+          could possibly type — and an input that can only ever say "invalid"
+          is worse than no input. Hidden too once one is applied. */}
+      {priced && canOrder && !coupon && suggestions.length > 0 ? (
         <div className="flex gap-2">
           <input
             type="text"

@@ -57,6 +57,8 @@ export interface ProductRow extends GridRow {
   categoryId: string;
   price: number; // paise
   mrp: number | null; // paise
+  /** Minimum order quantity (units). Product-level; a variant may override. */
+  moq: number | null;
   stockStatus: StockStatus;
   status: EntityStatus;
   tags: string[];
@@ -273,6 +275,17 @@ export function buildProductColumns(
           "mrp",
         );
       }),
+    },
+    {
+      key: "moq",
+      header: "MOQ",
+      type: "number",
+      width: 90,
+      // NOT variant-guarded, unlike price/mrp: those are recomputed FROM the
+      // variant matrix, whereas MOQ is a product-level default a variant may
+      // override. Editing it on a variant product is meaningful.
+      validate: (value) =>
+        value == null ? null : validatePatch({ moq: value as number }, "moq"),
     },
     {
       key: "stockStatus",

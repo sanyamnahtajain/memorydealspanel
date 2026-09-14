@@ -29,6 +29,7 @@ export function toProductRow(product: AdminGridProduct): ProductRow {
     categoryId: product.categoryId,
     price: product.price,
     mrp: product.mrp,
+    moq: product.moq ?? null,
     stockStatus: product.stockStatus,
     status: product.status,
     tags: product.tags,
@@ -82,6 +83,8 @@ export function toUpdateInput(
   }
   if ("price" in patch && patch.price !== undefined) out.price = patch.price;
   if ("mrp" in patch) out.mrp = patch.mrp ?? undefined;
+  // MOQ is optional server-side; an emptied cell means "no minimum".
+  if ("moq" in patch) out.moq = patch.moq ?? undefined;
   if ("stockStatus" in patch && patch.stockStatus !== undefined) {
     out.stockStatus = patch.stockStatus;
   }
