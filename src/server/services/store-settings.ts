@@ -205,8 +205,10 @@ export async function getDeliveryRules(): Promise<DeliveryRules> {
 }
 
 /** The disclosure the storefront/PDF must show, or null when off. */
-export async function getDeliveryDisclosure(): Promise<DeliveryDisclosure | null> {
-  return resolveDeliveryDisclosure(await getDeliveryRules());
+export async function getDeliveryDisclosure(
+  goodsPaise = 0,
+): Promise<DeliveryDisclosure | null> {
+  return resolveDeliveryDisclosure(await getDeliveryRules(), goodsPaise);
 }
 
 /**
@@ -221,11 +223,18 @@ export interface DeliveryTerms {
   chargePaise: number;
 }
 
-export async function getDeliveryTerms(): Promise<DeliveryTerms> {
+export async function getDeliveryTerms(
+  /**
+   * The order's GOODS value after every discount, in paise. Value-banded
+   * rules charge on this; a flat rule ignores it, so omitting it keeps the
+   * pre-ladder behaviour exactly.
+   */
+  goodsPaise = 0,
+): Promise<DeliveryTerms> {
   const rules = await getDeliveryRules();
   return {
-    disclosure: resolveDeliveryDisclosure(rules),
-    chargePaise: resolveDeliveryChargePaise(rules),
+    disclosure: resolveDeliveryDisclosure(rules, goodsPaise),
+    chargePaise: resolveDeliveryChargePaise(rules, goodsPaise),
   };
 }
 

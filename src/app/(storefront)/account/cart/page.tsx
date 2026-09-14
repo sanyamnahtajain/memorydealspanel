@@ -8,7 +8,7 @@ import { canSeePrices, isCustomer } from "@/server/types/viewer";
 import { getCart, cartCountForViewer } from "@/server/services/cart";
 import { listActiveBillingGroupConfigs } from "@/server/services/billing-groups";
 import type { GroupRules } from "@/components/storefront/billing/bucket-math";
-import { getCartNotice, getDeliveryTerms, getMinOrderValuePaise } from "@/server/services/store-settings";
+import { getDeliveryRules, getCartNotice, getDeliveryTerms, getMinOrderValuePaise } from "@/server/services/store-settings";
 import { APP_NAME } from "@/lib/constants";
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -55,7 +55,11 @@ export default async function CartPage() {
   // Delivery (owner request) — the terms AND the charge, from one read of the
   // rules. Shown to every customer, priced or not: it is a store-wide charge,
   // not a catalog price, so it is never gated. It is ADDED to the cart total.
-  const delivery = await getDeliveryTerms();
+  // The rules themselves go to the client so a value-banded charge tracks the
+  // cart live; the server value is the first paint and the fallback. These are
+  // published shipping terms, not anything gated.
+  const deliveryRules = await getDeliveryRules();
+  const delivery = await getDeliveryTerms(cart.subtotalPaise ?? 0);
   // Owner's billing notice (Settings → Ordering); null hides it.
   const cartNotice = await getCartNotice();
 
@@ -161,6 +165,7 @@ export default async function CartPage() {
                 deliveryDisclosure={delivery.disclosure}
                 cartNotice={cartNotice}
                 deliveryChargePaise={delivery.chargePaise}
+                deliveryRules={deliveryRules}
               />
             </FadeUp>
           )}

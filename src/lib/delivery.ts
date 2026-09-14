@@ -16,11 +16,37 @@ import { z } from "zod";
  * edits the rules.
  */
 
+/** Ceiling for any money field here: ₹1 crore in paise. */
+const MAX_DELIVERY_PAISE = 1_00_00_000_00;
+
+/**
+ * One band of a value ladder: "orders up to ₹10,000 pay ₹250".
+ *
+ * `uptoPaise` is an INCLUSIVE upper bound, so an order of exactly ₹10,000
+ * falls in the ₹10,000 band and not the one above it. `null` marks the
+ * open-ended top band ("and above"), of which there should be exactly one.
+ */
+export const deliveryTierSchema = z.object({
+  uptoPaise: z.number().int().positive().max(MAX_DELIVERY_PAISE).nullable(),
+  chargePaise: z.number().int().min(0).max(MAX_DELIVERY_PAISE),
+});
+
+export type DeliveryTier = z.infer<typeof deliveryTierSchema>;
+
 export const deliveryRuleSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("minCharge"),
     /** Integer paise — the floor always collected. */
-    minChargePaise: z.number().int().min(0).max(100_000_00),
+    minChargePaise: z.number().int().min(0).max(MAX_DELIVERY_PAISE),
+  }),
+  z.object({
+    kind: z.literal("valueTiers"),
+    /**
+     * Bands keyed on the order's goods value. Stored in whatever order the
+     * admin entered them; {@link sortDeliveryTiers} imposes the order at
+     * resolution time so a mis-sorted config can never mis-charge.
+     */
+    tiers: z.array(deliveryTierSchema).min(1).max(20),
   }),
 ]);
 
@@ -55,11 +81,17 @@ export interface DeliveryDisclosure {
   note: string | null;
 }
 
-export function resolveDeliveryDisclosure(rules: DeliveryRules): DeliveryDisclosure | null {
+export function resolveDeliveryDisclosure(
+  rules: DeliveryRules,
+  goodsPaise = 0,
+): DeliveryDisclosure | null {
   if (!rules.enabled) return null;
-  const min = rules.rules.find((r) => r.kind === "minCharge");
-  if (!min || min.minChargePaise <= 0) return null;
-  return { minChargePaise: min.minChargePaise, note: rules.note };
+  // What we disclose is what we charge — resolved through the same function,
+  // so a ladder and a flat floor can never disagree about the amount shown
+  // versus the amount taken.
+  const chargePaise = resolveDeliveryChargePaise(rules, goodsPaise);
+  if (chargePaise <= 0) return null;
+  return { minChargePaise: chargePaise, note: rules.note };
 }
 
 /**
@@ -93,7 +125,62 @@ export function resolveDeliveryDisclosure(rules: DeliveryRules): DeliveryDisclos
  * where the taxable base is built — NOT here, and not by quietly adding a rate
  * to the delivery rules.
  */
-export function resolveDeliveryChargePaise(rules: DeliveryRules): number {
+/**
+ * Bands in resolution order: ascending by bound, with the open-ended band
+ * ("and above") last. The admin may enter rows in any order — imposing the
+ * order HERE means a mis-sorted config cannot mis-charge a customer.
+ */
+export function sortDeliveryTiers(
+  tiers: readonly DeliveryTier[],
+): DeliveryTier[] {
+  return [...tiers].sort((a, b) => {
+    if (a.uptoPaise === null) return 1;
+    if (b.uptoPaise === null) return -1;
+    return a.uptoPaise - b.uptoPaise;
+  });
+}
+
+/**
+ * The charge for `goodsPaise` under a value ladder.
+ *
+ * The first band whose INCLUSIVE bound covers the amount wins, so ₹10,000
+ * against a "up to ₹10,000" band pays that band — never the one above.
+ *
+ * When the amount exceeds every bound and the admin forgot an open-ended
+ * band, this falls back to the HIGHEST band's charge rather than to zero:
+ * shipping a ₹2,00,000 order for free because of a missing row is the
+ * expensive failure, and silently free freight is the one nobody notices.
+ */
+export function tierChargePaise(
+  tiers: readonly DeliveryTier[],
+  goodsPaise: number,
+): number {
+  const sorted = sortDeliveryTiers(tiers);
+  if (sorted.length === 0) return 0;
+  const amount = Math.max(0, goodsPaise);
+  for (const tier of sorted) {
+    if (tier.uptoPaise === null || amount <= tier.uptoPaise) {
+      return tier.chargePaise;
+    }
+  }
+  return sorted[sorted.length - 1].chargePaise;
+}
+
+/**
+ * The delivery CHARGE for an order, in integer paise, resolved from the rules.
+ *
+ * `goodsPaise` is the order's GOODS value after every discount — the same
+ * number the minimum-order gate uses. A value ladder bands on what the
+ * customer actually pays for goods, so a discount that drops them into a
+ * cheaper band genuinely charges the cheaper freight.
+ *
+ * Kinds COMBINE by `Math.max`: a `minCharge` floor still applies underneath a
+ * ladder, and a duplicated rule can never silently double-charge.
+ */
+export function resolveDeliveryChargePaise(
+  rules: DeliveryRules,
+  goodsPaise = 0,
+): number {
   if (!rules.enabled) return 0;
   let paise = 0;
   for (const rule of rules.rules) {
@@ -102,6 +189,8 @@ export function resolveDeliveryChargePaise(rules: DeliveryRules): number {
       // The floor always collected. `Math.max` (not `+=`) so a duplicated
       // minCharge rule can never silently double-charge the customer.
       paise = Math.max(paise, rule.minChargePaise);
+    } else if (rule.kind === "valueTiers") {
+      paise = Math.max(paise, tierChargePaise(rule.tiers, goodsPaise));
     }
   }
   return paise > 0 ? paise : 0;

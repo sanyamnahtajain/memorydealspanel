@@ -1336,15 +1336,13 @@ async function placeOrderLocked(
   // CURRENT rules in one read and frozen onto the order below, so historical
   // orders keep the terms + amount they were placed under even after the admin
   // edits the rules.
-  const { disclosure: deliveryDisclosure, chargePaise: deliveryChargePaise } =
-    await getDeliveryTerms();
-
   const minOrderValuePaise = await getMinOrderValuePaise();
   // MINIMUM ORDER VALUE compares against GOODS (after both discounts), NOT the
   // payable total — that is the pre-existing meaning and it is deliberately
   // kept: the delivery charge must never help a small cart clear the floor.
   const gatedSubtotalPaise =
     cart.subtotalPaise - groupDiscountPaise - prospectiveDiscountPaise;
+
   if (minOrderValuePaise !== null && gatedSubtotalPaise < minOrderValuePaise) {
     const shortfall = minOrderValuePaise - gatedSubtotalPaise;
     return {
@@ -1354,6 +1352,7 @@ async function placeOrderLocked(
       excluded: cart.blockedLines,
     };
   }
+
 
   // (5b) Identical-cart dedup within a short window (double-click / two-tab).
   const recent = await prisma.order.findFirst({
@@ -1373,6 +1372,18 @@ async function placeOrderLocked(
   if (!day.ok) {
     return { ok: false, error: "rate-limit", message: new OrderRateLimitError().message };
   }
+
+  // Delivery — resolved from the discounted goods subtotal, because a
+  // value-banded rule charges on that amount.
+  //
+  // Placed after the minimum-order gate and the dedup/rate-limit guards so a
+  // cart that will be rejected never pays for the read, and so this `await`
+  // sits outside the window the identical-cart check is protecting.
+  //
+  // Frozen onto the order below, so history keeps the terms AND the amount it
+  // was placed under even after the admin reprices a band.
+  const { disclosure: deliveryDisclosure, chargePaise: deliveryChargePaise } =
+    await getDeliveryTerms(gatedSubtotalPaise);
 
   // GST snapshot — FROZEN at placement. Re-resolve the context + the customer's
   // place of supply and compute the whole-order breakup with the same core

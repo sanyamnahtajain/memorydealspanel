@@ -34,6 +34,8 @@ import { DeliveryNotice } from "@/components/storefront/orders/DeliveryNotice";
 import {
   DELIVERY_MINIMUM_CAVEAT,
   deliveryDisclosureCopy,
+  resolveDeliveryChargePaise,
+  type DeliveryRules,
   type DeliveryDisclosure,
 } from "@/lib/delivery";
 import {
@@ -158,6 +160,13 @@ export interface CartViewProps {
    * can ever discount it.
    */
   deliveryChargePaise?: number;
+  /**
+   * The live delivery rules. Present when the shop bands its freight on order
+   * value: the charge then moves as the cart does, so it is recomputed here
+   * from the SAME pure resolver the server uses at placement rather than
+   * trusting the one-shot server value. Absent ⇒ the server value stands.
+   */
+  deliveryRules?: DeliveryRules | null;
   initialLines: CartLineData[];
   initialSubtotalPaise: number | null;
   priced: boolean;
@@ -201,6 +210,7 @@ export function CartView({
   deliveryDisclosure = null,
   cartNotice = null,
   deliveryChargePaise = 0,
+  deliveryRules = null,
   priced,
   canOrder,
   initialTax,
@@ -325,12 +335,27 @@ export function CartView({
   // subtotal − bucket discounts; the coupon comes off after either. The
   // delivery charge is added LAST — it is a charge, not goods, so no discount
   // and no tax touches it (see src/lib/delivery.ts).
+  // The goods figure the delivery band keys on: subtotal minus BOTH discounts
+  // — the same number placement gates and bands on (orders.ts), so the cart
+  // never promises a band the server won't honour.
+  const bandingGoodsPaise = Math.max(
+    0,
+    (subtotalPaise ?? 0) - groupDiscountPaise - discountPaise,
+  );
+
+  // Banded freight moves with the cart, so it is re-resolved here through the
+  // same pure function the server uses. Without rules (or with a flat rule)
+  // this returns the server's own value unchanged.
+  const liveDeliveryChargePaise = deliveryRules
+    ? resolveDeliveryChargePaise(deliveryRules, bandingGoodsPaise)
+    : deliveryChargePaise;
+
   const payablePaise =
     (taxPreview
       ? taxPreview.grandTotalPaise
       : (subtotalPaise ?? 0) - groupDiscountPaise) -
     discountPaise +
-    deliveryChargePaise;
+    liveDeliveryChargePaise;
 
   // Nearest tier unlock across buckets — the one-line mobile nudge.
   const nudge = closestNextTier(billing);
@@ -585,7 +610,7 @@ export function CartView({
             subtotalPaise={subtotalPaise ?? initialSubtotalPaise}
             deliveryDisclosure={deliveryDisclosure}
             cartNotice={cartNotice}
-            deliveryChargePaise={deliveryChargePaise}
+            deliveryChargePaise={liveDeliveryChargePaise}
             itemCount={itemCount}
             note={note}
             onNote={setNote}
@@ -613,7 +638,7 @@ export function CartView({
             subtotalPaise={subtotalPaise ?? initialSubtotalPaise}
             deliveryDisclosure={deliveryDisclosure}
             cartNotice={cartNotice}
-            deliveryChargePaise={deliveryChargePaise}
+            deliveryChargePaise={liveDeliveryChargePaise}
             itemCount={itemCount}
             note={note}
             onNote={setNote}
@@ -664,7 +689,7 @@ export function CartView({
                   ? ` · ${formatPaise(groupDiscountPaise)} saved`
                   : ""}
                 {taxPreview ? " · incl. GST" : ""}
-                {deliveryChargePaise > 0 ? " · incl. delivery" : ""}
+                {liveDeliveryChargePaise > 0 ? " · incl. delivery" : ""}
               </p>
             )}
           </div>
