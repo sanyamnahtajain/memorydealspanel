@@ -4,27 +4,33 @@ import { inflateSync } from "node:zlib";
 import { prisma } from "@/server/db";
 import { buildOrderPdf } from "./order-pdf";
 
-/** Same extractor the layout tests use. */
+/**
+ * Extract the text of a PDF for assertions.
+ *
+ * Streams are located by their dictionary's `/Length`, NOT by searching for
+ * the literal "endstream". Deflate output is binary and can contain those
+ * exact bytes, which truncates the slice and makes inflation fail — a page
+ * then looks EMPTY to the test while the real PDF is perfectly fine. That
+ * false negative cost a real debugging session; `/Length` is authoritative.
+ *
+ * pdf-lib writes glyphs as hex strings, so the hex is decoded back to text.
+ */
 function pdfText(bytes: Uint8Array): string {
   const buf = Buffer.from(bytes);
   const raw = buf.toString("latin1");
   let inflated = "";
-  const re = /stream\r?\n/g;
+  const re = /\/Length\s+(\d+)[^>]*>>\s*stream\r?\n/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(raw)) !== null) {
     const start = m.index + m[0].length;
-    let end = raw.indexOf("endstream", start);
-    if (end < 0) continue;
-    while (end > start && (raw[end - 1] === "\n" || raw[end - 1] === "\r")) end -= 1;
+    const length = Number(m[1]);
     try {
-      inflated += "\n" + inflateSync(buf.subarray(start, end)).toString("latin1");
+      inflated +=
+        "\n" + inflateSync(buf.subarray(start, start + length)).toString("latin1");
     } catch {
-      /* skip */
+      /* not a flate stream (or a bad length) — skip it */
     }
   }
-  // pdf-lib writes the glyphs as HEX strings for subset fonts — decoding
-  // that is the half a naive extractor misses (and then reports a false
-  // "the text is missing").
   let decoded = "";
   for (const src of [raw, inflated]) {
     for (const hm of src.matchAll(/<([0-9A-Fa-f\s]{2,})>/g)) {

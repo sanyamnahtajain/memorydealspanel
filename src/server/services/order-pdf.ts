@@ -1,8 +1,7 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 
 import { prisma } from "@/server/db";
-import { APP_NAME, CONTACT } from "@/lib/constants";
-import { BUSINESS_PHONE } from "@/server/contact";
+import { APP_SHORT } from "@/lib/constants";
 import { orderPayablePaise, type OrderItemSnapshot } from "@/server/services/orders";
 import { attachmentUrlPrefix } from "@/lib/requirement-notes";
 import { publicBaseOrEmpty } from "@/server/storage/r2";
@@ -22,7 +21,7 @@ import { ORDER_STATUS_LABEL } from "@/components/storefront/orders/order-status"
  * ESTIMATE-bill format (the layout of their offline billing software):
  *
  *     ESTIMATE
- *     THE MEMORY DEALS          ← store masthead + phone + address
+ *     TMD                       ← store masthead (type + short name)
  *     Party Details | Bill No / Date
  *     S.No | Description of Goods | Qty | Unit | Rate | Amount
  *     Grand Total (qty pcs, amount) + Amount chargeable (in words)
@@ -377,14 +376,15 @@ export async function renderOrderPdf(
   ) => {
     y = dim.h - M;
     if (first) {
+      // Two lines, by owner request: the document type and the shop's short
+      // name. The phone number and postal address used to sit here; they were
+      // removed deliberately — this goes to buyers who already have the shop's
+      // contact details, and the shorter masthead leaves more of the sheet for
+      // the goods.
       text(heading, M, 9, helv, MUTED, "center", W);
       y -= 16;
-      text(APP_NAME.toUpperCase(), M, 21, bold, INK, "center", W);
-      y -= 15;
-      text(`PH: ${BUSINESS_PHONE.display}`, M, 11, bold, INK, "center", W);
-      y -= 13;
-      text(CONTACT.addressLines.slice(1).join(", "), M, 8.5, helv, MUTED, "center", W);
-      y -= 10;
+      text(APP_SHORT.toUpperCase(), M, 21, bold, INK, "center", W);
+      y -= 12;
       hline(y);
       y -= 15;
       // Party / bill meta block.
@@ -425,7 +425,7 @@ export async function renderOrderPdf(
       hline(y);
       y -= 15;
     } else {
-      text(`${APP_NAME.toUpperCase()} — Bill No. ${billNumber}`, M, 9.5, bold, MUTED);
+      text(`${APP_SHORT.toUpperCase()} — Bill No. ${billNumber}`, M, 9.5, bold, MUTED);
       y -= 14;
     }
     if (withTable) tableHeader();
@@ -572,7 +572,7 @@ export async function renderOrderPdf(
     billNumber = bill.billNumber;
     if (y < M + MIN_BILL_SECTION) {
       newPage();
-      text(`${APP_NAME.toUpperCase()} — Order No. ${data.orderNumber}`, M, 8.5, helv, MUTED);
+      text(`${APP_SHORT.toUpperCase()} — Order No. ${data.orderNumber}`, M, 8.5, helv, MUTED);
       y -= 18;
     } else if (index > 0) {
       // The beautiful part: a dashed cut line between consecutive bills.
