@@ -55,6 +55,7 @@ import {
   GridRowGutter,
   SelectionOutline,
 } from "./core/GridChrome";
+import { GridShortcutsDialog } from "./core/ShortcutsDialog";
 import { getCellComponents } from "./cells";
 import { BulkActionBar, standardBulkActions } from "./data/BulkActionBar";
 import { useGridController } from "./useGridController";
@@ -218,7 +219,10 @@ export function DealSheet<Row extends GridRow = GridRow>({
     onRedo: ctrl.redo,
   });
 
-  // Ctrl/Cmd+F opens the in-grid search bar; the rest flows to the grid model.
+  const [shortcutsOpen, setShortcutsOpen] = React.useState(false);
+
+  // Ctrl/Cmd+F opens the in-grid search bar, "?" the shortcut sheet; the rest
+  // flows to the grid model.
   const onKeyDown = React.useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
@@ -226,9 +230,16 @@ export function DealSheet<Row extends GridRow = GridRow>({
         setSearchOpen(true);
         return;
       }
+      // "?" only when nothing is being typed — inside an editor it is a
+      // character the operator means to enter.
+      if (e.key === "?" && !e.metaKey && !e.ctrlKey && !ctrl.editing) {
+        e.preventDefault();
+        setShortcutsOpen(true);
+        return;
+      }
       keyboard.onKeyDown(e);
     },
-    [keyboard],
+    [keyboard, ctrl.editing],
   );
 
   /* ----------------------------- scroll ref ----------------------------- */
@@ -425,6 +436,10 @@ export function DealSheet<Row extends GridRow = GridRow>({
       />
 
       {promptElement}
+      <GridShortcutsDialog
+        open={shortcutsOpen}
+        onOpenChange={setShortcutsOpen}
+      />
     </div>
   );
 }

@@ -30,7 +30,17 @@ export interface CellIndex {
 export interface GridAxes {
   rowIds: readonly string[];
   colKeys: readonly string[];
+  /**
+   * Rows a PageUp/PageDown travels. The grid passes its visible row count so
+   * a page moves exactly one screenful; omitted, it falls back to
+   * {@link DEFAULT_PAGE_ROWS} rather than guessing zero (which would make the
+   * key silently do nothing).
+   */
+  pageRows?: number;
 }
+
+/** Fallback page size when the caller doesn't know its viewport height. */
+export const DEFAULT_PAGE_ROWS = 10;
 
 /** Directions arrow-navigation / range-extension can move. */
 export type MoveDir = "up" | "down" | "left" | "right";
@@ -38,7 +48,8 @@ export type MoveDir = "up" | "down" | "left" | "right";
 /** How far a single navigation step travels. */
 export type MoveStep =
   | "cell" // one cell (arrow keys)
-  | "edge"; // to the far edge of the axis (Ctrl+Arrow / Home / End rows)
+  | "page" // one screenful of rows (PageUp / PageDown)
+  | "edge"; // to the far edge of the axis (Ctrl+Arrow, Home / End)
 
 /**
  * A resolved rectangular selection in index space, with normalized bounds so
@@ -282,7 +293,11 @@ function step(
 ): CellIndex {
   const lastRow = Math.max(0, axes.rowIds.length - 1);
   const lastCol = Math.max(0, axes.colKeys.length - 1);
-  const delta = distance === "edge" ? Infinity : 1;
+  // A non-positive page size would make PageDown a no-op; floor it at 1 so the
+  // key always moves.
+  const pageRows = Math.max(1, Math.floor(axes.pageRows ?? DEFAULT_PAGE_ROWS));
+  const delta =
+    distance === "edge" ? Infinity : distance === "page" ? pageRows : 1;
 
   switch (dir) {
     case "up":

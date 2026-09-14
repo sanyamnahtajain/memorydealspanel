@@ -45,6 +45,12 @@ export interface UseGridSelectionOptions {
   colKeys: readonly string[];
   /** Optional initial active coordinate. */
   initialActive?: CellCoord | null;
+  /**
+   * Rows a PageUp/PageDown should travel — the grid's visible row count, so
+   * paging moves exactly one screenful. Omitted falls back to the model's
+   * default.
+   */
+  pageRows?: number;
 }
 
 export interface UseGridSelectionResult {
@@ -97,14 +103,14 @@ export interface UseGridSelectionResult {
 export function useGridSelection(
   options: UseGridSelectionOptions,
 ): UseGridSelectionResult {
-  const { rowIds, colKeys, initialActive } = options;
+  const { rowIds, colKeys, initialActive, pageRows } = options;
 
   // Derive the current axes during render from the raw axis arrays. Memoized
   // by identity so the render-phase reducer/derived values only recompute when
   // the geometry actually changes.
   const axes = React.useMemo<GridAxes>(
-    () => ({ rowIds, colKeys }),
-    [rowIds, colKeys],
+    () => ({ rowIds, colKeys, pageRows }),
+    [rowIds, colKeys, pageRows],
   );
 
   // Mirror the current axes into a ref for the stable callbacks below, so they

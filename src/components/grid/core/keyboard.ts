@@ -144,6 +144,9 @@ export function resolveKeyIntent(
     if (key === "Escape") {
       return { type: "cancel" };
     }
+    // Everything else (including PageUp/PageDown and Home/End) belongs to the
+    // open editor — moving the grid under a half-typed value loses the edit.
+    
     // Everything else (typing, arrows within the input, etc.) stays in the editor.
     return { type: "none" };
   }
@@ -206,10 +209,26 @@ export function resolveKeyIntent(
     case "Delete":
     case "Backspace":
       return { type: "clear" };
+    // PLAIN Home/End move to the start / end of the ROW, which is Excel's
+    // behaviour and by far the more common need. The whole-grid corners stay
+    // on Ctrl+Home / Ctrl+End (handled above), so nothing is lost — before
+    // this, plain and Ctrl did the same thing and one of them was wasted.
     case "Home":
-      return { type: "jump", corner: "start", extend: shift };
+      return shift
+        ? { type: "extend", dir: "left", step: "edge" }
+        : { type: "move", dir: "left", step: "edge" };
     case "End":
-      return { type: "jump", corner: "end", extend: shift };
+      return shift
+        ? { type: "extend", dir: "right", step: "edge" }
+        : { type: "move", dir: "right", step: "edge" };
+    case "PageUp":
+      return shift
+        ? { type: "extend", dir: "up", step: "page" }
+        : { type: "move", dir: "up", step: "page" };
+    case "PageDown":
+      return shift
+        ? { type: "extend", dir: "down", step: "page" }
+        : { type: "move", dir: "down", step: "page" };
   }
 
   // Start-typing-to-edit: a lone printable character (no command modifier).
