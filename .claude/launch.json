@@ -29,6 +29,17 @@
         "3010"
       ],
       "port": 3010
+    },
+    {
+      "name": "memorydeals-prod",
+      "runtimeExecutable": "/Users/master/.nvm/versions/node/v20.20.2/bin/node",
+      "runtimeArgs": [
+        "node_modules/next/dist/bin/next",
+        "start",
+        "-p",
+        "3011"
+      ],
+      "port": 3011
     }
   ]
 }

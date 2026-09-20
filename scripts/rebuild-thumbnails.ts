@@ -20,10 +20,18 @@
  *    previous thumbUrl values (printed with --verbose).
  *  - Skips anything it cannot fetch or decode, and reports it.
  *
+ * --categories re-cuts CATEGORY TILE images instead. Those were uploaded by a
+ * script with no compression at all: measured on the live home page they are
+ * 750–840 KB EACH, for a tile drawn a couple of hundred pixels wide — about
+ * 5 MB of the home page on their own. Same safety rules: dry run by default,
+ * fresh key per image, the old object is left in place.
+ *
  * Run (dry run, against whichever database DATABASE_URL points at):
  *   npx tsx scripts/rebuild-thumbnails.ts
  *   npx tsx scripts/rebuild-thumbnails.ts --limit 5 --apply --verbose
  *   npx tsx scripts/rebuild-thumbnails.ts --apply
+ *   npx tsx scripts/rebuild-thumbnails.ts --categories --verbose
+ *   npx tsx scripts/rebuild-thumbnails.ts --categories --apply
  *
  * `sharp` comes in with Next.js rather than as a direct dependency; this is a
  * local maintenance script, so that is fine, but it is why it is not imported
@@ -65,6 +73,11 @@ loadDotEnv();
 const args = process.argv.slice(2);
 const APPLY = args.includes("--apply");
 const VERBOSE = args.includes("--verbose");
+const CATEGORIES = args.includes("--categories");
+/** Category tiles render small; 800px covers a 2x phone screen with room. */
+const CATEGORY_MAX_DIMENSION = 800;
+/** Don't churn images that are already reasonable. */
+const CATEGORY_SKIP_BELOW_BYTES = 150 * 1024;
 const LIMIT = (() => {
   const at = args.indexOf("--limit");
   if (at === -1) return Infinity;
@@ -100,12 +113,111 @@ interface Outcome {
   skipped?: string;
 }
 
+async function recutCategories() {
+  const client = APPLY ? r2Client() : null;
+  const categories = await prisma.category.findMany({
+    where: { image: { not: null } },
+    select: { id: true, name: true, image: true },
+  });
+  let done = 0;
+  let skipped = 0;
+  let savedBytes = 0;
+
+  for (const category of categories) {
+    if (done >= LIMIT) break;
+    const url = category.image;
+    if (!url || !url.startsWith("http")) {
+      skipped += 1;
+      continue;
+    }
+    let source: Buffer;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      source = Buffer.from(await res.arrayBuffer());
+    } catch (error) {
+      skipped += 1;
+      if (VERBOSE) console.log(`SKIP  ${category.name} — fetch failed (${String(error)})`);
+      continue;
+    }
+    if (source.byteLength < CATEGORY_SKIP_BELOW_BYTES) {
+      skipped += 1;
+      if (VERBOSE) console.log(`SKIP  ${category.name} — already ${kb(source.byteLength)}`);
+      continue;
+    }
+
+    let body: Buffer;
+    let contentType: string;
+    try {
+      const pipeline = sharp(source, { failOn: "none" }).rotate();
+      const meta = await pipeline.metadata();
+      const resized = pipeline.resize({
+        width: CATEGORY_MAX_DIMENSION,
+        height: CATEGORY_MAX_DIMENSION,
+        fit: "inside",
+        withoutEnlargement: true,
+      });
+      if (meta.hasAlpha) {
+        body = await resized.png({ compressionLevel: 9 }).toBuffer();
+        contentType = "image/png";
+      } else {
+        body = await resized.jpeg({ quality: THUMB_QUALITY, mozjpeg: true }).toBuffer();
+        contentType = "image/jpeg";
+      }
+    } catch (error) {
+      skipped += 1;
+      if (VERBOSE) console.log(`SKIP  ${category.name} — decode failed (${String(error)})`);
+      continue;
+    }
+
+    // Never make an image bigger.
+    if (body.byteLength >= source.byteLength) {
+      skipped += 1;
+      continue;
+    }
+
+    const key = `categories/recut-${randomUUID()}.${contentType === "image/png" ? "png" : "jpg"}`;
+    const nextUrl = `${R2_PUBLIC_URL}/${key}`;
+    savedBytes += source.byteLength - body.byteLength;
+    if (VERBOSE) {
+      console.log(
+        `${APPLY ? "DONE" : "WOULD"}  ${category.name}: ${kb(source.byteLength)} -> ${kb(body.byteLength)}` +
+          `\n      old: ${url}\n      new: ${nextUrl}`,
+      );
+    }
+    if (APPLY && client) {
+      await client.send(
+        new PutObjectCommand({
+          Bucket: R2_BUCKET,
+          Key: key,
+          Body: body,
+          ContentType: contentType,
+          CacheControl: "public, max-age=31536000, immutable",
+        }),
+      );
+      await prisma.category.update({ where: { id: category.id }, data: { image: nextUrl } });
+    }
+    done += 1;
+  }
+
+  console.log(
+    `\n${APPLY ? "Re-cut" : "Would re-cut"} ${done} category image(s), skipped ${skipped}. ` +
+      `Saves ${(savedBytes / 1048576).toFixed(1)} MB per full view of them.`,
+  );
+  if (!APPLY) console.log("Dry run — nothing was written. Re-run with --apply.");
+  await prisma.$disconnect();
+}
+
 async function main() {
   if (!R2_PUBLIC_URL || !R2_BUCKET) {
     console.error(
       "R2_PUBLIC_URL and R2_BUCKET must be set (inline, or in .env).",
     );
     process.exit(1);
+  }
+  if (CATEGORIES) {
+    await recutCategories();
+    return;
   }
 
   const products = await prisma.product.findMany({
