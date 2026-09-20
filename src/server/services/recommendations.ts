@@ -12,12 +12,13 @@ import {
   type FavouriteOrderItem,
 } from "@/lib/buy-again";
 import {
-  BASELINE_WINDOW_DAYS,
-  RECENT_WINDOW_DAYS,
   mergePinnedFirst,
   topTrending,
+  trendingWindows,
   type TrendingOrderLine,
+  type TrendingViewCount,
 } from "@/lib/trending";
+import { swrCached } from "@/server/cache/swr";
 
 /**
  * Server side of the co-purchase recommender (the maths lives in
@@ -44,10 +45,12 @@ const CACHE_TTL_MS = 15 * 60 * 1000;
 /** How far back the co-purchase index reads. See the query for why 365. */
 const COPURCHASE_WINDOW_DAYS = 365;
 
-const globalForRec = globalThis as unknown as {
-  __mdRecIndex: { at: number; index: RecommendIndex } | undefined;
-  __mdTrendingAlgo: { at: number; ids: string[] } | undefined;
-};
+/**
+ * How long a page will wait for these on a COLD server instance before
+ * rendering without them. They are optional extras on the page (a rail, a
+ * "bought together" strip); nothing a customer came for is behind them.
+ */
+const COLD_BUDGET_MS = 1_200;
 
 /** Items are frozen JSON on the order; pull out just the product ids. */
 function orderProductIds(items: unknown): string[] {
@@ -60,34 +63,43 @@ function orderProductIds(items: unknown): string[] {
   return ids;
 }
 
-async function getIndex(): Promise<RecommendIndex | null> {
-  const cached = globalForRec.__mdRecIndex;
-  if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.index;
-
-  try {
-    const rows = await prisma.order.findMany({
-      where: {
-        status: { not: "CANCELLED" },
-        // Windowed like the trending scorer: an unbounded scan of the whole
-        // order history grows forever on a shared-CPU tier. A year covers
-        // several full restock cycles, and the 90-day recency half-life has
-        // already reduced anything older to ~6% of its weight — so the
-        // rankings this produces are the same ones the full scan produced.
-        placedAt: { gte: new Date(Date.now() - COPURCHASE_WINDOW_DAYS * DAY_MS) },
-      },
-      select: { items: true, placedAt: true },
-    });
-    const orders: RecommendOrder[] = rows.map((row) => ({
-      productIds: orderProductIds(row.items),
-      placedAt: row.placedAt,
-    }));
-    const index = buildRecommendIndex(orders, new Date());
-    globalForRec.__mdRecIndex = { at: Date.now(), index };
-    return index;
-  } catch (error) {
-    console.error("[recommendations] index build failed:", error);
-    return null;
-  }
+/**
+ * Served stale-while-revalidate (see src/server/cache/swr.ts): a product page
+ * or the home page NEVER waits on a rebuild once an index exists, concurrent
+ * requests share one rebuild, and a cold instance waits at most
+ * COLD_BUDGET_MS before rendering without recommendations.
+ */
+function getIndex(): Promise<RecommendIndex | null> {
+  return swrCached<RecommendIndex | null>(
+    "rec-index",
+    async () => {
+      const rows = await prisma.order.findMany({
+        where: {
+          status: { not: "CANCELLED" },
+          // Windowed like the trending scorer: an unbounded scan of the whole
+          // order history grows forever on a shared-CPU tier. A year covers
+          // several full restock cycles, and the 90-day recency half-life has
+          // already reduced anything older to ~6% of its weight — so the
+          // rankings this produces are the same ones the full scan produced.
+          placedAt: {
+            gte: new Date(Date.now() - COPURCHASE_WINDOW_DAYS * DAY_MS),
+          },
+        },
+        select: { items: true, placedAt: true },
+      });
+      const orders: RecommendOrder[] = rows.map((row) => ({
+        productIds: orderProductIds(row.items),
+        placedAt: row.placedAt,
+      }));
+      return buildRecommendIndex(orders, new Date());
+    },
+    {
+      ttlMs: CACHE_TTL_MS,
+      coldBudgetMs: COLD_BUDGET_MS,
+      fallback: null,
+      label: "co-purchase index",
+    },
+  );
 }
 
 /**
@@ -128,51 +140,87 @@ const TRENDING_ALGO_POOL = 24;
 
 /**
  * The cached ALGO half of the trending rail (see src/lib/trending.ts for the
- * surge maths and every constant's why). Same per-instance 15-minute cache
- * call as the co-purchase index — both windows together are a 28-day slice of
- * orders plus page views (the (productId, createdAt) index covers the view
- * scan), a few milliseconds at this shop's volume.
+ * surge maths and every constant's why).
+ *
+ * INCIDENT NOTE — this function took the home page down for real customers.
+ * It used to `findMany` every PageView row in the 28-day window and count
+ * them in JavaScript. That was "a few milliseconds" on the day it was written
+ * and ~27 SECONDS once the shop had traffic, because the row count grows with
+ * every product view while the shared-tier database's throughput does not.
+ * And the home page awaited it.
+ *
+ * Now:
+ *  - the DATABASE counts. Two index-backed `groupBy`s return one row per
+ *    product per window — bounded by the size of the catalogue, not by how
+ *    many people have ever looked at it;
+ *  - the result is served stale-while-revalidate, so no page ever waits on a
+ *    refresh, and a cold instance gives up after COLD_BUDGET_MS and renders
+ *    the rail from admin pins alone.
  *
  * Fails open to `[]`: a broken scorer must never break the home page.
  */
-async function trendingAlgoIds(): Promise<string[]> {
-  const cached = globalForRec.__mdTrendingAlgo;
-  if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.ids;
+function trendingAlgoIds(): Promise<string[]> {
+  return swrCached<string[]>(
+    "trending-algo",
+    async () => {
+      const now = new Date();
+      const { recentStart, baselineStart } = trendingWindows(now);
 
-  try {
-    const now = new Date();
-    const since = new Date(
-      now.getTime() - (RECENT_WINDOW_DAYS + BASELINE_WINDOW_DAYS) * DAY_MS,
-    );
-    const [orderRows, viewRows] = await Promise.all([
-      prisma.order.findMany({
-        where: { status: { not: "CANCELLED" }, placedAt: { gte: since } },
-        select: { items: true, placedAt: true },
-      }),
-      prisma.pageView.findMany({
-        where: { createdAt: { gte: since } },
-        select: { productId: true, createdAt: true },
-      }),
-    ]);
+      const [orderRows, recentViews, baselineViews] = await Promise.all([
+        prisma.order.findMany({
+          where: {
+            status: { not: "CANCELLED" },
+            placedAt: { gte: baselineStart },
+          },
+          select: { items: true, placedAt: true },
+        }),
+        // Boundaries mirror buildTrendingScores exactly: recent is strictly
+        // after recentStart, baseline is (baselineStart, recentStart].
+        prisma.pageView.groupBy({
+          by: ["productId"],
+          where: { createdAt: { gt: recentStart } },
+          _count: { productId: true },
+        }),
+        prisma.pageView.groupBy({
+          by: ["productId"],
+          where: { createdAt: { gt: baselineStart, lte: recentStart } },
+          _count: { productId: true },
+        }),
+      ]);
 
-    const lines: TrendingOrderLine[] = [];
-    for (const row of orderRows) {
-      for (const item of orderFavouriteItems(row.items)) {
-        lines.push({
-          productId: item.productId,
-          quantity: item.quantity,
-          placedAt: row.placedAt,
-        });
+      const lines: TrendingOrderLine[] = [];
+      for (const row of orderRows) {
+        for (const item of orderFavouriteItems(row.items)) {
+          lines.push({
+            productId: item.productId,
+            quantity: item.quantity,
+            placedAt: row.placedAt,
+          });
+        }
       }
-    }
 
-    const ids = topTrending(lines, viewRows, now, TRENDING_ALGO_POOL);
-    globalForRec.__mdTrendingAlgo = { at: Date.now(), ids };
-    return ids;
-  } catch (error) {
-    console.error("[recommendations] trending scoring failed:", error);
-    return [];
-  }
+      const viewCounts: TrendingViewCount[] = [
+        ...recentViews.map((g) => ({
+          productId: g.productId,
+          window: "recent" as const,
+          count: g._count.productId,
+        })),
+        ...baselineViews.map((g) => ({
+          productId: g.productId,
+          window: "baseline" as const,
+          count: g._count.productId,
+        })),
+      ];
+
+      return topTrending(lines, [], now, TRENDING_ALGO_POOL, viewCounts);
+    },
+    {
+      ttlMs: CACHE_TTL_MS,
+      coldBudgetMs: COLD_BUDGET_MS,
+      fallback: [],
+      label: "trending scorer",
+    },
+  );
 }
 
 /**

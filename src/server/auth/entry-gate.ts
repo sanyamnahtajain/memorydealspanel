@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 
 import { prisma } from "@/server/db";
+import { resetSwrCache, swrCached } from "@/server/cache/swr";
 import {
   ENTRY_GATE_OFF,
   entryCodeMatches,
@@ -69,7 +70,7 @@ export async function updateEntryGate(gate: EntryGate): Promise<void> {
   // The middleware caches this config (see getEntryGateCached); drop the
   // cache so the instance that took the save applies it immediately. Other
   // instances catch up within the TTL.
-  (globalThis as { __mdGateCache?: unknown }).__mdGateCache = undefined;
+  resetSwrCache(GATE_CACHE_KEY);
 }
 
 /** Has THIS device already entered the current code? */
@@ -130,21 +131,31 @@ export async function passEntryGate(attempt: string): Promise<boolean> {
  */
 const GATE_CACHE_TTL_MS = 30_000;
 
-const globalForGate = globalThis as unknown as {
-  __mdGateCache: { at: number; gate: EntryGate; token: string } | undefined;
-};
+const GATE_CACHE_KEY = "entry-gate";
 
-export async function getEntryGateCached(): Promise<{
+/** See PROXY_READ_BUDGET_MS in services/maintenance.ts — same reasoning. */
+const GATE_READ_BUDGET_MS = 1_500;
+
+interface CachedGate {
   gate: EntryGate;
   /** The exact cookie value a passed device carries (empty when off). */
   token: string;
-}> {
-  const cached = globalForGate.__mdGateCache;
-  if (cached && Date.now() - cached.at < GATE_CACHE_TTL_MS) {
-    return { gate: cached.gate, token: cached.token };
-  }
-  const gate = await getEntryGate(); // already fails open internally
-  const token = gate.enabled ? gateToken(gate.code) : "";
-  globalForGate.__mdGateCache = { at: Date.now(), gate, token };
-  return { gate, token };
+}
+
+export function getEntryGateCached(): Promise<CachedGate> {
+  // Stale-while-revalidate + single-flight + a bounded cold wait. The proxy
+  // runs this on every sessionless page view; it must never be able to hang.
+  return swrCached<CachedGate>(
+    GATE_CACHE_KEY,
+    async () => {
+      const gate = await getEntryGate(); // already fails open internally
+      return { gate, token: gate.enabled ? gateToken(gate.code) : "" };
+    },
+    {
+      ttlMs: GATE_CACHE_TTL_MS,
+      coldBudgetMs: GATE_READ_BUDGET_MS,
+      fallback: { gate: ENTRY_GATE_OFF, token: "" }, // fail OPEN
+      label: "entry gate",
+    },
+  );
 }

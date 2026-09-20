@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 
 import { listActive } from "@/server/dal/categories";
@@ -166,7 +167,13 @@ export default async function HomePage() {
             locked pills into the shared cache; LivePriceSlot upgrades them
             client-side exactly like Best sellers. Renders nothing without
             signal. */}
-        <TrendingRail />
+        {/* OWN Suspense boundary, null fallback: this is the only section that
+            fetches mid-stream, and it once held the whole page hostage for
+            27 seconds. Whatever it costs, the rest of home no longer waits —
+            the rail simply streams in when it is ready. */}
+        <Suspense fallback={null}>
+          <TrendingRail />
+        </Suspense>
 
         {/* New & featured products (gated pills). Far below the fold now, so
             no eager/priority images — Best sellers owns the LCP slot. */}

@@ -1,5 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 
+import { withBoundedTimeouts } from "./db-url";
+
 /**
  * Prisma client singleton.
  *
@@ -15,6 +17,9 @@ const globalForPrisma = globalThis as unknown as {
 export const prisma: PrismaClient =
   globalForPrisma.prisma ??
   new PrismaClient({
+    // Bounded driver timeouts — see db-url.ts for the incident behind this.
+    // `undefined` (no DATABASE_URL) falls through to Prisma's own handling.
+    datasourceUrl: withBoundedTimeouts(process.env.DATABASE_URL),
     log:
       process.env.NODE_ENV === "development"
         ? ["warn", "error"]

@@ -65,6 +65,35 @@ export interface TrendingPageView {
   createdAt: Date;
 }
 
+/**
+ * Page views ALREADY COUNTED per product per window — the shape a database
+ * aggregate returns. This is the form the live scorer uses: counting is the
+ * database's job, and shipping every raw view row to the server to count them
+ * in JavaScript is what made the home page stall for half a minute once the
+ * shop had real traffic.
+ */
+const DAY_MS_ = 24 * 60 * 60 * 1000;
+
+export interface TrendingViewCount {
+  productId: string;
+  window: "recent" | "baseline";
+  count: number;
+}
+
+/** The two window boundaries, so a query can match the scorer exactly. */
+export function trendingWindows(now: Date): {
+  /** Views/orders AFTER this instant are "recent". */
+  recentStart: Date;
+  /** …and after this one (up to recentStart) are "baseline". */
+  baselineStart: Date;
+} {
+  const recentStart = new Date(now.getTime() - RECENT_WINDOW_DAYS * DAY_MS_);
+  const baselineStart = new Date(
+    recentStart.getTime() - BASELINE_WINDOW_DAYS * DAY_MS_,
+  );
+  return { recentStart, baselineStart };
+}
+
 /** Days of "now" activity being measured. */
 export const RECENT_WINDOW_DAYS = 7;
 /** Days of prior history the recent window is compared against. */
@@ -103,6 +132,7 @@ export function buildTrendingScores(
   lines: TrendingOrderLine[],
   views: TrendingPageView[],
   now: Date,
+  viewCounts: TrendingViewCount[] = [],
 ): TrendingScore[] {
   const recentStart = now.getTime() - RECENT_WINDOW_DAYS * DAY_MS;
   const baselineStart =
@@ -131,6 +161,16 @@ export function buildTrendingScores(
   }
   for (const view of views) {
     add(view.productId, view.createdAt, W_VIEW);
+  }
+  // Pre-aggregated views land in the same tallies the raw rows would have.
+  for (const entry of viewCounts) {
+    if (!entry.productId || !(entry.count > 0)) continue;
+    let tally = tallies.get(entry.productId);
+    if (!tally) {
+      tally = { recent: 0, baseline: 0 };
+      tallies.set(entry.productId, tally);
+    }
+    tally[entry.window] += entry.count * W_VIEW;
   }
 
   // Normalise the baseline to a 7-day rate so both ratio sides compare
@@ -164,9 +204,10 @@ export function topTrending(
   views: TrendingPageView[],
   now: Date,
   k: number,
+  viewCounts: TrendingViewCount[] = [],
 ): string[] {
   if (k <= 0) return [];
-  return buildTrendingScores(lines, views, now)
+  return buildTrendingScores(lines, views, now, viewCounts)
     .slice(0, k)
     .map((s) => s.productId);
 }

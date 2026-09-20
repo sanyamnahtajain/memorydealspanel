@@ -203,3 +203,57 @@ describe("mergePinnedFirst — the admin override", () => {
     expect(mergePinnedFirst(["p1"], ["a1"], 0)).toEqual([]);
   });
 });
+
+describe("trending — pre-counted views (the production path)", () => {
+  // The live scorer no longer downloads raw page-view rows: the database
+  // counts them per product per window. The ranking must be IDENTICAL.
+  it("ranks exactly as the raw rows would", async () => {
+    const { buildTrendingScores, trendingWindows } = await import("./trending");
+    const now = new Date("2026-09-20T12:00:00Z");
+    const day = 24 * 60 * 60 * 1000;
+    const at = (daysAgo: number) => new Date(now.getTime() - daysAgo * day);
+
+    const rawViews = [
+      ...Array.from({ length: 9 }, () => ({ productId: "hot", createdAt: at(1) })),
+      ...Array.from({ length: 2 }, () => ({ productId: "hot", createdAt: at(15) })),
+      ...Array.from({ length: 6 }, () => ({ productId: "steady", createdAt: at(2) })),
+      ...Array.from({ length: 30 }, () => ({ productId: "steady", createdAt: at(12) })),
+      { productId: "ancient", createdAt: at(40) },
+    ];
+
+    const { recentStart, baselineStart } = trendingWindows(now);
+    const counts = new Map<string, number>();
+    for (const v of rawViews) {
+      const t = v.createdAt.getTime();
+      const window =
+        t > recentStart.getTime()
+          ? "recent"
+          : t > baselineStart.getTime()
+            ? "baseline"
+            : null;
+      if (!window) continue;
+      const key = `${v.productId}|${window}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const viewCounts = [...counts].map(([key, count]) => {
+      const [productId, window] = key.split("|");
+      return { productId, window: window as "recent" | "baseline", count };
+    });
+
+    expect(buildTrendingScores([], [], now, viewCounts)).toEqual(
+      buildTrendingScores([], rawViews, now),
+    );
+  });
+
+  it("ignores empty and nonsense count rows", async () => {
+    const { buildTrendingScores } = await import("./trending");
+    const now = new Date("2026-09-20T12:00:00Z");
+    expect(
+      buildTrendingScores([], [], now, [
+        { productId: "", window: "recent", count: 50 },
+        { productId: "p", window: "recent", count: 0 },
+        { productId: "p", window: "recent", count: -4 },
+      ]),
+    ).toEqual([]);
+  });
+});
