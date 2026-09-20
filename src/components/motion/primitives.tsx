@@ -17,6 +17,7 @@ import {
 } from "motion/react";
 import { cn } from "@/lib/utils";
 import { durations, easeOut, springs, stagger } from "./tokens";
+import { useEntranceInitial } from "./useEntrance";
 
 /* ------------------------------------------------------------------ */
 /* FadeUp                                                              */
@@ -33,11 +34,13 @@ interface FadeUpProps {
 
 /** Fades content in while sliding it up slightly. The default entrance. */
 export function FadeUp({ children, delay = 0, distance = 12, className }: FadeUpProps) {
-  const reduced = useReducedMotion();
+  // Hidden start ONLY on in-app navigation — never in server-rendered HTML.
+  // See useEntrance.ts for the incident this guards against.
+  const entranceInitial = useEntranceInitial({ opacity: 0, y: distance });
   return (
     <motion.div
       className={className}
-      initial={reduced ? false : { opacity: 0, y: distance }}
+      initial={entranceInitial}
       animate={{ opacity: 1, y: 0 }}
       transition={{ ...springs.gentle, delay }}
     >
@@ -78,6 +81,7 @@ export function Stagger({
   itemClassName,
 }: StaggerProps) {
   const reduced = useReducedMotion();
+  const entranceInitial = useEntranceInitial("hidden" as const);
 
   const containerVariants: Variants = {
     hidden: {},
@@ -92,7 +96,7 @@ export function Stagger({
     <motion.div
       className={className}
       variants={containerVariants}
-      initial={reduced ? "show" : "hidden"}
+      initial={entranceInitial}
       animate="show"
     >
       {React.Children.map(children, (child, index) =>

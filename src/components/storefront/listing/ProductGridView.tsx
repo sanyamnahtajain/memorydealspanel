@@ -18,7 +18,7 @@ import { InCartChip } from "@/components/storefront/cart/InCartChip";
 import Link from "next/link";
 import Image from "next/image";
 import { ImageOff } from "lucide-react";
-import { motion, useReducedMotion } from "motion/react";
+import { motion } from "motion/react";
 
 import { cn } from "@/lib/utils";
 import { staggerItemVariants } from "@/components/motion/primitives";
@@ -32,6 +32,7 @@ import { QuickAddToCart } from "@/components/storefront/cart/QuickAddToCart";
 import { VariantQuickSheet } from "@/components/storefront/VariantQuickSheet";
 import type { ListingItem } from "./types";
 import { canQuickAdd, keySpec, primaryImage } from "./product-display";
+import { useEntranceInitial } from "@/components/motion/useEntrance";
 
 interface ProductGridViewProps {
   items: ListingItem[];
@@ -61,7 +62,7 @@ export function ProductGridView({
   savedProductIds,
   canAddToCart = false,
 }: ProductGridViewProps) {
-  const reduced = useReducedMotion();
+  const entranceInitial = useEntranceInitial("hidden" as const);
 
   return (
     <motion.ul
@@ -70,7 +71,7 @@ export function ProductGridView({
         compactDensity ? "gap-2.5 md:gap-3" : "gap-3 md:gap-4",
       )}
       variants={{ hidden: {}, show: { transition: { staggerChildren: 0.04 } } }}
-      initial={reduced ? "show" : "hidden"}
+      initial={entranceInitial}
       animate="show"
     >
       {/* No `layout` prop on the items: layout projection re-measures EVERY

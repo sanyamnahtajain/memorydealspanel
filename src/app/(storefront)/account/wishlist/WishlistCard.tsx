@@ -32,6 +32,7 @@ import { stockChipVariant } from "@/components/storefront/listing/product-displa
 import { broadcastWishlistCount } from "@/components/storefront/wishlist/WishlistBadge";
 import { removeWishlistAction } from "@/server/actions/wishlist";
 import type { StockStatus } from "@/lib/schemas/shared";
+import { useEntranceInitial } from "@/components/motion/useEntrance";
 
 /** The client-safe shape for one saved product (NO money — priceSlot is gated). */
 export interface WishlistCardData {
@@ -62,6 +63,7 @@ interface WishlistGridProps {
 
 export function WishlistGrid({ items, totalCount }: WishlistGridProps) {
   const reduced = useReducedMotion();
+  const entranceInitial = useEntranceInitial("hidden" as const);
   // Track removed product ids so the grid updates optimistically without a
   // server round-trip blocking the exit animation.
   const [removed, setRemoved] = React.useState<ReadonlySet<string>>(
@@ -108,7 +110,7 @@ export function WishlistGrid({ items, totalCount }: WishlistGridProps) {
     <motion.ul
       className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
       variants={{ hidden: {}, show: { transition: { staggerChildren: 0.04 } } }}
-      initial={reduced ? "show" : "hidden"}
+      initial={entranceInitial}
       animate="show"
     >
       <AnimatePresence mode="popLayout">

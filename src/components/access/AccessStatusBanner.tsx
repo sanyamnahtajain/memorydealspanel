@@ -4,7 +4,7 @@ import * as React from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { AlertTriangle, Info, X } from "lucide-react";
-import { motion, useReducedMotion } from "motion/react";
+import { motion } from "motion/react";
 
 import {
   accessCopy,
@@ -18,6 +18,7 @@ import {
   RenewAccessDialog,
   type RenewAccessState,
 } from "@/components/access/RenewAccessDialog";
+import { useEntranceInitial } from "@/components/motion/useEntrance";
 
 /**
  * AccessStatusBanner — slim, full-width status strip mounted in the
@@ -86,7 +87,7 @@ const TONE_CLASSES: Record<"warning" | "info", string> = {
 
 export function AccessStatusBanner() {
   const { snapshot, refresh } = useAccessStatus();
-  const reduced = useReducedMotion();
+  const entranceInitial = useEntranceInitial({ y: -8, opacity: 0 });
   const pathname = usePathname() ?? "/";
   // Exactly /account — deeper pages (orders, cart) still get the banner.
   const onAccountPage = pathname === "/account";
@@ -141,7 +142,7 @@ export function AccessStatusBanner() {
   return (
     <motion.div
       role="status"
-      initial={reduced ? false : { y: -8, opacity: 0 }}
+      initial={entranceInitial}
       animate={{ y: 0, opacity: 1 }}
       transition={{ type: "spring", stiffness: 420, damping: 34 }}
       className={cn("border-b", TONE_CLASSES[tone])}

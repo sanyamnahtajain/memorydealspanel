@@ -18,7 +18,7 @@ import * as React from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { ImageOff } from "lucide-react";
-import { motion, useReducedMotion, type Variants } from "motion/react";
+import { motion, type Variants } from "motion/react";
 
 import type { ProductCardItem } from "@/components/storefront/ProductCardGrid";
 import {
@@ -26,6 +26,7 @@ import {
   galleryTransitionName,
 } from "@/components/storefront/ProductGallery";
 import { BrandBadge } from "@/components/storefront/BrandBadge";
+import { useEntranceInitial } from "@/components/motion/useEntrance";
 
 const containerVariants: Variants = {
   hidden: {},
@@ -61,13 +62,13 @@ export function FeaturedRail({
    */
   priorityImageCount?: number;
 }) {
-  const reduced = useReducedMotion();
+  const entranceInitial = useEntranceInitial("hidden" as const);
 
   return (
     <motion.ul
       className="grid auto-cols-[minmax(9.5rem,1fr)] grid-flow-col gap-3 overflow-x-auto scroll-smooth pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:grid-flow-row sm:auto-cols-auto sm:grid-cols-3 sm:overflow-visible md:gap-4 lg:grid-cols-4"
       variants={containerVariants}
-      initial={reduced ? "show" : "hidden"}
+      initial={entranceInitial}
       animate="show"
     >
       {items.map((item, index) => (

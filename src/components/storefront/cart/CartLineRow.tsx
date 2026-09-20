@@ -17,6 +17,7 @@ import { StatusChip } from "@/components/common/StatusChip";
 import type { CartLineIssue } from "@/server/services/cart";
 import type { StockStatus } from "@/lib/schemas/shared";
 import type { CartLineData } from "@/app/(storefront)/account/cart/CartView";
+import { useEntranceInitial } from "@/components/motion/useEntrance";
 
 /** Whole-basis-points → "18%" / "18.5%" label. */
 function formatRate(gstRateBps: number): string {
@@ -72,10 +73,14 @@ export function CartLineRow({
   onPatch,
 }: CartLineRowProps) {
   const fatal = line.issues.some((i) => ISSUE_COPY[i]?.tone === "block");
+  // Lines present in the server render must be visible without JS; lines
+  // added later still animate in. See useEntrance.ts.
+  const entranceInitial = useEntranceInitial({ opacity: 0, y: 8 });
+
   return (
     <motion.li
       layout={!reduced}
-      initial={reduced ? false : { opacity: 0, y: 8 }}
+      initial={entranceInitial}
       animate={{ opacity: 1, y: 0 }}
       exit={reduced ? { opacity: 0 } : { opacity: 0, x: -12, height: 0 }}
       transition={{ duration: reduced ? 0 : 0.18 }}

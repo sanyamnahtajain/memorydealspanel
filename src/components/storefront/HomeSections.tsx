@@ -8,10 +8,11 @@
  */
 
 import * as React from "react";
-import { motion, useReducedMotion, type Variants } from "motion/react";
+import { motion, type Variants } from "motion/react";
 
 import { cn } from "@/lib/utils";
 import { staggerItemVariants } from "@/components/motion/primitives";
+import { useEntranceInitial } from "@/components/motion/useEntrance";
 
 const container: Variants = {
   hidden: {},
@@ -24,12 +25,12 @@ interface HomeSectionsProps {
 }
 
 export function HomeSections({ children, className }: HomeSectionsProps) {
-  const reduced = useReducedMotion();
+  const entranceInitial = useEntranceInitial("hidden" as const);
   return (
     <motion.div
       className={cn("mt-8 space-y-10", className)}
       variants={container}
-      initial={reduced ? "show" : "hidden"}
+      initial={entranceInitial}
       animate="show"
     >
       {React.Children.map(children, (child) =>

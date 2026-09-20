@@ -10,6 +10,7 @@ import type { Bucket } from "@/lib/billing-groups/types";
 import { groupColorClasses } from "./colors";
 import { formatBps } from "./bucket-math";
 import { TierProgress } from "./TierProgress";
+import { useEntranceInitial } from "@/components/motion/useEntrance";
 
 interface BucketCardProps {
   bucket: Bucket;
@@ -26,6 +27,7 @@ interface BucketCardProps {
  */
 export function BucketCard({ bucket, priced, children }: BucketCardProps) {
   const reduced = useReducedMotion();
+  const entranceInitial = useEntranceInitial({ opacity: 0, y: 8 });
   const c = groupColorClasses(bucket.color);
   const headingId = React.useId();
   const hasTiers = bucket.appliedTier !== null || bucket.nextTier !== null;
@@ -35,7 +37,7 @@ export function BucketCard({ bucket, priced, children }: BucketCardProps) {
     <motion.section
       aria-labelledby={headingId}
       layout={!reduced}
-      initial={reduced ? false : { opacity: 0, y: 8 }}
+      initial={entranceInitial}
       animate={{ opacity: 1, y: 0 }}
       exit={reduced ? { opacity: 0 } : { opacity: 0, height: 0 }}
       transition={{ duration: reduced ? 0 : 0.2 }}

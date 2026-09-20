@@ -10,8 +10,9 @@
 
 import * as React from "react";
 import { usePathname } from "next/navigation";
-import { motion, useReducedMotion } from "motion/react";
+import { motion } from "motion/react";
 import { durations, easeOut } from "./tokens";
+import { useEntranceInitial } from "@/components/motion/useEntrance";
 
 interface PageTransitionProps {
   children: React.ReactNode;
@@ -20,13 +21,13 @@ interface PageTransitionProps {
 
 export function PageTransition({ children, className }: PageTransitionProps) {
   const pathname = usePathname();
-  const reduced = useReducedMotion();
+  const entranceInitial = useEntranceInitial({ opacity: 0, y: 8 });
 
   return (
     <motion.div
       key={pathname}
       className={className}
-      initial={reduced ? false : { opacity: 0, y: 8 }}
+      initial={entranceInitial}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: durations.base, ease: easeOut }}
     >

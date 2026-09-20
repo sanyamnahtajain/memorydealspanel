@@ -24,6 +24,7 @@ import { QuickAddToCart } from "@/components/storefront/cart/QuickAddToCart";
 import { staggerItemVariants } from "@/components/motion/primitives";
 import type { ListingItem } from "./types";
 import { canQuickAdd, keySpec, stockChipVariant, thumbUrl } from "./product-display";
+import { useEntranceInitial } from "@/components/motion/useEntrance";
 
 interface ProductCompactViewProps {
   items: ListingItem[];
@@ -44,12 +45,13 @@ export function ProductCompactView({
   canAddToCart = false,
 }: ProductCompactViewProps) {
   const reduced = useReducedMotion();
+  const entranceInitial = useEntranceInitial("hidden" as const);
 
   return (
     <motion.ul
       className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card"
       variants={{ hidden: {}, show: { transition: { staggerChildren: 0.025 } } }}
-      initial={reduced ? "show" : "hidden"}
+      initial={entranceInitial}
       animate="show"
     >
       {items.map((item) => (

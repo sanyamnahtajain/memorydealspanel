@@ -32,6 +32,7 @@ import {
   GALLERY_HERO_CLASS,
   galleryTransitionName,
 } from "@/components/storefront/ProductGallery";
+import { useEntranceInitial } from "@/components/motion/useEntrance";
 
 /**
  * A single card's data. `product` is always the viewer-projected
@@ -92,6 +93,7 @@ export function ProductCardGrid({
   // not a ref, so it passes the strict react-hooks rules).
   const [baseline, setBaseline] = React.useState(initialItems);
   const reduced = useReducedMotion();
+  const entranceInitial = useEntranceInitial("hidden" as const);
   const sentinelRef = React.useRef<HTMLDivElement>(null);
 
   if (baseline !== initialItems) {
@@ -171,7 +173,7 @@ export function ProductCardGrid({
       <motion.ul
         className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:gap-4 lg:grid-cols-4"
         variants={containerVariants}
-        initial={reduced ? "show" : "hidden"}
+        initial={entranceInitial}
         animate="show"
       >
         {visible.map((item) => (
