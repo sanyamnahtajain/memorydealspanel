@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getSlabyBranding } from "@/server/services/store-settings";
+import { parseSlabyBranding } from "@/lib/slaby/branding";
 
 /**
  * GET /api/slaby-branding — the resolved "Built with Slaby" placement config
@@ -24,7 +25,24 @@ import { getSlabyBranding } from "@/server/services/store-settings";
 export const revalidate = 60;
 
 export async function GET(): Promise<NextResponse> {
-  const config = await getSlabyBranding();
+  // FAILS SOFT. Because this route is cached it is PRERENDERED AT BUILD TIME,
+  // so an unhandled database error here does not just break one request — it
+  // fails `next build` and blocks the whole deploy (seen on a Vercel project
+  // whose DATABASE_URL was wrong: every page tolerated it, this route did
+  // not). A "Built with" badge is not worth a failed release, and it is not
+  // worth a 500 in the storefront shell either: on any read failure the
+  // answer is "everything off", uncached so the real value returns as soon
+  // as the database does.
+  let config;
+  try {
+    config = await getSlabyBranding();
+  } catch (error) {
+    console.error("[slaby-branding] read failed; serving defaults:", error);
+    return NextResponse.json(
+      { config: parseSlabyBranding(undefined) },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  }
   return NextResponse.json(
     { config },
     {
