@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { Geist, Geist_Mono } from "next/font/google";
 import { AppToaster } from "@/components/common";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
@@ -76,6 +76,18 @@ export default async function RootLayout({
   const initialDensity =
     densityCookie === "compact" ? "compact" : "comfortable";
 
+  // The per-request CSP nonce minted in src/proxy.ts. Next stamps it onto its
+  // OWN inline scripts automatically, but not onto the hand-written ones
+  // below — and under `strict-dynamic` a script without it is simply refused.
+  // All three boot scripts had been silently blocked in production: dark-mode
+  // users got a flash of the light theme, and saved density never applied
+  // before paint.
+  //
+  // `suppressHydrationWarning` on each: browsers blank the `nonce` attribute
+  // in the DOM once a script has been parsed (so page scripts cannot read it),
+  // which React would otherwise report as a server/client mismatch.
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
+
   return (
     <html
       lang="en"
@@ -93,18 +105,34 @@ export default async function RootLayout({
         <meta name="google" content="notranslate" />
         {/* Render-blocking theme bootstrap — sets the `dark` class before the
             first paint to prevent a flash of the wrong theme (FOUC). */}
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <script
+          nonce={nonce}
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{ __html: themeScript }}
+        />
         {/* Render-blocking UI-preferences bootstrap — sets `data-density`
             (and `data-reduce-motion`) before the first paint. */}
-        <script dangerouslySetInnerHTML={{ __html: prefsScript }} />
+        <script
+          nonce={nonce}
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{ __html: prefsScript }}
+        />
         {/* Render-blocking PWA boot cover — in the INSTALLED app's first
             launch of a session, flag <html> before paint so the dark #md-boot
             cover shows instantly (no flash of app content) until the animated
-            SplashScreen takes over and removes the flag. */}
+            SplashScreen takes over and removes the flag.
+
+            FAILSAFE: the cover is full-screen and normally removed by React
+            (SplashScreen's effect). If hydration is slow or never happens —
+            a weak connection, a failed chunk — that would be a black screen
+            forever. So the same script that raises the cover also schedules
+            its removal, with no dependency on anything else loading. */}
         <script
+          nonce={nonce}
+          suppressHydrationWarning
           dangerouslySetInnerHTML={{
             __html:
-              "(function(){try{var s=(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true;if(s&&!sessionStorage.getItem('md-splash-played')&&location.pathname.indexOf('/admin')!==0){document.documentElement.dataset.mdBoot='1'}}catch(e){}})();",
+              "(function(){try{var s=(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true;if(s&&!sessionStorage.getItem('md-splash-played')&&location.pathname.indexOf('/admin')!==0){var d=document.documentElement;d.dataset.mdBoot='1';setTimeout(function(){try{delete d.dataset.mdBoot}catch(e){}},4000)}}catch(e){}})();",
           }}
         />
         <style

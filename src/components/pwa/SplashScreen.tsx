@@ -75,6 +75,17 @@ export function SplashScreen() {
     };
   }, [reduced]);
 
+  // FAILSAFE: leaving "exiting" depends on motion firing onAnimationComplete.
+  // If that callback is ever missed (tab backgrounded mid-animation, a
+  // throttled device), the overlay is gone but `phase` never returns to idle —
+  // and the scroll lock below stays on, leaving a page that looks fine and
+  // cannot be scrolled. Bound it.
+  React.useEffect(() => {
+    if (phase !== "exiting") return;
+    const timer = setTimeout(() => setPhase("idle"), 2000);
+    return () => clearTimeout(timer);
+  }, [phase]);
+
   // Scroll lock while the boot plays.
   React.useEffect(() => {
     if (phase === "idle") return;
