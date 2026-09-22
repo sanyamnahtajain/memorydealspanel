@@ -15,7 +15,7 @@
  */
 
 import { assertAdmin } from "@/server/dal/guard";
-import { resolveViewer } from "@/server/auth/viewer";
+import { getViewer } from "@/server/auth/viewer";
 import { prisma } from "@/server/db";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -96,7 +96,7 @@ function emptyDailyBuckets(days: number, now: Date): Map<number, TimeBucket> {
 /* ------------------------------------------------------------------ */
 
 export async function accessRequestsOverTime(days = 30): Promise<TimeBucket[]> {
-  const viewer = await resolveViewer();
+  const viewer = await getViewer();
   assertAdmin(viewer);
 
   const now = new Date();
@@ -121,7 +121,7 @@ export async function accessRequestsOverTime(days = 30): Promise<TimeBucket[]> {
 /* ------------------------------------------------------------------ */
 
 export async function approvalsVsRejections(days = 30): Promise<DualTimeBucket[]> {
-  const viewer = await resolveViewer();
+  const viewer = await getViewer();
   assertAdmin(viewer);
 
   const now = new Date();
@@ -163,7 +163,7 @@ const CUSTOMER_STATUSES = [
 ] as const;
 
 export async function customersByStatus(): Promise<StatusSlice[]> {
-  const viewer = await resolveViewer();
+  const viewer = await getViewer();
   assertAdmin(viewer);
 
   // groupBy is index-backed on {status}; low cardinality (5 buckets).
@@ -187,7 +187,7 @@ export async function mostViewedProducts(
   take = 8,
   days = 30,
 ): Promise<NamedCount[]> {
-  const viewer = await resolveViewer();
+  const viewer = await getViewer();
   assertAdmin(viewer);
 
   const since = new Date(Date.now() - days * DAY_MS);
@@ -229,7 +229,7 @@ export async function mostViewedProducts(
 /* ------------------------------------------------------------------ */
 
 export async function accessesExpiringSoon(): Promise<ExpiryBuckets> {
-  const viewer = await resolveViewer();
+  const viewer = await getViewer();
   assertAdmin(viewer);
 
   const now = new Date();
@@ -254,7 +254,7 @@ export async function accessesExpiringSoon(): Promise<ExpiryBuckets> {
 /* ------------------------------------------------------------------ */
 
 export async function catalogGrowth(days = 30): Promise<TimeBucket[]> {
-  const viewer = await resolveViewer();
+  const viewer = await getViewer();
   assertAdmin(viewer);
 
   const now = new Date();
@@ -290,7 +290,7 @@ export interface OrderBucket extends TimeBucket {
  * later discounts, so the chart matches the queue's numbers.
  */
 export async function ordersOverTime(days = 30): Promise<OrderBucket[]> {
-  const viewer = await resolveViewer();
+  const viewer = await getViewer();
   assertAdmin(viewer);
 
   const now = new Date();
@@ -319,7 +319,7 @@ export async function ordersOverTime(days = 30): Promise<OrderBucket[]> {
 
 /** Open-vs-done pipeline: order counts per status (whole history). */
 export async function orderStatusBreakdown(): Promise<StatusSlice[]> {
-  const viewer = await resolveViewer();
+  const viewer = await getViewer();
   assertAdmin(viewer);
 
   const grouped = await prisma.order.groupBy({
@@ -339,7 +339,7 @@ export async function topOrderedProducts(
   k = 8,
   days = 30,
 ): Promise<NamedCount[]> {
-  const viewer = await resolveViewer();
+  const viewer = await getViewer();
   assertAdmin(viewer);
 
   const since = new Date(Date.now() - days * DAY_MS);
@@ -390,7 +390,7 @@ export interface DashboardCharts {
  * viewer lookup via React cache upstream.
  */
 export async function getDashboardCharts(): Promise<DashboardCharts> {
-  const viewer = await resolveViewer();
+  const viewer = await getViewer();
   assertAdmin(viewer);
 
   const [

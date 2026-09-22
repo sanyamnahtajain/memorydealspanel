@@ -6,8 +6,8 @@ import type { ViewerContext } from "@/server/types/viewer";
  * Integration tests for the dashboard-metrics aggregations against the SEEDED
  * local MongoDB.
  *
- * The metrics are admin-guarded via `resolveViewer` + `assertAdmin`, so we mock
- * `resolveViewer` to swap the acting viewer per test — proving both the guard
+ * The metrics are admin-guarded via `getViewer` + `assertAdmin`, so we mock
+ * the viewer module to swap the acting viewer per test — proving both the guard
  * (non-admins are rejected) and the day-bucketing logic (self-created rows land
  * in the right bucket and are cleaned up afterwards, leaving the seed intact).
  */
@@ -16,12 +16,16 @@ const viewerMock = vi.hoisted(() => ({
   current: null as ViewerContext | null,
 }));
 
-vi.mock("@/server/auth/viewer", () => ({
-  resolveViewer: vi.fn(async () => {
+vi.mock("@/server/auth/viewer", () => {
+  const resolveViewer = vi.fn(async () => {
     if (!viewerMock.current) throw new Error("no viewer set in test");
     return viewerMock.current;
-  }),
-}));
+  });
+  // The metrics read the viewer through the request-cached `getViewer` (one
+  // session lookup per dashboard render instead of ten); in the real module it
+  // is `cache(resolveViewer)`, so here it is simply the same mock.
+  return { resolveViewer, getViewer: resolveViewer };
+});
 
 const ADMIN_VIEWER: ViewerContext = {
   kind: "admin",
