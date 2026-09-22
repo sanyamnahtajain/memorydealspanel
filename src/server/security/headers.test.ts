@@ -116,8 +116,15 @@ describe("buildContentSecurityPolicy", () => {
       .map((s) => s.trim())
       .find((s) => s.startsWith("script-src"))!;
     expect(scriptSrc).toContain("'nonce-abc123'");
-    // strict-dynamic lets the nonce'd bootstrap pull the rest of the chunk graph.
-    expect(scriptSrc).toContain("'strict-dynamic'");
+    // NO 'strict-dynamic': it disables the 'self' allowlist, and Next does not
+    // stamp the nonce on every chunk <script> it emits (the admin shell's shared
+    // icon chunk arrives inside the RSC payload without one). With it present,
+    // Chrome blocked that chunk, the admin never hydrated, and every admin page
+    // sat on its loading skeleton forever. Same-origin chunks must load on
+    // 'self'; inline scripts still need the nonce.
+    expect(scriptSrc).not.toContain("strict-dynamic");
+    expect(scriptSrc).toContain("'self'");
+    expect(scriptSrc).not.toContain("'unsafe-inline'");
     // The nonce must never leak into other fetch directives.
     const connectSrc = value
       .split(";")
@@ -126,7 +133,7 @@ describe("buildContentSecurityPolicy", () => {
     expect(connectSrc).not.toContain("nonce");
   });
 
-  it("omits nonce/strict-dynamic from script-src when none is supplied", () => {
+  it("omits the nonce from script-src when none is supplied", () => {
     delete process.env.R2_PUBLIC_URL;
     const value = buildContentSecurityPolicy(false);
     const scriptSrc = value

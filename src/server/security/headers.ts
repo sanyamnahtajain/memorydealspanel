@@ -107,11 +107,26 @@ export function buildContentSecurityPolicy(
     scriptSrc.push("'unsafe-inline'", "'unsafe-eval'");
     connectSrc.push("ws:", "wss:");
   } else if (nonce) {
-    // Production: allow Next's inline bootstrap scripts, which carry this exact
-    // nonce. `'strict-dynamic'` lets those trusted scripts load the rest of the
-    // chunk graph without enumerating every hashed filename, while ignoring the
-    // host-based allowlist for scripts in modern browsers.
-    scriptSrc.push(`'nonce-${nonce}'`, "'strict-dynamic'");
+    // Production: inline scripts must carry this exact nonce; external chunks
+    // are covered by the `'self'` host allowlist above.
+    //
+    // INCIDENT NOTE — this used to add `'strict-dynamic'` as well, and that
+    // took the admin console down. `'strict-dynamic'` DISABLES the `'self'`
+    // allowlist, so every chunk needed the nonce too. Next stamps it onto the
+    // chunks it lists in the document head, but NOT onto the extra chunk
+    // `<script>` elements it emits inside the RSC payload for client
+    // components (the admin shell's shared icon chunk is one). Chrome blocked
+    // that chunk on every admin page, React never hydrated, and the admin sat
+    // on its loading skeleton forever: the charts never drew, the live-events
+    // stream never opened, and an expired session's client-side redirect to
+    // the login page never ran. The storefront happened not to have such a
+    // chunk, which is the only reason it worked.
+    //
+    // What is given up: an attacker who can get a script file served from OUR
+    // origin could run it. Uploads live on R2 (a different origin) and nothing
+    // serves user content from this host, so that surface is empty here.
+    // Inline injection — the realistic XSS vector — still needs the nonce.
+    scriptSrc.push(`'nonce-${nonce}'`);
   }
 
   const directives: Record<string, string[]> = {
