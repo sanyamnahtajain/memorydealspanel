@@ -123,6 +123,21 @@ const EVENT_META: Record<string, EventMeta> = {
     tune: "short",
     alert: "toast",
   },
+  "order.editedByCustomer": {
+    title: "Order changed",
+    describe: (p) => {
+      const number = str(p.orderNumber);
+      const summary = str(p.summary);
+      return [number && `#${number}`, summary].filter(Boolean).join(" · ");
+    },
+    href: "/admin/orders",
+    actionLabel: "Open orders",
+    icon: PackageX,
+    // The customer changed what they want BEFORE staff confirmed — worth
+    // seeing before packing, but nobody is blocked: a toast, not a takeover.
+    tune: "short",
+    alert: "toast",
+  },
   contact_message: {
     title: "New contact message",
     describe: (p) =>

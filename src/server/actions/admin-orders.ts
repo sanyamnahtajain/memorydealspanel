@@ -13,6 +13,22 @@ import { writeAudit } from "@/server/security/audit";
 import { notifyCustomer } from "@/server/notify/push";
 import { ORDER_STATUS_LABEL } from "@/components/storefront/orders/order-status";
 import { objectIdSchema } from "@/lib/schemas/shared";
+import {
+  canAdminEditOrder,
+  orderEditInputSchema,
+  summariseOrderChanges,
+  type OrderEditPreviewDTO,
+  type OrderEditProductPick,
+  type OrderRevisionDTO,
+} from "@/lib/order-edits";
+import {
+  applyOrderEdit,
+  listOrderRevisions,
+  previewOrderEdit,
+  searchProductsForOrderEdit,
+  toOrderEditPreviewDTO,
+  toOrderRevisionDTO,
+} from "@/server/services/order-edits";
 import { PAGE_SIZES } from "@/lib/constants";
 import {
   countOrders,
@@ -145,6 +161,12 @@ export interface OrderTaxDTO {
 }
 
 export interface OrderDetailDTO extends OrderRowDTO {
+  /** Edit token: 1 = as placed; every applied edit adds one. */
+  version: number;
+  /** ISO time of the last edit after placement, or null. */
+  editedAt: string | null;
+  /** Whether staff may edit this order right now (status-based). */
+  editable: boolean;
   /** Coupon frozen at placement, when one applied. */
   couponCode: string | null;
   /** Order-level discount (paise); 0 when none. */
@@ -191,6 +213,9 @@ function toRowDTO(item: OrderListItem): OrderRowDTO {
 function toDetailDTO(detail: OrderDetail): OrderDetailDTO {
   return {
     ...toRowDTO(detail),
+    version: detail.version,
+    editedAt: detail.editedAt ? detail.editedAt.toISOString() : null,
+    editable: canAdminEditOrder(detail.status),
     couponCode: detail.couponCode,
     discountPaise: detail.discountPaise,
     items: detail.items.map((line) => ({
@@ -655,4 +680,99 @@ export async function retractAccessExtensionAction(
     revalidatePath("/admin/customers");
     return { ok: true, done: true };
   });
+}
+
+/* ------------------------------------------------------------------ */
+/* Order editing (see src/server/services/order-edits.ts)              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Same permission as changing an order's status: editing what the customer
+ * gets is at least as consequential as saying it has shipped.
+ */
+async function assertMayEditOrders() {
+  const viewer = await resolveViewer();
+  assertAdmin(viewer);
+  await assertPermission(viewer, PERMISSIONS.CUSTOMERS_EDIT);
+  return viewer;
+}
+
+const orderEditFailureCopy = (message: string) => ({ ok: false as const, error: message });
+
+export async function previewOrderEditAction(
+  orderId: string,
+  input: unknown,
+): Promise<ActionResult<{ preview: OrderEditPreviewDTO }>> {
+  return guarded(async () => {
+    const viewer = await assertMayEditOrders();
+    const id = objectIdSchema.parse(orderId);
+    const parsed = orderEditInputSchema.parse(input);
+    const result = await previewOrderEdit(id, { kind: "admin", adminId: viewer.adminId }, parsed);
+    if (!result.ok) return orderEditFailureCopy(result.message);
+    // Staff always see money.
+    return { ok: true, preview: toOrderEditPreviewDTO(result, true) };
+  });
+}
+
+export async function applyOrderEditAction(
+  orderId: string,
+  input: unknown,
+): Promise<ActionResult<{ version: number; summary: string }>> {
+  return guarded(async () => {
+    const viewer = await assertMayEditOrders();
+    const id = objectIdSchema.parse(orderId);
+    const parsed = orderEditInputSchema.parse(input);
+    const result = await applyOrderEdit(id, { kind: "admin", adminId: viewer.adminId }, parsed);
+    if (!result.ok) return orderEditFailureCopy(result.message);
+
+    const summary = summariseOrderChanges(result.changes);
+    await writeAudit({
+      actorType: ACTOR,
+      actorId: viewer.adminId,
+      action: "order.edit",
+      entity: "Order",
+      entityId: id,
+      // Plain JSON for the audit column (typed snapshots lack an index signature).
+      diff: JSON.parse(
+        JSON.stringify({
+          version: result.version,
+          reason: parsed.reason ?? null,
+          changes: result.changes,
+          before: result.before,
+          after: result.after,
+        }),
+      ),
+    });
+
+    // The buyer learns their order changed, in the words of the change.
+    // Fire-and-forget: the edit is committed; a push failure must not undo it.
+    void notifyCustomer(result.customerId, "order.status", {
+      title: `Order ${result.orderNumber} was updated`,
+      body: summary,
+      url: `/account/orders/${result.orderNumber}`,
+    }).catch((error) => {
+      console.error("[actions/admin-orders] edit push failed:", error);
+    });
+
+    revalidatePath("/admin/orders");
+    revalidatePath(`/admin/orders/${id}`);
+    revalidatePath(`/account/orders/${result.orderNumber}`);
+    return { ok: true, version: result.version, summary };
+  });
+}
+
+export async function searchProductsForOrderEditAction(
+  query: string,
+): Promise<ActionResult<{ products: OrderEditProductPick[] }>> {
+  return guarded(async () => {
+    await assertMayEditOrders();
+    const q = z.string().max(80).parse(query);
+    return { ok: true, products: await searchProductsForOrderEdit(q) };
+  });
+}
+
+/** The edit history for the admin detail page (server-side call). */
+export async function orderRevisionsForAdmin(orderId: string): Promise<OrderRevisionDTO[]> {
+  const rows = await listOrderRevisions(orderId);
+  return rows.map((r) => toOrderRevisionDTO(r, true));
 }

@@ -275,7 +275,7 @@ export interface CartTaxPreview {
  * carry a rate that a later catalog edit can never alter. When the GST
  * kill-switch is off they are simply never read.
  */
-const CART_PRODUCT_SELECT = {
+export const CART_PRODUCT_SELECT = {
   id: true,
   name: true,
   slug: true,
@@ -322,10 +322,10 @@ const CART_PRODUCT_SELECT = {
   },
 } satisfies Prisma.ProductSelect;
 
-type CartProductRow = Prisma.ProductGetPayload<{ select: typeof CART_PRODUCT_SELECT }>;
+export type CartProductRow = Prisma.ProductGetPayload<{ select: typeof CART_PRODUCT_SELECT }>;
 
 /** Build a human variant label from its optionValues JSON (e.g. "20000mAh · Black"). */
-function variantLabel(optionValues: Prisma.JsonValue | null | undefined): string | null {
+export function variantLabel(optionValues: Prisma.JsonValue | null | undefined): string | null {
   if (!optionValues || typeof optionValues !== "object" || Array.isArray(optionValues)) {
     return null;
   }
@@ -370,7 +370,7 @@ function primaryImageUrl(images: CartProductRow["images"]): string | null {
  * backstop, plus whether the kill-switch is on. `enabled: false` ⇒ every tax
  * resolution short-circuits to `null` and the order behaves EXACTLY as pre-GST.
  */
-interface TaxContext {
+export interface TaxContext {
   enabled: boolean;
   profile: ProfileTaxDefaults;
   sellerStateCode: string | null;
@@ -382,7 +382,7 @@ interface TaxContext {
  * Load the GST context from the (React-`cache()`d) singleton seller profile.
  * Returns `null` when GST is disabled so callers can cheaply skip all tax work.
  */
-async function loadTaxContext(): Promise<TaxContext | null> {
+export async function loadTaxContext(): Promise<TaxContext | null> {
   const p = await getSellerTaxProfile();
   if (!p.gstEnabled) return null;
   return {
@@ -444,7 +444,7 @@ function resolveLineEffectiveTax(
  * must be excluded from an order. The unit price is ALWAYS the live server
  * price — the caller's cart carries no price at all.
  */
-function priceLine(
+export function priceLine(
   product: CartProductRow | undefined,
   variantId: string | null,
   requestedQuantity: number,
@@ -797,7 +797,7 @@ function groupDiscountByLine(billing: BucketedCart): Map<string, number> {
 }
 
 /** The same lines with each total reduced by its billing-group discount share. */
-function applyGroupDiscountToLines(
+export function applyGroupDiscountToLines(
   lines: PricedCartLine[],
   billing: BucketedCart,
 ): PricedCartLine[] {
@@ -814,7 +814,7 @@ function applyGroupDiscountToLines(
  * lines in a bucket whose group forbids coupon stacking (they're invisible to
  * the coupon, so its eligible subtotal excludes them).
  */
-function couponLinesFor(
+export function couponLinesFor(
   lines: PricedCartLine[],
   billing: BucketedCart,
 ): { productId: string; lineTotalPaise: number }[] {
@@ -839,7 +839,7 @@ function couponLinesFor(
  * tax is shown combined, with a prompt to add a GSTIN. IDOR-safe: `customerId`
  * comes only from the resolved viewer.
  */
-async function resolvePlaceOfSupply(customerId: string): Promise<string | null> {
+export async function resolvePlaceOfSupply(customerId: string): Promise<string | null> {
   const customer = await prisma.customer.findUnique({
     where: { id: customerId },
     select: { gstStateCode: true, placeOfSupplyStateCode: true },
@@ -908,7 +908,7 @@ export interface OrderItemSnapshot {
   attachments?: { url: string }[];
 }
 
-function toSnapshot(line: PricedCartLine, tax?: OrderItemTaxSnapshot): OrderItemSnapshot {
+export function toSnapshot(line: PricedCartLine, tax?: OrderItemTaxSnapshot): OrderItemSnapshot {
   return {
     productId: line.productId,
     variantId: line.variantId,
@@ -966,7 +966,7 @@ export interface HsnSummaryRow {
 }
 
 /** Result of {@link computeOrderTax}: per-line breakups + order-level totals. */
-interface ComputedOrderTax {
+export interface ComputedOrderTax {
   perLine: (OrderItemTaxSnapshot | undefined)[];
   order: OrderTaxSnapshot;
 }
@@ -984,7 +984,7 @@ interface ComputedOrderTax {
  *
  * Returns `null` when GST is off (no context) so callers keep the pre-GST path.
  */
-function computeOrderTax(
+export function computeOrderTax(
   lines: PricedCartLine[],
   ctx: TaxContext | null,
   placeOfSupplyStateCode: string | null,

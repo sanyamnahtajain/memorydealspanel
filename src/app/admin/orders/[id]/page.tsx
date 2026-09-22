@@ -13,6 +13,8 @@ import { PageHeader } from "@/components/common";
 import { OrderDetailPanel } from "@/components/admin/orders/OrderDetailPanel";
 import { OrderPdfDownloadButton } from "@/components/admin/orders/OrderPdfDownloadButton";
 import type { OrderDetailDTO } from "@/server/actions/admin-orders";
+import { orderRevisionsForAdmin } from "@/server/actions/admin-orders";
+import { canAdminEditOrder } from "@/lib/order-edits";
 import { toOrderBillingView } from "@/components/orders/billing/types";
 
 export const metadata: Metadata = {
@@ -62,10 +64,15 @@ export default async function AdminOrderDetailPage({
     }
   });
 
+  const revisions = await orderRevisionsForAdmin(detail.id);
+
   const order: OrderDetailDTO = {
     id: detail.id,
     orderNumber: detail.orderNumber,
     status: detail.status,
+    version: detail.version,
+    editedAt: detail.editedAt ? detail.editedAt.toISOString() : null,
+    editable: canAdminEditOrder(detail.status),
     itemCount: detail.itemCount,
     subtotalPaise: detail.subtotalPaise,
     couponCode: detail.couponCode,
@@ -152,7 +159,7 @@ export default async function AdminOrderDetailPage({
           backLabel="Orders"
           actions={<OrderPdfDownloadButton orderId={order.id} />}
         />
-        <OrderDetailPanel order={order} />
+        <OrderDetailPanel order={order} revisions={revisions} />
       </div>
     </AdminShell>
   );

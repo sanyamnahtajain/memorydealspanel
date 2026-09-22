@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { resolveViewer } from "@/server/auth/viewer";
 import { canSeePrices, isCustomer } from "@/server/types/viewer";
 import { getCustomerOrderByNumber } from "@/server/services/admin-orders";
+import { listOrderRevisions, toOrderRevisionDTO } from "@/server/services/order-edits";
 import { cartCountForViewer } from "@/server/services/cart";
 import { APP_NAME } from "@/lib/constants";
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
@@ -55,6 +56,7 @@ export default async function OrderDetailPage({
   }
 
   const priced = canSeePrices(viewer);
+  const revisions = (await listOrderRevisions(order.id)).map((r) => toOrderRevisionDTO(r, priced));
 
   const items: OrderHistoryLine[] = order.items.map((line) => ({
     productId: line.productId,
@@ -90,6 +92,8 @@ export default async function OrderDetailPage({
   const detail: OrderHistoryDetail = {
     orderNumber: order.orderNumber,
     status: order.status,
+    version: order.version,
+    editedAt: order.editedAt ? order.editedAt.toISOString() : null,
     itemCount: order.itemCount,
     subtotalPaise: priced ? order.subtotalPaise : null,
     couponCode: order.couponCode,
@@ -137,6 +141,7 @@ export default async function OrderDetailPage({
           url: order.tracking.url,
         }
       : null,
+    revisions,
   };
 
   const cartCount = await cartCountForViewer(viewer);

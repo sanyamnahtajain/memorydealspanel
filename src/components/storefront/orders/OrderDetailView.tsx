@@ -40,6 +40,9 @@ import {
   orderStatusVariant,
 } from "./order-status";
 import { OrderStatusTimeline } from "./OrderStatusTimeline";
+import { CustomerOrderEditor } from "./CustomerOrderEditor";
+import { OrderRevisionList } from "@/components/orders/edit/OrderRevisionList";
+import { canCustomerEditOrder, revisionLabel } from "@/lib/order-edits";
 import { OrderTaxBreakup } from "./OrderTaxBreakup";
 import { DeliveryNotice } from "./DeliveryNotice";
 import { DeliveryChargeRow } from "@/components/orders/DeliveryChargeRow";
@@ -71,6 +74,8 @@ export function OrderDetailView({ detail }: { detail: OrderHistoryDetail }) {
   const [cancelling, setCancelling] = React.useState(false);
 
   const cancellable = isCancellable(detail.status);
+  const editable = canCustomerEditOrder(detail.status);
+  const revised = revisionLabel(detail.version);
   const totalDiscountPaise =
     (detail.billing?.groupDiscountPaise ?? 0) + detail.discountPaise;
   // Delivery: a frozen CHARGE, added after the discounts and after GST. 0 on an
@@ -143,10 +148,19 @@ export function OrderDetailView({ detail }: { detail: OrderHistoryDetail }) {
           <p className="text-sm text-muted-foreground">
             Placed {formatDateTime(detail.placedAt)} · {detail.itemCount}{" "}
             {detail.itemCount === 1 ? "item" : "items"}
+            {revised && detail.editedAt ? (
+              <>
+                {" · "}
+                <span className="font-medium text-foreground">
+                  {revised}, last {formatDateTime(detail.editedAt)}
+                </span>
+              </>
+            ) : null}
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {editable ? <CustomerOrderEditor detail={detail} /> : null}
           <Button
             variant="outline"
             onClick={handleReorder}
@@ -268,6 +282,8 @@ export function OrderDetailView({ detail }: { detail: OrderHistoryDetail }) {
             charged={deliveryChargePaise > 0}
             className="mt-2"
           />
+
+          <OrderRevisionList revisions={detail.revisions} viewer="customer" />
 
           {detail.note ? (
             <div className="rounded-2xl border border-border bg-muted/40 p-4">

@@ -50,6 +50,9 @@ import { OrderCsvButton } from "./OrderCsvButton";
 import { OrderTaxBreakup } from "@/components/storefront/orders/OrderTaxBreakup";
 import { OrderBucketSections } from "@/components/orders/billing/OrderBucketSections";
 import { AccessExtensionNotice } from "./AccessExtensionNotice";
+import { AdminOrderEditor } from "./AdminOrderEditor";
+import { OrderRevisionList } from "@/components/orders/edit/OrderRevisionList";
+import { revisionLabel, type OrderRevisionDTO } from "@/lib/order-edits";
 import { DeliveryNotice } from "@/components/storefront/orders/DeliveryNotice";
 import { DeliveryChargeRow } from "@/components/orders/DeliveryChargeRow";
 import { BillingTotalsRows } from "@/components/orders/billing/BillingTotalsRows";
@@ -69,7 +72,15 @@ function formatDateTime(iso: string): string {
   });
 }
 
-export function OrderDetailPanel({ order }: { order: OrderDetailDTO }) {
+export function OrderDetailPanel({
+  order,
+  revisions = [],
+}: {
+  order: OrderDetailDTO;
+  /** Edit history, newest first (see order-edits). */
+  revisions?: OrderRevisionDTO[];
+}) {
+  const revised = revisionLabel(order.version);
   const groupDiscountPaise = order.billing?.groupDiscountPaise ?? 0;
   const totalDiscountPaise = groupDiscountPaise + order.discountPaise;
   // Frozen delivery CHARGE: added after the discounts and after GST, never
@@ -108,9 +119,18 @@ export function OrderDetailPanel({ order }: { order: OrderDetailDTO }) {
                 </span>
               </>
             ) : null}
+            {revised && order.editedAt ? (
+              <>
+                {" · "}
+                <span className="font-medium text-foreground">
+                  {revised}, last {formatDateTime(order.editedAt)}
+                </span>
+              </>
+            ) : null}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <AdminOrderEditor order={order} />
           <WhatsAppCustomerButton order={order} />
           <OrderCsvButton order={order} />
         </div>
@@ -196,6 +216,8 @@ export function OrderDetailPanel({ order }: { order: OrderDetailDTO }) {
               deliveryChargePaise={deliveryChargePaise}
             />
           ) : null}
+
+          <OrderRevisionList revisions={revisions} viewer="admin" />
 
           {order.note ? (
             <div className="rounded-2xl border border-border bg-muted/40 p-4">

@@ -513,6 +513,31 @@ model Banner {
   @@index([deletedAt])
 }
 
+/// One applied edit to an order — APPEND-ONLY history. A separate collection
+/// rather than an array on the order so a much-edited order never grows past
+/// Mongo's document limit and the order read stays small. `version` is the
+/// order's version AFTER this revision (the first edit produces version 2).
+/// `before`/`after` hold the money totals so a dispute can be settled from the
+/// row alone, without replaying the changes.
+model OrderRevision {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  orderId   String   @db.ObjectId
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  version   Int
+  /// "admin" | "customer"
+  actorType String
+  actorId   String
+  reason    String?
+  /// OrderChange[] — see src/lib/order-edits.ts
+  changes   Json
+  /// OrderTotalsSnapshot — see src/lib/order-edits.ts
+  before    Json
+  after     Json
+  createdAt DateTime @default(now())
+
+  @@index([orderId, version])
+}
+
 model WishlistItem {
   id         String   @id @default(auto()) @map("_id") @db.ObjectId
   customerId String   @db.ObjectId
@@ -653,6 +678,16 @@ model Order {
   // { courierName?, trackingId?, url? } — parsed defensively in
   // src/lib/tracking.ts. Absent for unshipped/legacy orders.
   tracking           Json?
+  // ORDER EDITING (src/server/services/order-edits.ts). `version` is the
+  // optimistic-concurrency token: every applied edit bumps it, and a save that
+  // names a stale version is refused instead of silently overwriting someone
+  // else's change. OPTIONAL on purpose — orders placed before this feature
+  // have no such field at all, and on MongoDB an absent field matches neither
+  // `1` nor `null`; readers treat absent/null as version 1 and the engine's
+  // conflict check handles both shapes. `editedAt` is the last applied edit.
+  version            Int?
+  editedAt           DateTime?
+  revisions          OrderRevision[]
   placedAt      DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 

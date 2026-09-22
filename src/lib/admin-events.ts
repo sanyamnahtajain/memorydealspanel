@@ -46,6 +46,7 @@ export const ADMIN_FEED_TYPES = [
   "access_request",
   "renewal_request",
   "order.cancelledByCustomer",
+  "order.editedByCustomer",
   "contact_message",
 ] as const;
 

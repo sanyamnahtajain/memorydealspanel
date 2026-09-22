@@ -15,6 +15,7 @@ import { bucketBillNumber } from "@/lib/billing-groups/engine";
 import { GENERAL_GROUP_CODE, GENERAL_GROUP_NAME } from "@/lib/billing-groups/types";
 import { parseStoredTracking, trackingSummary } from "@/lib/tracking";
 import { ORDER_STATUS_LABEL } from "@/components/storefront/orders/order-status";
+import { revisionLabel } from "@/lib/order-edits";
 
 /**
  * Order PDF (owner request) — a received order rendered in the shop's
@@ -134,6 +135,11 @@ export interface OrderPdfData {
   partyCity?: string | null;
   /** Plain-English order status ("Confirmed", "Completed", …). */
   statusLabel?: string | null;
+  /**
+   * "Revised once" / "Revised 3 times" when the order was edited after
+   * placement, so a printed copy can never be mistaken for the original.
+   */
+  revisionLabel?: string | null;
   /**
    * The customer's note on the WHOLE order (Order.note) — distinct from the
    * per-line requirement notes. It used never to reach this document at all,
@@ -409,6 +415,20 @@ export async function renderOrderPdf(
         y -= 12;
         text(
           `Status    :  ${data.statusLabel}`,
+          M + W / 2,
+          9.5,
+          helv,
+          INK,
+          "left",
+          0,
+        );
+      }
+      if (data.revisionLabel) {
+        // An edited order's print must say so — a copy from before the edit
+        // and a copy from after look identical otherwise.
+        y -= 12;
+        text(
+          `Note      :  ${data.revisionLabel} after placement`,
           M + W / 2,
           9.5,
           helv,
@@ -1031,6 +1051,7 @@ export async function buildOrderPdf(
     partyGstin: order.customer.gstNumber ?? null,
     partyCity: order.customer.city ?? null,
     statusLabel: ORDER_STATUS_LABEL[order.status] ?? order.status,
+    revisionLabel: revisionLabel(order.version),
     // The customer's own note on the order. `adminNote` is deliberately NOT
     // printed: it is internal, and this PDF gets forwarded to buyers.
     orderNote:

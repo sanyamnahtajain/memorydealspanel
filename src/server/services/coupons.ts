@@ -287,6 +287,38 @@ export type CouponQuoteResult =
   | { ok: false; reason: CouponFailReason };
 
 /**
+ * Re-quote a coupon that is ALREADY REDEEMED on an order, for an order EDIT.
+ *
+ * Deliberately not {@link previewCoupon}: that applies the placement checks —
+ * active, started, not expired, not exhausted, minimum met — which is right
+ * for a code being claimed and wrong for one that was legitimately claimed
+ * days ago. An order edited after its coupon's expiry keeps the coupon; an
+ * order edited after the coupon hit its redemption cap keeps the coupon (this
+ * order IS one of those redemptions). Only the arithmetic re-runs: the same
+ * percent or fixed amount over the same scope, capped at the new eligible
+ * subtotal so an order can never go negative. A code that no longer exists
+ * (deleted since) keeps nothing — there is no rate to apply.
+ */
+export async function requoteRedeemedCoupon(
+  code: string,
+  lines: readonly CouponCartLine[],
+): Promise<{ discountPaise: number; scopeProductIds: string[] }> {
+  const parsed = couponCodeSchema.safeParse(code);
+  if (!parsed.success) return { discountPaise: 0, scopeProductIds: [] };
+  const row = await prisma.coupon.findFirst({
+    where: { code: parsed.data },
+    select: COUPON_SELECT,
+  });
+  if (!row) return { discountPaise: 0, scopeProductIds: [] };
+  const eligible = eligibleSubtotalPaise(row, lines);
+  if (eligible <= 0) return { discountPaise: 0, scopeProductIds: row.productIds };
+  return {
+    discountPaise: computeDiscountPaise(row, eligible),
+    scopeProductIds: row.productIds,
+  };
+}
+
+/**
  * PURE READ for the cart UI: would this code apply to this subtotal, and for
  * how much? Never mutates anything — the atomic claim happens only in
  * {@link redeemCoupon} at placement, so placement is the authority.

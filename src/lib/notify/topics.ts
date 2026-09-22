@@ -168,8 +168,8 @@ const ADMIN_TOPICS = [
   {
     key: "admin.order.cancelled",
     audience: "admin",
-    label: "Order cancelled",
-    description: "A customer cancelled an order they had placed.",
+    label: "Order changed or cancelled",
+    description: "A customer changed or cancelled an order they had placed.",
     defaultOn: true,
     sound: "short",
     fallbackUrl: "/admin/orders",

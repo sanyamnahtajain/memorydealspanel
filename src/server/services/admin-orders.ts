@@ -268,6 +268,10 @@ function parseOrderAccessExtension(raw: unknown): OrderAccessExtension | null {
 
 /** Full order detail (snapshot + notes + customer for admin). */
 export interface OrderDetail extends OrderListItem {
+  /** Optimistic-concurrency token for edits; 1 = as placed (see order-edits). */
+  version: number;
+  /** When the order was last edited after placement, or null. */
+  editedAt: Date | null;
   items: OrderItemSnapshot[];
   note: string | null;
   adminNote: string | null;
@@ -464,6 +468,8 @@ export async function getOrder(id: string): Promise<OrderDetail | null> {
       ...ADMIN_LIST_SELECT,
       ...ORDER_TAX_SELECT,
       items: true,
+      version: true,
+      editedAt: true,
       note: true,
       adminNote: true,
       couponCode: true,
@@ -479,6 +485,8 @@ export async function getOrder(id: string): Promise<OrderDetail | null> {
   if (!row) return null;
   return {
     ...toAdminListItem(row),
+    version: row.version ?? 1,
+    editedAt: row.editedAt ?? null,
     items: parseOrderItems(row.items),
     note: row.note ?? null,
     adminNote: row.adminNote ?? null,
@@ -785,6 +793,8 @@ export async function getCustomerOrderByNumber(
       ...LIST_SELECT,
       ...ORDER_TAX_SELECT,
       items: true,
+      version: true,
+      editedAt: true,
       note: true,
       couponCode: true,
       discountPaise: true,
@@ -798,6 +808,8 @@ export async function getCustomerOrderByNumber(
   if (!row) return null;
   return {
     id: row.id,
+    version: row.version ?? 1,
+    editedAt: row.editedAt ?? null,
     orderNumber: row.orderNumber,
     status: row.status,
     fulfilledAt: row.fulfilledAt ?? null,

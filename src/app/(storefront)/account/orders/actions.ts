@@ -11,6 +11,18 @@ import { writeAudit } from "@/server/security/audit";
 import { limit } from "@/server/security/ratelimit";
 import { addToCart, CartError } from "@/server/services/cart";
 import { parseOrderItems } from "@/server/services/admin-orders";
+import {
+  orderEditInputSchema,
+  summariseOrderChanges,
+  type OrderEditPreviewDTO,
+  type OrderEditProductPick,
+} from "@/lib/order-edits";
+import {
+  applyOrderEdit,
+  previewOrderEdit,
+  searchProductsForOrderEdit,
+  toOrderEditPreviewDTO,
+} from "@/server/services/order-edits";
 
 /**
  * Customer order-history actions — REORDER and CANCEL. These live under the
@@ -256,5 +268,131 @@ export async function cancelOrderAction(
     }
     console.error("[actions/orders] cancel failed:", error);
     return { ok: false, error: "Couldn't cancel the order. Please try again." };
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Edit — only while still PLACED (the same window as cancelling)       */
+/* ------------------------------------------------------------------ */
+
+const EDIT_LIMIT = { points: 60, window: 3600 } as const;
+const EDIT_PREVIEW_LIMIT = { points: 600, window: 3600 } as const;
+
+/** Resolve an order NUMBER to the id the engine works on — ownership-scoped. */
+async function ownOrderId(customerId: string, orderNumber: string): Promise<string | null> {
+  const number = orderNumberSchema.parse(orderNumber);
+  const row = await prisma.order.findFirst({
+    where: { customerId, orderNumber: number },
+    select: { id: true },
+  });
+  return row?.id ?? null;
+}
+
+export async function previewOrderEditAction(
+  orderNumber: string,
+  input: unknown,
+): Promise<ActionResult<{ preview: OrderEditPreviewDTO }>> {
+  try {
+    const viewer = await resolveViewer();
+    if (!isCustomer(viewer)) {
+      return { ok: false, error: "Please sign in to manage your orders." };
+    }
+    const throttle = await limit(viewer.customerId, EDIT_PREVIEW_LIMIT, "order-edit-preview");
+    if (!throttle.ok) return { ok: false, error: "Too many attempts. Please try again later." };
+
+    const id = await ownOrderId(viewer.customerId, orderNumber);
+    if (!id) return { ok: false, error: "Order not found." };
+    const parsed = orderEditInputSchema.parse(input);
+    const result = await previewOrderEdit(id, { kind: "customer", customerId: viewer.customerId }, parsed);
+    if (!result.ok) return { ok: false, error: result.message };
+    // THE PRICE GATE: a viewer who may not see prices gets the same preview
+    // with every amount stripped — the edit still works, blind to money, the
+    // way their order page does.
+    return { ok: true, preview: toOrderEditPreviewDTO(result, canSeePrices(viewer)) };
+  } catch (error) {
+    if (error instanceof z.ZodError) return { ok: false, error: "Invalid order reference." };
+    console.error("[actions/orders] edit preview failed:", error);
+    return { ok: false, error: "Couldn't price that change. Please try again." };
+  }
+}
+
+export async function editOrderAction(
+  orderNumber: string,
+  input: unknown,
+): Promise<ActionResult<{ version: number; summary: string }>> {
+  try {
+    const viewer = await resolveViewer();
+    if (!isCustomer(viewer)) {
+      return { ok: false, error: "Please sign in to manage your orders." };
+    }
+    const throttle = await limit(viewer.customerId, EDIT_LIMIT, "order-edit");
+    if (!throttle.ok) return { ok: false, error: "Too many attempts. Please try again later." };
+
+    const id = await ownOrderId(viewer.customerId, orderNumber);
+    if (!id) return { ok: false, error: "Order not found." };
+    const parsed = orderEditInputSchema.parse(input);
+    const result = await applyOrderEdit(id, { kind: "customer", customerId: viewer.customerId }, parsed);
+    if (!result.ok) return { ok: false, error: result.message };
+
+    const summary = summariseOrderChanges(result.changes);
+    await writeAudit({
+      actorType: "customer",
+      actorId: viewer.customerId,
+      action: "order.edit",
+      entity: "Order",
+      entityId: id,
+      diff: JSON.parse(
+        JSON.stringify({ version: result.version, changes: result.changes, before: result.before, after: result.after }),
+      ),
+    });
+
+    // Staff must see this BEFORE they pack: a feed row for the live panel…
+    await prisma.notification
+      .create({
+        data: {
+          type: "order.editedByCustomer",
+          payload: {
+            orderId: id,
+            orderNumber: result.orderNumber,
+            customerId: viewer.customerId,
+            version: result.version,
+            summary,
+          },
+        },
+      })
+      .catch((error) => {
+        console.error("[actions/orders] edit notify failed:", error);
+      });
+    // …and a push. Fire-and-forget: the edit is already committed.
+    void notifyAdmins("admin.order.cancelled", {
+      title: "Order changed by customer",
+      body: `Order ${result.orderNumber}: ${summary}`,
+      url: `/admin/orders/${id}`,
+    }).catch((error) => {
+      console.error("[actions/orders] edit push failed:", error);
+    });
+
+    revalidatePath("/account/orders");
+    revalidatePath(`/account/orders/${result.orderNumber}`);
+    revalidatePath(`/admin/orders/${id}`);
+    return { ok: true, version: result.version, summary };
+  } catch (error) {
+    if (error instanceof z.ZodError) return { ok: false, error: "Invalid order reference." };
+    console.error("[actions/orders] edit failed:", error);
+    return { ok: false, error: "Couldn't save that change. Please try again." };
+  }
+}
+
+/** Products a customer may add to an open order — public fields, no prices. */
+export async function searchProductsForOrderEditAction(
+  query: string,
+): Promise<ActionResult<{ products: OrderEditProductPick[] }>> {
+  try {
+    const viewer = await resolveViewer();
+    if (!isCustomer(viewer)) return { ok: false, error: "Please sign in." };
+    const q = z.string().max(80).parse(query);
+    return { ok: true, products: await searchProductsForOrderEdit(q) };
+  } catch {
+    return { ok: false, error: "Search failed." };
   }
 }

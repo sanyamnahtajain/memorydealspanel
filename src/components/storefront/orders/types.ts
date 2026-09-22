@@ -1,6 +1,7 @@
 import type { OrderStatus } from "@prisma/client";
 
 import type { OrderBillingView } from "@/components/orders/billing/types";
+import type { OrderRevisionDTO } from "@/lib/order-edits";
 
 /**
  * Client-safe order DTOs for the customer history views. Dates are ISO
@@ -102,6 +103,10 @@ export interface OrderHistoryTracking {
 export interface OrderHistoryDetail {
   orderNumber: string;
   status: OrderStatus;
+  /** Edit token: 1 = as placed; every applied edit adds one. */
+  version: number;
+  /** ISO time of the last edit after placement, or null. */
+  editedAt: string | null;
   itemCount: number;
   subtotalPaise: number | null;
   /** Coupon frozen at placement, when one applied. */
@@ -131,4 +136,6 @@ export interface OrderHistoryDetail {
   deliveryChargePaise: number;
   /** Courier tracking, or null when the parcel hasn't shipped (not gated). */
   tracking: OrderHistoryTracking | null;
+  /** Edits after placement, newest first; money inside is gated like the rest. */
+  revisions: OrderRevisionDTO[];
 }
