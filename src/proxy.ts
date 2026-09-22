@@ -12,6 +12,7 @@ import {
 // engine) and `node:crypto` (unavailable in Edge) into the middleware bundle,
 // which fails to compile and 500s every route. See cookie.ts for the rationale.
 import { SESSION_COOKIE } from "@/server/auth/cookie";
+import { checkAdminSession } from "@/server/auth/admin-session-check";
 
 /**
  * Edge middleware — two jobs, both cheap and DB-free:
@@ -129,12 +130,22 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   // ── Admin auth fence (main domain, and /admin paths on the admin host) ────
   const isAdminArea = pathname.startsWith("/admin");
   if (isAdminArea && !isAdminPublic(pathname)) {
-    const hasSession = request.cookies.has(SESSION_COOKIE);
-    if (!hasSession) {
+    // `.has()` alone treated an EMPTY cookie ("md_session=") as a session.
+    const token = request.cookies.get(SESSION_COOKIE)?.value ?? "";
+    // A dead session gets a REAL redirect here, before any page streams its
+    // loading skeleton — see admin-session-check.ts for the dead end this
+    // closes. "unknown" (customer cookie, or the check ran out of time) passes
+    // through to the page, whose own viewer resolution is the real lock.
+    const verdict = token === "" ? "dead" : await checkAdminSession(token);
+    if (verdict === "dead" && request.method === "GET") {
       const loginUrl = new URL("/admin/login", request.url);
       // Preserve where the admin was headed so the login flow could restore it.
       loginUrl.searchParams.set("next", pathname);
-      return withSecurityHeaders(NextResponse.redirect(loginUrl), nonce);
+      const response = NextResponse.redirect(loginUrl);
+      // The stale cookie must go too, or an installed app that ignores the
+      // Location would keep presenting it.
+      if (token !== "") response.cookies.delete(SESSION_COOKIE);
+      return withSecurityHeaders(response, nonce);
     }
   }
 
