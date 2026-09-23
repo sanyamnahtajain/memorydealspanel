@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Search } from "lucide-react";
 
 import type { BrandWithCount } from "@/server/dal/brands";
+import { catalogImageUrl } from "@/lib/image-loader";
 
 /**
  * Full brand directory for `/brands` — a searchable, responsive grid of brand
@@ -46,12 +47,12 @@ export function BrandDirectory({ brands }: { brands: BrandWithCount[] }) {
               key={brand.id}
               href={`/b/${brand.slug}`}
               className="group flex flex-col items-center justify-center gap-2 rounded-xl border border-border bg-card p-4 text-center outline-none transition-all hover:border-primary/40 hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.98]"
-            >
+      prefetch={false}>
               <span className="flex h-12 w-full items-center justify-center">
                 {brand.logo ? (
                   // eslint-disable-next-line @next/next/no-img-element -- brand logos are arbitrary-ratio; object-contain is simplest
                   <img
-                    src={brand.logo}
+                    src={catalogImageUrl(brand.logo, 128)}
                     alt={brand.name}
                     className="max-h-12 w-auto max-w-[85%] object-contain"
                     loading="lazy"

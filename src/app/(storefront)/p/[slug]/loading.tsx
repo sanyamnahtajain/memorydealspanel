@@ -1,5 +1,6 @@
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
 import { Shimmer } from "@/components/common";
+import { LoadingWatchdog } from "@/components/common/LoadingWatchdog";
 
 /**
  * Fallback for a storefront product detail page: breadcrumb, a two-column
@@ -9,9 +10,7 @@ export default function ProductLoading() {
   return (
     <StorefrontShell>
       <div className="space-y-8" aria-busy>
-        <span className="sr-only" role="status">
-          Loading product…
-        </span>
+        <LoadingWatchdog label="Loading product…" />
 
         {/* Breadcrumb */}
         <Shimmer className="mt-2 h-4 w-56" />

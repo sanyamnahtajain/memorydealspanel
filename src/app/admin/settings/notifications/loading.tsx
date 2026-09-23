@@ -1,14 +1,13 @@
 import { AdminShell } from "@/components/shell/AdminShell";
 import { Shimmer } from "@/components/common";
+import { LoadingWatchdog } from "@/components/common/LoadingWatchdog";
 
 /** Route fallback for /admin/settings/notifications — device card + switches. */
 export default function NotificationSettingsLoading() {
   return (
     <AdminShell title="Notifications">
       <div className="space-y-6" aria-busy>
-        <span className="sr-only" role="status">
-          Loading…
-        </span>
+        <LoadingWatchdog label="Loading…" />
         <div className="space-y-2">
           <Shimmer className="h-7 w-40" />
           <Shimmer className="h-4 w-80 max-w-full" />

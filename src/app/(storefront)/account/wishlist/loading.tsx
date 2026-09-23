@@ -1,6 +1,7 @@
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
 import { PageHeader } from "@/components/common/PageHeader";
 import { SkeletonProductCard } from "@/components/common/Skeletons";
+import { LoadingWatchdog } from "@/components/common/LoadingWatchdog";
 
 /**
  * Wishlist route-level loading skeleton. Mirrors the page layout — header +
@@ -10,6 +11,7 @@ import { SkeletonProductCard } from "@/components/common/Skeletons";
 export default function WishlistLoading() {
   return (
     <StorefrontShell>
+      <LoadingWatchdog />
       <div className="mx-auto w-full max-w-5xl py-6 sm:py-8">
         <PageHeader
           title="Your wishlist"

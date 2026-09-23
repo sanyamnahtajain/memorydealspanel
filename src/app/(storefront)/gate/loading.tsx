@@ -1,3 +1,4 @@
+import { LoadingWatchdog } from "@/components/common/LoadingWatchdog";
 /**
  * Bare loading state for the gate segment.
  *
@@ -11,6 +12,7 @@
 export default function GateLoading() {
   return (
     <main className="flex min-h-dvh items-center justify-center bg-background">
+      <LoadingWatchdog />
       <span
         className="size-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground"
         role="status"

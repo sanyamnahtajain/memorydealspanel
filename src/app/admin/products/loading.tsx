@@ -1,5 +1,6 @@
 import { AdminShell } from "@/components/shell/AdminShell";
 import { Shimmer, SkeletonRow } from "@/components/common";
+import { LoadingWatchdog } from "@/components/common/LoadingWatchdog";
 
 /**
  * Fallback for the admin products list. Mirrors the real page: header with
@@ -9,9 +10,7 @@ export default function AdminProductsLoading() {
   return (
     <AdminShell title="Products">
       <div className="space-y-6" aria-busy>
-        <span className="sr-only" role="status">
-          Loading products…
-        </span>
+        <LoadingWatchdog label="Loading products…" />
 
         {/* Header */}
         <div className="flex flex-wrap items-start justify-between gap-4">

@@ -103,7 +103,7 @@ function FeaturedCard({
     <Link
       href={`/p/${product.slug}`}
       className="group flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm outline-none transition-shadow focus-visible:ring-3 focus-visible:ring-ring/50 hover:shadow-md active:scale-[0.99]"
-    >
+      prefetch={false}>
       <div className="relative aspect-square w-full overflow-hidden bg-muted">
         {image ? (
           <Image

@@ -114,7 +114,7 @@ function GridCard({
     <Link
       href={`/p/${product.slug}`}
       className="group flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm outline-none transition-shadow hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.99]"
-    >
+      prefetch={false}>
       <div className="relative aspect-square w-full overflow-hidden bg-muted">
         {/* Save heart — floats over the image. The wrapper swallows the click so
             tapping the heart toggles the save WITHOUT following the card link. */}

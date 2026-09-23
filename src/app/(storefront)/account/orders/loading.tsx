@@ -1,6 +1,7 @@
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Shimmer } from "@/components/common/Skeletons";
+import { LoadingWatchdog } from "@/components/common/LoadingWatchdog";
 
 /**
  * Orders route-level loading skeleton — header + a stack of order-card
@@ -9,6 +10,7 @@ import { Shimmer } from "@/components/common/Skeletons";
 export default function OrdersLoading() {
   return (
     <StorefrontShell>
+      <LoadingWatchdog />
       <div className="mx-auto w-full max-w-3xl py-6 sm:py-8">
         <PageHeader title="Your orders" backHref="/account" backLabel="Account" />
         <ul className="mt-6 space-y-3">

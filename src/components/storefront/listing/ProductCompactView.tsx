@@ -91,7 +91,7 @@ function CompactRow({
         "group flex items-center gap-3 outline-none transition-colors hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/50",
         compactDensity ? "px-2.5 py-2" : "px-3 py-2.5",
       )}
-    >
+      prefetch={false}>
       <div
         className={cn(
           "relative shrink-0 overflow-hidden rounded-lg bg-muted",

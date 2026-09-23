@@ -1,6 +1,7 @@
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Shimmer } from "@/components/common/Skeletons";
+import { LoadingWatchdog } from "@/components/common/LoadingWatchdog";
 
 /**
  * Cart route-level loading skeleton. Mirrors the two-column layout (line list +
@@ -10,6 +11,7 @@ import { Shimmer } from "@/components/common/Skeletons";
 export default function CartLoading() {
   return (
     <StorefrontShell>
+      <LoadingWatchdog />
       <div className="mx-auto w-full max-w-5xl py-6 pb-28 sm:py-8 lg:pb-8">
         <PageHeader title="Your cart" backHref="/account" backLabel="Account" />
         <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">

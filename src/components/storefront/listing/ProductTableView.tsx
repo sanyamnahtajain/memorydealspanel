@@ -208,7 +208,7 @@ function TableRow({
           className="block outline-none focus-visible:ring-3 focus-visible:ring-ring/50 rounded-lg"
           tabIndex={-1}
           aria-hidden
-        >
+      prefetch={false}>
           <div className="relative size-10 overflow-hidden rounded-lg bg-muted">
             {url ? (
               <Image src={url} alt="" fill sizes="40px" className="object-cover" />
@@ -224,7 +224,7 @@ function TableRow({
         <Link
           href={`/p/${product.slug}`}
           className="block truncate font-medium text-foreground outline-none hover:text-primary focus-visible:text-primary focus-visible:underline"
-        >
+      prefetch={false}>
           {product.name}
         </Link>
       </td>

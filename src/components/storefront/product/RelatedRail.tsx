@@ -140,7 +140,7 @@ function RelatedCard({ item }: { item: RelatedRailItem }) {
     <Link
       href={`/p/${product.slug}`}
       className="group flex h-full flex-col overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm outline-none transition-[box-shadow,transform] hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.98]"
-    >
+      prefetch={false}>
       <div className="relative aspect-square w-full overflow-hidden bg-muted">
         {image ? (
           <Image

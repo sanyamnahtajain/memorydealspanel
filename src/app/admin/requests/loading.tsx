@@ -1,5 +1,6 @@
 import { AdminShell } from "@/components/shell/AdminShell";
 import { Shimmer, SkeletonCard } from "@/components/common";
+import { LoadingWatchdog } from "@/components/common/LoadingWatchdog";
 
 /**
  * Fallback for the admin access-requests queue: header + a stack of skeleton
@@ -9,9 +10,7 @@ export default function AdminRequestsLoading() {
   return (
     <AdminShell title="Requests">
       <div className="space-y-6" aria-busy>
-        <span className="sr-only" role="status">
-          Loading requests…
-        </span>
+        <LoadingWatchdog label="Loading requests…" />
 
         <div className="space-y-2">
           <Shimmer className="h-7 w-48" />

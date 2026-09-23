@@ -1,5 +1,6 @@
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
 import { Shimmer, SkeletonProductCard } from "@/components/common";
+import { LoadingWatchdog } from "@/components/common/LoadingWatchdog";
 
 /**
  * Fallback for a storefront category page: breadcrumb + title, then a grid of
@@ -9,9 +10,7 @@ export default function CategoryLoading() {
   return (
     <StorefrontShell>
       <div className="space-y-6" aria-busy>
-        <span className="sr-only" role="status">
-          Loading category…
-        </span>
+        <LoadingWatchdog label="Loading category…" />
 
         {/* Breadcrumb + heading */}
         <div className="mt-2 space-y-3">

@@ -1,5 +1,6 @@
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
 import { Shimmer, SkeletonProductCard } from "@/components/common";
+import { LoadingWatchdog } from "@/components/common/LoadingWatchdog";
 
 /**
  * Storefront segment fallback (App Router `loading.tsx`).
@@ -12,9 +13,7 @@ export default function StorefrontLoading() {
   return (
     <StorefrontShell>
       <div className="space-y-8" aria-busy>
-        <span className="sr-only" role="status">
-          Loading…
-        </span>
+        <LoadingWatchdog label="Loading…" />
 
         {/* Hero */}
         <Shimmer className="mt-2 h-48 w-full rounded-2xl md:h-64" />

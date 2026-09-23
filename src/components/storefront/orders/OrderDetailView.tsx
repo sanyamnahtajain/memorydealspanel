@@ -57,6 +57,7 @@ import {
   cancelOrderAction,
   reorderAction,
 } from "@/app/(storefront)/account/orders/actions";
+import { catalogImageUrl } from "@/lib/image-loader";
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString("en-IN", {
@@ -429,7 +430,7 @@ function OrderLineRow({
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={a.url}
+                  src={catalogImageUrl(a.url, 256)}
                   alt="Requirement photo"
                   loading="lazy"
                   className="size-12 object-cover"

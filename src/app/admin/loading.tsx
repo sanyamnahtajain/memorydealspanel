@@ -1,5 +1,6 @@
 import { AdminShell } from "@/components/shell/AdminShell";
 import { Shimmer, SkeletonRow } from "@/components/common";
+import { LoadingWatchdog } from "@/components/common/LoadingWatchdog";
 
 /**
  * Admin segment fallback (App Router `loading.tsx`).
@@ -13,9 +14,7 @@ export default function AdminLoading() {
   return (
     <AdminShell title="Loading…">
       <div className="space-y-6" aria-busy>
-        <span className="sr-only" role="status">
-          Loading…
-        </span>
+        <LoadingWatchdog label="Loading…" />
         <div className="space-y-2">
           <Shimmer className="h-7 w-40" />
           <Shimmer className="h-4 w-64" />

@@ -44,7 +44,7 @@ function CategoryCard({ category }: { category: CategoryDTO }) {
     <Link
       href={`/c/${category.slug}`}
       className="group relative flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm outline-none transition-shadow focus-visible:ring-3 focus-visible:ring-ring/50 hover:shadow-md active:scale-[0.98]"
-    >
+      prefetch={false}>
       <div className="relative aspect-4/3 w-full overflow-hidden bg-muted">
         {category.image ? (
           <Image

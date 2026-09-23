@@ -1,5 +1,6 @@
 import { AdminShell } from "@/components/shell/AdminShell";
 import { Shimmer, SkeletonStat, SkeletonRow } from "@/components/common";
+import { LoadingWatchdog } from "@/components/common/LoadingWatchdog";
 
 /**
  * Fallback for the admin dashboard: header, a row of skeleton stat cards
@@ -9,9 +10,7 @@ export default function AdminDashboardLoading() {
   return (
     <AdminShell title="Dashboard">
       <div className="space-y-6" aria-busy>
-        <span className="sr-only" role="status">
-          Loading dashboard…
-        </span>
+        <LoadingWatchdog label="Loading dashboard…" />
 
         <div className="space-y-2">
           <Shimmer className="h-7 w-40" />

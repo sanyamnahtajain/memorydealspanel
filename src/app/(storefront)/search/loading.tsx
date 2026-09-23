@@ -1,5 +1,6 @@
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
 import { Shimmer, SkeletonProductCard } from "@/components/common";
+import { LoadingWatchdog } from "@/components/common/LoadingWatchdog";
 
 /**
  * Fallback for the storefront search page: title, a search field placeholder,
@@ -9,9 +10,7 @@ export default function SearchLoading() {
   return (
     <StorefrontShell>
       <div className="space-y-6" aria-busy>
-        <span className="sr-only" role="status">
-          Loading search…
-        </span>
+        <LoadingWatchdog label="Loading search…" />
 
         {/* Heading + search box */}
         <div className="mt-2 space-y-3">

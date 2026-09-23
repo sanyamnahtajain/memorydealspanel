@@ -27,15 +27,17 @@ if (process.env.R2_PUBLIC_URL) {
 const nextConfig: NextConfig = {
   images: {
     remotePatterns,
-    // Product/brand/category images are ALREADY resized + compressed in the
-    // browser BEFORE upload to R2 — full-size ≤2000px/~1.5MB and a dedicated
-    // ≤800px/~0.22MB thumbnail (see src/lib/image.ts). Vercel's image
-    // optimization therefore re-optimizes already-optimized images: pure
-    // overhead that exhausted the Image-Optimization transformation quota and
-    // caused images to stop loading in production. Serve the R2 objects
-    // directly (a plain <img> src, no /_next/image proxy) — zero Vercel
-    // transformations, no quality loss, negligible transfer increase.
-    unoptimized: true,
+    // Every next/image goes through OUR resizer (src/lib/image-loader.ts →
+    // /api/img): sized per breakpoint, WebP, cached immutably at the CDN.
+    // This replaced `unoptimized: true`, which had been switched on to escape
+    // Vercel's image-optimisation quota and meant a 15 MB upload reached
+    // every phone as 15 MB. The loader is not metered; the route runs once
+    // per (image, width) and the CDN serves it from then on.
+    loader: "custom",
+    loaderFile: "./src/lib/image-loader.ts",
+    // Widths the route produces — keep in sync with IMAGE_WIDTHS.
+    deviceSizes: [384, 640, 750, 828, 1080, 1200, 1920],
+    imageSizes: [16, 32, 48, 64, 96, 128, 256],
   },
 };
 

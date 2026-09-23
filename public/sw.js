@@ -26,7 +26,7 @@
  * open — while the OS handles the background case.
  */
 
-const CACHE_VERSION = "v6";
+const CACHE_VERSION = "v7";
 const CACHE_NAME = `memorydeals-${CACHE_VERSION}`;
 const OFFLINE_URL = "/offline";
 
@@ -323,6 +323,14 @@ self.addEventListener("fetch", (event) => {
     if (isCacheableRemoteImage(request, url)) {
       event.respondWith(cacheFirstImage(request));
     }
+    return;
+  }
+
+  // The catalogue image resizer lives under /api but is NOT gated data: every
+  // response is a public, immutable, content-addressed picture. It is what
+  // the installed app must have offline, so it goes to the artwork cache.
+  if (url.pathname === "/api/img" && request.destination === "image") {
+    event.respondWith(cacheFirstImage(request));
     return;
   }
 

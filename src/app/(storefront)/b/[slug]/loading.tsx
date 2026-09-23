@@ -1,5 +1,6 @@
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
 import { Shimmer, SkeletonProductCard } from "@/components/common";
+import { LoadingWatchdog } from "@/components/common/LoadingWatchdog";
 
 /**
  * Fallback for a storefront brand page: back link + logo/title, then a grid of
@@ -9,9 +10,7 @@ export default function BrandLoading() {
   return (
     <StorefrontShell>
       <div className="space-y-6" aria-busy>
-        <span className="sr-only" role="status">
-          Loading brand…
-        </span>
+        <LoadingWatchdog label="Loading brand…" />
 
         {/* Back link + heading */}
         <div className="mt-2 space-y-3">

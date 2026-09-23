@@ -1,5 +1,6 @@
 import { AdminShell } from "@/components/shell/AdminShell";
 import { Shimmer } from "@/components/common";
+import { LoadingWatchdog } from "@/components/common/LoadingWatchdog";
 
 /**
  * Fallback for the admin roles list: header + a responsive grid of skeleton
@@ -9,9 +10,7 @@ export default function AdminRolesLoading() {
   return (
     <AdminShell title="Roles">
       <div className="space-y-6" aria-busy>
-        <span className="sr-only" role="status">
-          Loading roles…
-        </span>
+        <LoadingWatchdog label="Loading roles…" />
 
         <div className="space-y-2">
           <Shimmer className="h-7 w-28" />

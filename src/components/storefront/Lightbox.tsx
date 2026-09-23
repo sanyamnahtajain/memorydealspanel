@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import type { PublicProductImage } from "@/server/dto/product";
 import { lockBodyScroll } from "@/lib/scroll-lock";
 import { cn } from "@/lib/utils";
+import { catalogImageUrl } from "@/lib/image-loader";
 
 /**
  * Fullscreen product-photo lightbox — the viewer a phone shopper expects:
@@ -198,7 +199,9 @@ export function Lightbox({
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={img.url}
+                src={catalogImageUrl(img.url, 1920)}
+                srcSet={`${catalogImageUrl(img.url, 1080)} 1080w, ${catalogImageUrl(img.url, 1920)} 1920w`}
+                sizes="100vw"
                 alt={i === 0 ? name : ""}
                 draggable={false}
                 loading={i === startIndex ? "eager" : "lazy"}

@@ -1,5 +1,6 @@
 import { AdminShell } from "@/components/shell/AdminShell";
 import { Skeleton } from "@/components/ui/skeleton";
+import { LoadingWatchdog } from "@/components/common/LoadingWatchdog";
 
 /**
  * Order detail skeleton.
@@ -13,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 export default function Loading() {
   return (
     <AdminShell>
+      <LoadingWatchdog />
       <div className="flex flex-col gap-6">
         <div className="flex flex-col gap-2">
           <Skeleton className="h-7 w-48" />

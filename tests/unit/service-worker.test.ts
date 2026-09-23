@@ -273,6 +273,20 @@ describe("service worker — what it deliberately leaves alone", () => {
     ).toBeUndefined();
   });
 
+  it("caches the catalogue resizer's output even though it lives under /api", async () => {
+    // /api/img is public, immutable artwork — the pictures an installed app
+    // must still have offline. It is the one /api path the worker handles.
+    const response = await ok.fire({
+      url: `${APP_ORIGIN}/api/img?u=https%3A%2F%2Fpub-x.r2.dev%2Fp%2F1.png&w=640&q=75`,
+      method: "GET",
+      destination: "image",
+      mode: "no-cors",
+    });
+    expect(response).toBeDefined();
+    await settle();
+    expect(ok.imageCache()?.entries.size).toBe(1);
+  });
+
   it("never caches gated same-origin data", () => {
     for (const path of ["/api/me/context", "/admin/products", "/account"]) {
       expect(

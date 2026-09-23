@@ -5,6 +5,7 @@ import { NotebookPen, Pencil } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { RequirementSheet } from "./RequirementSheet";
+import { catalogImageUrl } from "@/lib/image-loader";
 
 /**
  * CartLineRequirement — the cart-line view of a requirement note + photos:
@@ -48,7 +49,7 @@ export function CartLineRequirement({
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     key={a.url}
-                    src={a.url}
+                    src={catalogImageUrl(a.url, 256)}
                     alt="Requirement photo"
                     loading="lazy"
                     className="size-9 rounded-md border border-border object-cover"

@@ -1,5 +1,6 @@
 import { AdminShell } from "@/components/shell/AdminShell";
 import { Shimmer, SkeletonRow } from "@/components/common";
+import { LoadingWatchdog } from "@/components/common/LoadingWatchdog";
 
 /**
  * Fallback for the admin customers list: header + a bordered table of
@@ -9,9 +10,7 @@ export default function AdminCustomersLoading() {
   return (
     <AdminShell title="Customers">
       <div className="space-y-6" aria-busy>
-        <span className="sr-only" role="status">
-          Loading customers…
-        </span>
+        <LoadingWatchdog label="Loading customers…" />
 
         <div className="space-y-2">
           <Shimmer className="h-7 w-36" />

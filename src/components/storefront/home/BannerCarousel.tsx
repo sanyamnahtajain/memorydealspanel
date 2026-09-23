@@ -7,6 +7,7 @@ import { useReducedMotion } from "motion/react";
 
 import type { StorefrontBanner } from "@/lib/banners";
 import { cn } from "@/lib/utils";
+import { catalogImageUrl } from "@/lib/image-loader";
 
 /**
  * The home promo carousel — the Flipkart/Amazon merchandising strip.
@@ -177,11 +178,20 @@ function BannerSlide({
   ) : (
     <picture>
       {banner.mobileImageUrl ? (
-        <source media="(max-width: 640px)" srcSet={banner.mobileImageUrl} />
+        <source
+          media="(max-width: 640px)"
+          srcSet={`${catalogImageUrl(banner.mobileImageUrl, 640)} 640w, ${catalogImageUrl(banner.mobileImageUrl, 828)} 828w`}
+          sizes="100vw"
+        />
       ) : null}
+      {/* Sized per breakpoint through the resizer (src/lib/image-loader.ts):
+          the hero is the home page's LCP element, so it must never be the
+          380 KB PNG that came out of the design tool. */}
       <img
         ref={checkAlreadyFailed}
-        src={banner.imageUrl}
+        src={catalogImageUrl(banner.imageUrl, 1200)}
+        srcSet={`${catalogImageUrl(banner.imageUrl, 750)} 750w, ${catalogImageUrl(banner.imageUrl, 1200)} 1200w, ${catalogImageUrl(banner.imageUrl, 1920)} 1920w`}
+        sizes="(min-width: 1280px) 1200px, 100vw"
         alt={banner.alt}
         draggable={false}
         loading={priority ? "eager" : "lazy"}

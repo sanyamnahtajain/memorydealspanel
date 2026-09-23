@@ -11,6 +11,7 @@ import type {
 import { Lightbox } from "@/components/storefront/Lightbox";
 import { isVideoSlideActive } from "@/lib/video";
 import { cn } from "@/lib/utils";
+import { catalogImageUrl } from "@/lib/image-loader";
 
 /**
  * Stable class applied to the primary gallery image. The product card marks
@@ -186,7 +187,9 @@ export function ProductGallery({
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={image.url}
+                      src={catalogImageUrl(image.url, 1080)}
+                      srcSet={`${catalogImageUrl(image.url, 640)} 640w, ${catalogImageUrl(image.url, 1080)} 1080w, ${catalogImageUrl(image.url, 1920)} 1920w`}
+                      sizes="(min-width: 1024px) 560px, 100vw"
                       alt={`${productName} — image ${index + 1}`}
                       draggable={false}
                       loading={isHero ? "eager" : "lazy"}
@@ -296,7 +299,7 @@ export function ProductGallery({
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={image.thumbUrl ?? image.url}
+                    src={catalogImageUrl(image.thumbUrl ?? image.url, 128)}
                     alt=""
                     draggable={false}
                     loading="lazy"
@@ -326,7 +329,7 @@ export function ProductGallery({
                   {video.posterUrl ?? posterFallback ? (
                     /* eslint-disable-next-line @next/next/no-img-element */
                     <img
-                      src={video.posterUrl ?? posterFallback}
+                      src={catalogImageUrl(video.posterUrl ?? posterFallback, 640)}
                       alt=""
                       draggable={false}
                       loading="lazy"

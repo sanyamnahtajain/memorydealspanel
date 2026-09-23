@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import type { PublicBrand } from "@/server/dal/brands";
+import { catalogImageUrl } from "@/lib/image-loader";
 
 /**
  * "Shop by brand" — a responsive grid of brand tiles (logo or monogram) that
@@ -22,11 +23,11 @@ export function BrandShowcase({
           key={brand.id}
           href={`/b/${brand.slug}`}
           className="group flex min-h-16 flex-col items-center justify-center gap-1.5 rounded-xl border border-border bg-card px-2 py-3 text-center outline-none transition-colors hover:border-primary/40 hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
-        >
+      prefetch={false}>
           {brand.logo ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={brand.logo}
+              src={catalogImageUrl(brand.logo, 128)}
               alt={brand.name}
               className="h-7 w-auto object-contain"
               loading="lazy"
