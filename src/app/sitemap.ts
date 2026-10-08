@@ -9,7 +9,7 @@ import { siteBaseUrl } from "./seo-site-url";
  * Dynamic sitemap for the public catalog.
  *
  * Enumerates the crawlable, price-free surfaces:
- *   - the home page and the categories index,
+ *   - the home page, the categories index and the reels feed,
  *   - every ACTIVE category (`/categories/[slug]`),
  *   - every ACTIVE, non-soft-deleted product (`/products/[slug]`).
  *
@@ -41,6 +41,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       lastModified: now,
       changeFrequency: "weekly",
       priority: 0.8,
+    },
+    // The public, price-free reels feed (ISR, listLiveReels).
+    {
+      url: `${base}/reels`,
+      lastModified: now,
+      changeFrequency: "daily",
+      priority: 0.6,
     },
   ];
 

@@ -14,6 +14,8 @@ import { objectIdSchema } from "@/lib/schemas/shared";
 import {
   ACCEPTED_VIDEO_MIME_TYPES,
   MAX_VIDEOS_PER_PRODUCT,
+  MAX_VIDEO_BYTES,
+  rejectVideo,
   videoExtensionForType,
 } from "@/lib/video";
 
@@ -82,12 +84,16 @@ const presignSchema = z.object({
   productId: objectIdSchema,
   filename: z.string().trim().min(1).max(255),
   contentType: z.enum(ACCEPTED_VIDEO_MIME_TYPES),
+  // Re-validated here so the per-file ceiling is enforced by the server, not
+  // only by the browser's pre-check.
+  size: z.number().int().positive().max(MAX_VIDEO_BYTES),
 });
 
 export async function presignVideoUpload(
   productId: string,
   filename: string,
   contentType: string,
+  size: number,
 ): Promise<
   VideoActionResult<{
     uploadUrl: string;
@@ -97,17 +103,17 @@ export async function presignVideoUpload(
 > {
   try {
     await currentActor();
-    const input = presignSchema.parse({ productId, filename, contentType });
+    const input = presignSchema.parse({ productId, filename, contentType, size });
 
     const existing = await loadVideos(input.productId);
     if (!existing) return fail("Product not found.");
-    // Re-checked here, not just in the browser: the ceiling is only real if
-    // the server enforces it.
-    if (existing.videos.length >= MAX_VIDEOS_PER_PRODUCT) {
-      return fail(
-        `A product can have at most ${MAX_VIDEOS_PER_PRODUCT} videos.`,
-      );
-    }
+    // Re-checked here, not just in the browser: the ceilings (count AND
+    // size) are only real if the server enforces them.
+    const rejection = rejectVideo(
+      { name: input.filename, type: input.contentType, size: input.size },
+      existing.videos.length,
+    );
+    if (rejection) return fail(rejection.message);
 
     const ext = videoExtensionForType(input.contentType);
     const key = `products/${input.productId}/video-${randomUUID()}.${ext}`;

@@ -58,7 +58,7 @@ export function ProductVideosField({
     setBusy(true);
     setProgress("Preparing…");
     try {
-      const target = await presignVideoUpload(productId, file.name, file.type);
+      const target = await presignVideoUpload(productId, file.name, file.type, file.size);
       if (!target.ok) {
         toast.error(target.error);
         return;

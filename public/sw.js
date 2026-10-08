@@ -26,7 +26,7 @@
  * open — while the OS handles the background case.
  */
 
-const CACHE_VERSION = "v7";
+const CACHE_VERSION = "v8";
 const CACHE_NAME = `memorydeals-${CACHE_VERSION}`;
 const OFFLINE_URL = "/offline";
 
@@ -302,6 +302,21 @@ function isCacheableRemoteImage(request, url) {
   return /\.(?:png|jpe?g|gif|svg|webp|avif)$/i.test(url.pathname);
 }
 
+/**
+ * Is this a video request (the reels feed)? Video is NEVER cached and never
+ * routed through any strategy here: a clip is tens of megabytes, the browser
+ * fetches it in byte ranges (a cached 200 would break seeking), and a single
+ * reel would evict the whole app shell from the quota. Match on destination
+ * first, then on extension for players that request without one.
+ */
+function isVideoRequest(request, url) {
+  if (request.destination === "video" || request.destination === "audio") {
+    return true;
+  }
+  if (request.headers && request.headers.has("range")) return true;
+  return /\.(?:mp4|webm|m4v|mov|m3u8)$/i.test(url.pathname);
+}
+
 self.addEventListener("fetch", (event) => {
   const { request } = event;
 
@@ -314,6 +329,10 @@ self.addEventListener("fetch", (event) => {
   } catch (_err) {
     return;
   }
+
+  // Video (reels) passes straight through to the network — never cached,
+  // never intercepted — on every origin. See isVideoRequest.
+  if (isVideoRequest(request, url)) return;
 
   // Cross-origin: the ONLY thing worth handling is artwork on object
   // storage. Without this the home banners and every product photo are

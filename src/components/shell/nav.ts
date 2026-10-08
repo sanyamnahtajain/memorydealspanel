@@ -1,5 +1,6 @@
 import {
   CircleUserRound,
+  Clapperboard,
   Smartphone,
   History,
   House,
@@ -71,6 +72,7 @@ export const adminPrimaryNav: readonly NavItem[] = [
  */
 export const adminSecondaryNav: readonly NavItem[] = [
   { label: "Banners", href: "/admin/banners", icon: GalleryHorizontalEnd },
+  { label: "Reels", href: "/admin/reels", icon: Clapperboard },
   { label: "Contact messages", href: "/admin/contact", icon: MessageSquare },
   { label: "Import", href: "/admin/import", icon: Upload },
   { label: "Coupons", href: "/admin/coupons", icon: TicketPercent },

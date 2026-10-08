@@ -1,0 +1,85 @@
+/*
+ * Reels — the few things Tailwind utilities cannot say.
+ *
+ * Imported from ReelsFeed.tsx (client) so it ships only with the /reels route.
+ * The home rail (ReelsRail, server) uses plain utilities and needs none of this.
+ */
+
+/* The phone feed: one reel per viewport, between the sticky header and the
+   fixed tab bar. The height is a CSS calc on the shell's variables — per the
+   StorefrontShell contract they EXCLUDE the safe-area insets (added here) and
+   --md-header-h is the CONDENSED header — and the feed REFINES it at runtime
+   with a measured value (see ReelsFeed), so the taller un-scrolled header, a
+   notice strip or a browser whose dvh lies can never leave the last few
+   pixels of a clip under the tab bar. */
+.reel-feed {
+  --reel-h: calc(
+    100dvh - var(--md-header-h, 3rem) - env(safe-area-inset-top, 0px) -
+      var(--md-tab-h, 3.5rem) - 1px - env(safe-area-inset-bottom, 0px)
+  );
+  height: var(--reel-h);
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.reel-feed::-webkit-scrollbar {
+  display: none;
+}
+.reel-item {
+  height: var(--reel-h);
+}
+
+/* The centred play/pause glyph that confirms a tap, then gets out of the way. */
+@keyframes reel-glyph {
+  0% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  25% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.15);
+  }
+}
+.reel-glyph {
+  animation: reel-glyph 720ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* Progress is written straight to the element (timeupdate ≈ 4 Hz); a short
+   linear transition between writes keeps the bar from stepping. */
+.reel-progress {
+  transform-origin: left center;
+  transition: transform 220ms linear;
+}
+
+/* The desktop stage swaps clips with a soft spring-ish rise — drawn by CSS,
+   keyed by the reel id in React so it replays per clip. */
+@keyframes reel-stage-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.reel-stage-in {
+  animation: reel-stage-in 360ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reel-glyph,
+  .reel-stage-in {
+    animation-duration: 0.01ms;
+  }
+  .reel-progress {
+    transition: none;
+  }
+}
