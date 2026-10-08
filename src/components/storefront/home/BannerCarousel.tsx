@@ -113,7 +113,7 @@ export function BannerCarousel({
                 multiple ? `${index + 1} of ${banners.length}` : undefined
               }
             >
-              <BannerSlide banner={banner} priority={index === 0} />
+              <BannerSlide banner={banner} priority={index === 0} active={index === selected} />
             </div>
           ))}
         </div>
@@ -121,21 +121,35 @@ export function BannerCarousel({
 
       {multiple ? (
         <div className="mt-2 flex items-center justify-center gap-1.5">
-          {banners.map((banner, index) => (
-            <button
-              key={banner.id}
-              type="button"
-              aria-label={`Show offer ${index + 1}`}
-              aria-current={index === selected}
-              onClick={() => emblaApi?.scrollTo(index)}
-              className={cn(
-                "h-1.5 rounded-full transition-all duration-300 outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
-                index === selected
-                  ? "w-5 bg-foreground"
-                  : "w-1.5 bg-foreground/25 hover:bg-foreground/40",
-              )}
-            />
-          ))}
+          {banners.map((banner, index) => {
+            const isActive = index === selected;
+            // The active dot is a tiny progress bar: it fills over the hold
+            // time, so the carousel never moves without warning. Keyed on the
+            // slide so it restarts from zero each time a new slide is shown.
+            const running = isActive && !paused && !reducedMotion;
+            return (
+              <button
+                key={banner.id}
+                type="button"
+                aria-label={`Show offer ${index + 1}`}
+                aria-current={isActive}
+                onClick={() => emblaApi?.scrollTo(index)}
+                className={cn(
+                  "relative h-1.5 overflow-hidden rounded-full transition-all duration-300 outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                  isActive ? "w-7 bg-foreground/20" : "w-1.5 bg-foreground/25 hover:bg-foreground/40",
+                )}
+              >
+                {isActive ? (
+                  <span
+                    key={`${banner.id}-${selected}-${running ? "run" : "hold"}`}
+                    aria-hidden
+                    className={cn("absolute inset-0 rounded-full bg-foreground", running ? "md-progress" : "")}
+                    style={running ? ({ "--md-progress-ms": `${AUTOPLAY_MS}ms` } as React.CSSProperties) : { transform: "scaleX(1)" }}
+                  />
+                ) : null}
+              </button>
+            );
+          })}
         </div>
       ) : null}
     </section>
@@ -145,9 +159,12 @@ export function BannerCarousel({
 function BannerSlide({
   banner,
   priority,
+  active,
 }: {
   banner: StorefrontBanner;
   priority: boolean;
+  /** The slide currently showing — drives the slow drift. */
+  active: boolean;
 }) {
   // Artwork is on object storage, so it can fail independently of the page —
   // offline, a flaky phone connection, a deleted object. A broken-image icon
@@ -176,7 +193,25 @@ function BannerSlide({
       </span>
     </div>
   ) : (
-    <picture>
+    <>
+      {/* AMBIENT FILL. Owners upload artwork in whatever ratio the design tool
+          gave them; the frame is 2:1 on phones and 3:1 wider. object-cover
+          used to crop whichever edge did not fit — on the live site that was
+          the row of feature badges along the bottom of a brand's banner. Now
+          the artwork is shown whole (object-contain) over a blurred, enlarged
+          copy of itself, so the frame is always full, nothing is cut, and a
+          3:1 banner in a 3:1 frame looks exactly as before. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        aria-hidden
+        src={catalogImageUrl(banner.imageUrl, 384)}
+        alt=""
+        draggable={false}
+        loading={priority ? "eager" : "lazy"}
+        decoding="async"
+        className="absolute inset-0 h-full w-full scale-125 object-cover opacity-80 blur-2xl saturate-125"
+      />
+    <picture className={cn("relative block h-full w-full", active ? "md-kenburns" : "")}>
       {banner.mobileImageUrl ? (
         <source
           media="(max-width: 640px)"
@@ -198,9 +233,10 @@ function BannerSlide({
         fetchPriority={priority ? "high" : "auto"}
         decoding={priority ? "sync" : "async"}
         onError={() => setFailed(true)}
-        className="h-full w-full object-cover"
+        className="h-full w-full object-contain"
       />
     </picture>
+    </>
   );
 
   const frame = (

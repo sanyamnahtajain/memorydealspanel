@@ -43,7 +43,7 @@ function CategoryCard({ category }: { category: CategoryDTO }) {
   return (
     <Link
       href={`/c/${category.slug}`}
-      className="group relative flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm outline-none transition-shadow focus-visible:ring-3 focus-visible:ring-ring/50 hover:shadow-md active:scale-[0.98]"
+      className="group md-reveal relative flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm outline-none transition-[box-shadow,transform] duration-200 ease-out focus-visible:ring-3 focus-visible:ring-ring/50 hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98]"
       prefetch={false}>
       <div className="relative aspect-4/3 w-full overflow-hidden bg-muted">
         {category.image ? (

@@ -9,6 +9,7 @@ import { ANON_VIEWER } from "@/server/types/viewer";
 import { renderPriceSlot } from "@/components/storefront/priceSlot";
 import { LivePriceSlot } from "@/components/storefront/home/LivePriceSlot";
 import { BrandBadge } from "@/components/storefront/BrandBadge";
+import { Rail } from "@/components/storefront/Rail";
 import type { PublicProduct, PricedProduct } from "@/server/dto/product";
 
 /**
@@ -76,13 +77,19 @@ export async function TrendingRail() {
         </h2>
       </div>
 
-      <ul className="grid snap-x snap-proximity auto-cols-[minmax(9.5rem,11.5rem)] grid-flow-col gap-3 overflow-x-auto scroll-smooth pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:auto-cols-[minmax(11rem,13rem)] md:gap-4">
+      {/* Rail adds the laptop affordances (arrows, edge fade); the list itself
+          stays pure CSS scroll-snap, so phones get a thumb gesture and nothing
+          else to download. */}
+      <Rail
+        ariaLabel="Trending products"
+        listClassName="grid snap-x snap-proximity auto-cols-[minmax(9.5rem,11.5rem)] grid-flow-col gap-3 overflow-x-auto scroll-smooth pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:auto-cols-[minmax(11rem,13rem)] md:gap-4"
+      >
         {items.map((item) => (
-          <li key={item.product.id} className="snap-start">
+          <li key={item.product.id} className="snap-start md-reveal">
             <TrendingCard item={item} />
           </li>
         ))}
-      </ul>
+      </Rail>
     </section>
   );
 }
@@ -96,7 +103,7 @@ function TrendingCard({ item }: { item: TrendingItem }) {
   return (
     <Link
       href={`/p/${product.slug}`}
-      className="group flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm outline-none transition-shadow focus-visible:ring-3 focus-visible:ring-ring/50 hover:shadow-md active:scale-[0.99]"
+      className="group md-reveal flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm outline-none transition-[box-shadow,transform] duration-200 ease-out focus-visible:ring-3 focus-visible:ring-ring/50 hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98]"
       prefetch={false}>
       <div className="relative aspect-square w-full overflow-hidden bg-muted">
         {image ? (

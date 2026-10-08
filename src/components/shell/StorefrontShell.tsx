@@ -20,6 +20,8 @@ import { SlabyPromoCard } from "@/components/slaby/SlabyPromoCard"
 import { WishlistBadge } from "@/components/storefront/wishlist/WishlistBadge"
 import { CartBadge } from "@/components/storefront/cart/CartBadge"
 import { SearchOverlay } from "@/components/storefront/SearchOverlay"
+import { PullToRefresh } from "@/components/pwa/PullToRefresh"
+import { hapticTap } from "@/lib/haptics"
 import { NotifyGate } from "@/components/notify/NotifyGate"
 import { searchCategoryChips } from "@/components/storefront/search/actions"
 import type { CategoryChip } from "@/components/storefront/search/types"
@@ -276,6 +278,10 @@ export function StorefrontShell({
         <SlabyPromoCard />
       </div>
 
+      {/* Installed-app gesture: pull down from the top to refresh (no-op in a
+          browser tab, which already has its own). */}
+      <PullToRefresh />
+
       {/* ——— Mobile bottom tab bar ——— */}
       <nav
         aria-label="Primary"
@@ -291,6 +297,7 @@ export function StorefrontShell({
                 <Link
                   href={item.href}
                   aria-current={active ? "page" : undefined}
+                  onClick={hapticTap}
                   className="group relative flex min-h-14 flex-col items-center justify-center gap-1 outline-none focus-visible:bg-muted/60"
                 >
                   <span className="relative flex h-8 w-14 items-center justify-center transition-transform duration-150 ease-out group-active:scale-90">

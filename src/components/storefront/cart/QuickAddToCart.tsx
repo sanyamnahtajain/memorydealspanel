@@ -13,6 +13,7 @@ import { minOrderableQty } from "@/lib/quantity";
 import { addToCartAction } from "@/server/actions/cart";
 import { broadcastCartCount } from "./CartBadge";
 import { setCartLineQty } from "./cart-lines-store";
+import { hapticSuccess } from "@/lib/haptics";
 
 /**
  * QuickAddToCart — a compact, single-tap add-to-cart control for product cards.
@@ -82,6 +83,7 @@ export function QuickAddToCart({
         broadcastCartCount(result.itemCount);
         setCartLineQty(productId, variantId, result.quantity);
         setJustAdded(true);
+        hapticSuccess();
         if (resetRef.current) clearTimeout(resetRef.current);
         resetRef.current = setTimeout(() => setJustAdded(false), 1600);
         toast.success(

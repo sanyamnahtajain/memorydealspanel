@@ -245,7 +245,7 @@ function ProductCard({ item }: { item: ProductCardItem }) {
   return (
     <Link
       href={`/p/${product.slug}`}
-      className="group flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm outline-none transition-shadow focus-visible:ring-3 focus-visible:ring-ring/50 hover:shadow-md active:scale-[0.99]"
+      className="group md-reveal flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm outline-none transition-[box-shadow,transform] duration-200 ease-out focus-visible:ring-3 focus-visible:ring-ring/50 hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98]"
       prefetch={false}>
       <div className="relative aspect-square w-full overflow-hidden bg-muted">
         <InCartChip productId={product.id} />

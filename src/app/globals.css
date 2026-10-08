@@ -245,6 +245,88 @@
   scroll-behavior: auto !important;
 }
 
+/*
+ * ── Scroll-driven motion ────────────────────────────────────────────────────
+ * Cards and tiles ease in as they scroll into view. Pure CSS (scroll-driven
+ * animations, `animation-timeline: view()`), which matters here for a reason
+ * learned the hard way: an entrance that starts hidden and waits for
+ * JavaScript left this storefront blank on slow phones. This one is drawn by
+ * the browser as the element scrolls in — no script, no hidden state, and a
+ * browser without support simply shows the content. Reduced motion (OS or the
+ * in-app setting) switches it off entirely.
+ */
+@keyframes md-reveal {
+  from {
+    opacity: 0.001;
+    transform: translateY(14px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@supports (animation-timeline: view()) {
+  .md-reveal {
+    animation: md-reveal linear both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 40%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .md-reveal {
+    animation: none;
+  }
+}
+[data-reduce-motion="true"] .md-reveal {
+  animation: none;
+}
+
+/* Hero artwork: a slow, barely-there drift while a slide is showing. */
+@keyframes md-kenburns {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.06);
+  }
+}
+.md-kenburns {
+  animation: md-kenburns 14s ease-out both;
+  transform-origin: 60% 50%;
+}
+
+/* Autoplay progress inside the active hero dot. */
+@keyframes md-progress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+.md-progress {
+  transform-origin: left center;
+  animation: md-progress var(--md-progress-ms, 5000ms) linear both;
+}
+
+/* Horizontal rails fade ONLY at an edge where they continue off-screen — a
+   faded edge with nothing behind it reads as a cropped card. */
+@utility rail-fade-x {
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    black 1.25rem,
+    black calc(100% - 1.25rem),
+    transparent
+  );
+}
+@utility rail-fade-end {
+  mask-image: linear-gradient(to right, black calc(100% - 1.25rem), transparent);
+}
+@utility rail-fade-start {
+  mask-image: linear-gradient(to right, transparent, black 1.25rem);
+}
+
 /* Tabular numerals for prices and grid numbers */
 @utility font-tabular {
   font-variant-numeric: tabular-nums lining-nums;

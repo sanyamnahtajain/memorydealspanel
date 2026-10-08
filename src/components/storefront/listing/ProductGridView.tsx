@@ -113,7 +113,7 @@ function GridCard({
   return (
     <Link
       href={`/p/${product.slug}`}
-      className="group flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm outline-none transition-shadow hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.99]"
+      className="group md-reveal flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm outline-none transition-[box-shadow,transform] duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.98]"
       prefetch={false}>
       <div className="relative aspect-square w-full overflow-hidden bg-muted">
         {/* Save heart — floats over the image. The wrapper swallows the click so
