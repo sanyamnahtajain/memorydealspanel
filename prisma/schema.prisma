@@ -513,6 +513,39 @@ model Banner {
   @@index([deletedAt])
 }
 
+/// A short vertical video the shop posts (the same clips that go on
+/// Instagram @the_memory_deals), self-hosted on R2 so the storefront can play
+/// them full-screen without a Meta token or an embed. Optionally pinned to one
+/// product, which gives the player a "Shop this" CTA. Carries NO price — the
+/// price gate stays on the product surfaces.
+model Reel {
+  id           String    @id @default(auto()) @map("_id") @db.ObjectId
+  /// Public https URL of the mp4/webm on R2.
+  videoUrl     String
+  /// Optional still shown before the clip is loaded and in the home rail.
+  posterUrl    String?
+  /// Short caption, shown over the video — also read by screen readers.
+  caption      String
+  /// Optional deep link to the original Instagram post.
+  instagramUrl String?
+  /// Optional product this reel sells. Looked up at read time, never denormalised.
+  productId    String?   @db.ObjectId
+  /// Clip length in seconds when known (drives the progress bar before metadata loads).
+  durationSec  Int?
+  sortOrder    Int       @default(0)
+  active       Boolean   @default(true)
+  publishedAt  DateTime  @default(now())
+  /// Soft delete. ALWAYS written as an explicit null on create (MongoDB:
+  /// an absent field does not match `{ deletedAt: null }`).
+  deletedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([active, sortOrder, publishedAt])
+  @@index([deletedAt])
+  @@index([productId])
+}
+
 /// One applied edit to an order — APPEND-ONLY history. A separate collection
 /// rather than an array on the order so a much-edited order never grows past
 /// Mongo's document limit and the order read stays small. `version` is the
