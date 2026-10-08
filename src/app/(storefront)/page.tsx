@@ -17,8 +17,10 @@ import {
   BrandShowcase,
   FeaturedRail,
   SectionHeading,
+  TrustStrip,
 } from "@/components/storefront/home";
 import { TrendingRail } from "@/components/storefront/home/TrendingRail";
+import { ReelsRail } from "@/components/storefront/reels/ReelsRail";
 import {
   HomePriceReveal,
   LivePriceSlot,
@@ -118,31 +120,33 @@ export default async function HomePage() {
       <BuyAgainRail />
 
       <HomePriceReveal>
-      <HomeSections>
-        {/* Shop by brand — leverages the brand master. */}
-        {brands.length > 0 ? (
-          <section aria-labelledby="home-brands">
-            <SectionHeading
-              id="home-brands"
-              title="Shop by brand"
-              seeAllHref="/brands"
-              seeAllLabel="All brands"
-            />
-            <BrandShowcase brands={brands} />
-          </section>
-        ) : null}
+      {/* Section rhythm (HomeSections): trust strip → category → brand →
+          best sellers → reels → trending → new & featured → the dark
+          "how it works" panel. Every rail here is rendered for the ANONYMOUS
+          viewer — see the module comment. */}
+      <HomeSections
+        // Without a live banner the trust strip is the first thing under the
+        // header, so the wrapper's banner-clearing top margin would read as an
+        // empty band. Tighten it in that case only.
+        className={heroBanners.length > 0 ? undefined : "mt-4 md:mt-6"}
+      >
+        {/* Four facts true of this shop, same for every visitor. */}
+        <TrustStrip />
 
-        {/* Shop by category — the retailer's #1 jump-off point. */}
+        {/* Shop by category — the retailer's #1 jump-off point, first. */}
         <section aria-labelledby="home-categories">
           <SectionHeading
             id="home-categories"
+            eyebrow="Browse"
             title="Shop by category"
+            subtitle="Jump straight to the shelf you restock most."
             seeAllHref="/categories"
             seeAllLabel="View all"
           />
           {categories.length > 0 ? (
-            // Home teaser — show a clean set; the full list lives at /categories.
-            <CategoryGrid categories={categories.slice(0, 12)} animated />
+            // Home teaser — 8 tiles on phones, 12 from md (CategoryGrid's
+            // teaser rule); the full list lives at /categories.
+            <CategoryGrid categories={categories.slice(0, 12)} animated teaser />
           ) : (
             <EmptyState
               illustration="empty-box"
@@ -152,15 +156,43 @@ export default async function HomePage() {
           )}
         </section>
 
+        {/* Shop by brand — leverages the brand master. One-row rail on
+            phones, capped grid on md+, so it never pushes the catalog down. */}
+        {brands.length > 0 ? (
+          <section aria-labelledby="home-brands">
+            <SectionHeading
+              id="home-brands"
+              eyebrow="Brands we carry"
+              title="Shop by brand"
+              seeAllHref="/brands"
+              seeAllLabel="All brands"
+            />
+            <BrandShowcase brands={brands} />
+          </section>
+        ) : null}
+
         {/* Best sellers — global, price-free (ANON locked pills), identical
             for every visitor: see the comment above bestSellers. Young shop
             with no order signal → no section at all. */}
         {bestSellerItems.length > 0 ? (
           <section aria-labelledby="home-best-sellers">
-            <SectionHeading id="home-best-sellers" title="Best sellers" />
+            <SectionHeading
+              id="home-best-sellers"
+              eyebrow="Moving fast"
+              title="Best sellers"
+              subtitle="What retailers reorder most."
+            />
             <FeaturedRail items={bestSellerItems} />
           </section>
         ) : null}
+
+        {/* Reels — 9:16 clips that open the full-screen /reels feed. A server
+            component reading the price-free reels service; renders NOTHING
+            when no reel is live. Own Suspense boundary, like Trending, so a
+            slow read never holds the rest of home. */}
+        <Suspense fallback={null}>
+          <ReelsRail />
+        </Suspense>
 
         {/* Trending now — admin pins first, then the surge algorithm (maths
             in src/lib/trending.ts). A server component that renders ANON
@@ -181,6 +213,7 @@ export default async function HomePage() {
           <section aria-labelledby="home-featured">
             <SectionHeading
               id="home-featured"
+              eyebrow="Just in"
               title="New & featured"
               seeAllHref="/search"
             />
@@ -188,10 +221,10 @@ export default async function HomePage() {
           </section>
         ) : null}
 
-        {/* How it works — last, compact and quiet: the one explainer kept for
-            visitors who are not approved yet. */}
+        {/* How it works — last: the page's one dark feature panel, the
+            explainer kept for visitors who are not approved yet. The panel
+            owns its heading (id "home-how"). */}
         <section aria-labelledby="home-how">
-          <SectionHeading id="home-how" title="How it works" />
           <HowItWorks />
         </section>
       </HomeSections>

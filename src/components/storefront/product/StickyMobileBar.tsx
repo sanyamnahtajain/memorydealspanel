@@ -37,6 +37,7 @@ import { RequestAccessSheet } from "@/components/storefront/RequestAccessSheet";
 import { GatedRenewCta } from "@/components/storefront/GatedRenewCta";
 import { useAddToCart } from "@/components/storefront/cart/useAddToCart";
 import { minOrderableQty } from "@/lib/quantity";
+import { hapticTap } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
 import { PRICE_PANEL_ID } from "./price-panel";
 
@@ -99,9 +100,12 @@ function StickyAddToCartButton({
       type="button"
       aria-busy={pending || undefined}
       disabled={pending}
-      onClick={() => add(quantity)}
+      onClick={() => {
+        hapticTap();
+        add(quantity);
+      }}
       className={cn(
-        "inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-sm outline-none transition-[background-color,transform] hover:bg-primary/90 focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97]",
+        "inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-primary px-6 text-sm font-semibold text-primary-foreground shadow-md shadow-primary/20 outline-none transition-[background-color,transform,box-shadow] hover:bg-primary/90 focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97]",
         "disabled:pointer-events-none disabled:opacity-70",
       )}
     >
@@ -184,24 +188,26 @@ export function StickyMobileBar({
         // from focus order AND the a11y tree in one attribute.
         inert={!panelAway}
         className={cn(
-          "fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-40 border-t border-border/60 bg-background/95 shadow-[0_-10px_28px_-18px_rgb(0_0_0/0.35)] backdrop-blur-md md:hidden",
+          // bottom-14 (the tab bar's 3.5rem) + the device safe area: the bar
+          // always sits ABOVE the storefront tab nav, never under it.
+          "fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-40 bg-background/95 shadow-[0_-1px_0_0_var(--color-border),0_-12px_32px_-20px_rgb(0_0_0/0.35)] backdrop-blur-md md:hidden",
           !panelAway && "pointer-events-none",
         )}
       >
-        <div className="mx-auto flex w-full max-w-5xl items-stretch gap-3 px-4 py-3">
+        <div className="mx-auto flex w-full max-w-5xl items-stretch gap-3 px-4 py-2.5">
           <div className="flex min-w-0 flex-1 flex-col justify-center">
             {showPrice ? (
               <>
-                <span className="text-[0.65rem] font-medium tracking-wide text-muted-foreground uppercase">
+                <span className="text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
                   Wholesale
                 </span>
-                <span className="truncate font-heading text-lg font-semibold text-foreground tabular-nums">
+                <span className="truncate font-heading text-xl leading-tight font-semibold text-foreground tabular-nums">
                   {priceLabel}
                 </span>
               </>
             ) : state === "expired" ? (
               <>
-                <span className="text-[0.65rem] font-medium tracking-wide text-muted-foreground uppercase">
+                <span className="text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
                   Wholesale price
                 </span>
                 {/* Expired isn't a dead end: the status word itself is the
@@ -214,7 +220,7 @@ export function StickyMobileBar({
               </>
             ) : gatedWord ? (
               <>
-                <span className="text-[0.65rem] font-medium tracking-wide text-muted-foreground uppercase">
+                <span className="text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
                   Wholesale price
                 </span>
                 <span className="inline-flex items-center gap-1 truncate text-sm font-medium text-muted-foreground">
@@ -225,13 +231,16 @@ export function StickyMobileBar({
             ) : (
               <button
                 type="button"
-                onClick={() => setOpen(true)}
+                onClick={() => {
+                  hapticTap();
+                  setOpen(true);
+                }}
                 aria-label="See price — request access"
-                className="group inline-flex items-center gap-2 rounded-full outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                className="group inline-flex min-h-11 items-center gap-2 rounded-full outline-none focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.98]"
               >
                 <span
                   aria-hidden
-                  className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border px-3 text-sm font-medium text-muted-foreground"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-sm font-medium text-muted-foreground ring-1 ring-foreground/10"
                 >
                   <LockIcon className="size-3.5" />
                   <span className="blur-[4px]">₹•,•••</span>
@@ -254,16 +263,16 @@ export function StickyMobileBar({
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label="Enquire on WhatsApp"
-                  className="inline-flex size-12 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground outline-none transition-[background-color,color,transform] hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97]"
+                  className="inline-flex size-12 shrink-0 items-center justify-center rounded-full bg-card text-muted-foreground shadow-sm ring-1 ring-foreground/10 outline-none transition-[background-color,color,transform] hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97]"
                 >
-                  <MessageCircle aria-hidden className="size-4" />
+                  <MessageCircle aria-hidden className="size-5" />
                 </a>
               ) : (
                 <button
                   type="button"
                   disabled
                   aria-label="WhatsApp is available to approved buyers"
-                  className="inline-flex size-12 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground opacity-70"
+                  className="inline-flex size-12 shrink-0 items-center justify-center rounded-full text-muted-foreground opacity-70 ring-1 ring-foreground/10"
                 >
                   <LockIcon aria-hidden className="size-4" />
                 </button>
@@ -281,7 +290,7 @@ export function StickyMobileBar({
               rel="noopener noreferrer"
               aria-label="Enquire on WhatsApp"
               className={cn(
-                "inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-primary px-6 text-sm font-semibold text-primary-foreground shadow-sm outline-none transition-[background-color,transform] hover:bg-primary/90 focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97]",
+                "inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-primary px-6 text-sm font-semibold text-primary-foreground shadow-md shadow-primary/20 outline-none transition-[background-color,transform,box-shadow] hover:bg-primary/90 focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97]",
               )}
             >
               <MessageCircle aria-hidden className="size-4" />
@@ -300,9 +309,9 @@ export function StickyMobileBar({
                   : "WhatsApp is available to approved buyers"
               }
               className={cn(
-                "inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-full border border-border px-6 text-sm font-semibold text-muted-foreground outline-none transition-[background-color,color,transform] focus-visible:ring-3 focus-visible:ring-ring/50",
+                "inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-full px-6 text-sm font-semibold text-muted-foreground ring-1 ring-foreground/10 outline-none transition-[background-color,color,transform] focus-visible:ring-3 focus-visible:ring-ring/50",
                 status === undefined
-                  ? "hover:bg-accent hover:text-foreground active:scale-[0.97]"
+                  ? "bg-card shadow-sm hover:bg-accent hover:text-foreground active:scale-[0.97]"
                   : "opacity-70",
               )}
             >

@@ -44,10 +44,25 @@ import type { FacetData } from "./types";
  * we expose the whole thing and let the parent decide layout by passing the
  * results as `children`.
  */
+/**
+ * What a render-function child receives. `filterSlot` is non-null ONLY on
+ * phones: the "Filters" sheet trigger plus the active chips, ready to drop into
+ * {@link StorefrontListing}'s single sticky pill bar so search gets the same
+ * one-row toolbar as the category and brand pages. On desktop the rail and the
+ * chip row render here and the slot is null.
+ */
+export interface DiscoveryFilterSlots {
+  filterSlot: React.ReactNode;
+}
+
 export interface DiscoveryFiltersProps {
   facets: FacetData;
-  /** The results region (listing) rendered to the right of the rail. */
-  children: React.ReactNode;
+  /**
+   * The results region (listing) rendered to the right of the rail. A function
+   * child receives {@link DiscoveryFilterSlots} and takes over placing the
+   * phone trigger + chips (a plain node keeps the stacked row above).
+   */
+  children: React.ReactNode | ((slots: DiscoveryFilterSlots) => React.ReactNode);
   /** Total filtered result count (for the mobile CTA + chip context). */
   resultCount?: number;
 }
@@ -139,18 +154,46 @@ export function DiscoveryFilters({
 
       {/* Results column */}
       <div className="min-w-0 flex-1">
-        {/* Mobile trigger + chips row */}
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          {isMobile ? (
-            <MobileFilterTrigger
-              facets={facets}
-              api={api}
-              resultCount={resultCount}
-            />
-          ) : null}
-          {chips}
-        </div>
-        {children}
+        {typeof children === "function" ? (
+          <>
+            {/* The parent places the phone trigger + chips (inside the
+                listing's sticky pill bar); desktop keeps the chip row here. */}
+            {!isMobile ? (
+              <div className="mb-3 flex flex-wrap items-center gap-2 empty:hidden">
+                {chips}
+              </div>
+            ) : null}
+            {children({
+              filterSlot: isMobile ? (
+                <>
+                  <MobileFilterTrigger
+                    facets={facets}
+                    api={api}
+                    resultCount={resultCount}
+                  />
+                  <div className="flex shrink-0 items-center gap-2 [&>div]:flex-nowrap">
+                    {chips}
+                  </div>
+                </>
+              ) : null,
+            })}
+          </>
+        ) : (
+          <>
+            {/* Mobile trigger + chips row */}
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              {isMobile ? (
+                <MobileFilterTrigger
+                  facets={facets}
+                  api={api}
+                  resultCount={resultCount}
+                />
+              ) : null}
+              {chips}
+            </div>
+            {children}
+          </>
+        )}
       </div>
     </div>
   );
@@ -171,7 +214,7 @@ function MobileFilterTrigger({
         render={
           <button
             type="button"
-            className="inline-flex min-h-10 items-center gap-2 rounded-full border border-border bg-card px-4 text-sm font-medium text-foreground shadow-sm outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97]"
+            className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full bg-card px-4 text-sm font-medium text-foreground shadow-sm ring-1 ring-foreground/10 outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97] md:min-h-10"
           >
             <SlidersHorizontal className="size-4" aria-hidden />
             Filters

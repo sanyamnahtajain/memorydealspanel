@@ -95,7 +95,7 @@ export function ProductTableView({
   ];
 
   return (
-    <div className="overflow-x-auto overscroll-x-contain rounded-xl border border-border bg-card">
+    <div className="overflow-x-auto overscroll-x-contain rounded-2xl bg-card shadow-sm ring-1 ring-foreground/5">
       <table className="w-full min-w-[640px] border-collapse text-sm">
         <thead className="sticky top-14 z-10 bg-card/95 backdrop-blur md:top-16">
           <tr className="border-b border-border">
@@ -209,9 +209,9 @@ function TableRow({
           tabIndex={-1}
           aria-hidden
       prefetch={false}>
-          <div className="relative size-10 overflow-hidden rounded-lg bg-muted">
+          <div className="relative size-10 overflow-hidden rounded-lg bg-muted/60 p-0.5">
             {url ? (
-              <Image src={url} alt="" fill sizes="40px" className="object-cover" />
+              <Image src={url} alt="" fill sizes="40px" className="object-contain mix-blend-multiply" />
             ) : (
               <div className="flex h-full w-full items-center justify-center text-muted-foreground">
                 <ImageOff className="size-4" aria-hidden />
@@ -261,15 +261,13 @@ function TableRow({
           variant/out-of-stock product renders an empty (aligned) cell. */}
       {canAddToCart ? (
         <td className="px-2 py-2 text-right">
-          {quickAdd ? (
+          {quickAdd && !product.allocation?.required ? (
             <div className="flex justify-end">
-              product.allocation?.required ? null : (
-                <QuickAddToCart
-                  productId={product.id}
-                  moq={product.moq}
-                  packMultiple={product.packMultiple}
-                />
-              )
+              <QuickAddToCart
+                productId={product.id}
+                moq={product.moq}
+                packMultiple={product.packMultiple}
+              />
             </div>
           ) : null}
         </td>

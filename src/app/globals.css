@@ -423,3 +423,86 @@
 .md-marquee {
   animation: md-marquee-scroll 28s linear infinite;
 }
+
+/*
+ * ── Home / section language (md-*) ─────────────────────────────────────────
+ * Additive utilities for the storefront's section rhythm. Nothing here changes
+ * an existing selector; every rule is opt-in by class.
+ */
+
+/* Section eyebrow: the small tracked label above a section title. */
+@utility md-eyebrow {
+  font-size: 11px;
+  line-height: 1rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--color-muted-foreground);
+}
+
+/* One dark, high-contrast feature panel per page. A near-black surface with a
+   soft electric-blue bloom in the top-right corner, so it reads as a designed
+   object rather than a flat inverted box. Local to the panel — NOT a theme. */
+@utility md-panel-dark {
+  background-color: var(--foreground);
+  background-image:
+    radial-gradient(
+      110% 120% at 100% 0%,
+      oklch(0.36 0.11 262.9 / 0.55) 0%,
+      transparent 55%
+    ),
+    radial-gradient(
+      80% 90% at 0% 100%,
+      oklch(0.3 0.03 262 / 0.6) 0%,
+      transparent 60%
+    );
+  color: var(--background);
+}
+
+/* Soft warm-to-paper gradient for quiet supporting surfaces (footer, strips). */
+@utility md-surface-soft {
+  background-image: linear-gradient(
+    to bottom,
+    color-mix(in oklch, var(--muted) 70%, transparent),
+    transparent 60%
+  );
+}
+
+/* Quiet notice ticker: same seamless -50% loop as .md-marquee, twice as slow
+   — a notice should be legible at a glance, not racing. */
+.md-ticker {
+  animation: md-marquee-scroll 56s linear infinite;
+}
+.md-ticker:hover {
+  animation-play-state: paused;
+}
+
+/* Home category teaser: a 12-tile grid shows 8 on phones. Hiding by rule
+   (not by rendering two lists) keeps one DOM for both widths and lets the
+   staggered wrapper divs disappear with their tiles. */
+@media (max-width: 47.99rem) {
+  .md-teaser-8 > :nth-child(n + 9) {
+    display: none;
+  }
+}
+
+/* Hover-reveal arrow glyph on tiles (category/brand). Finger devices get it
+   always-on at low emphasis, since there is no hover to earn it. */
+.md-tile-arrow {
+  opacity: 0;
+  transform: translate(4px, 4px);
+  transition:
+    opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+.group:hover .md-tile-arrow,
+.group:focus-visible .md-tile-arrow {
+  opacity: 1;
+  transform: none;
+}
+@media (hover: none) {
+  .md-tile-arrow {
+    opacity: 0.85;
+    transform: none;
+  }
+}

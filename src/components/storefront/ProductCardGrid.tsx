@@ -14,25 +14,23 @@
  * as ready-to-render `ProductCardItem`s (price slots already resolved server
  * side). An IntersectionObserver auto-loads as the sentinel nears the
  * viewport, with an explicit button fallback.
+ *
+ * The card is the shared {@link ProductCard}; this file owns the grid, the
+ * client-side brand filter and the pagination.
  */
 
 import * as React from "react";
-import { InCartChip } from "@/components/storefront/cart/InCartChip";
-import Link from "next/link";
-import Image from "next/image";
-import { ImageOff, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { motion, useReducedMotion, type Variants } from "motion/react";
 
 import type { PublicProduct } from "@/server/dto/product";
 import { EmptyState } from "@/components/common/EmptyState";
-import { BrandBadge } from "@/components/storefront/BrandBadge";
+import { InCartChip } from "@/components/storefront/cart/InCartChip";
 import { VariantQuickSheet } from "@/components/storefront/VariantQuickSheet";
+import { ProductCard } from "@/components/storefront/product/ProductCard";
 import { staggerItemVariants } from "@/components/motion/primitives";
-import {
-  GALLERY_HERO_CLASS,
-  galleryTransitionName,
-} from "@/components/storefront/ProductGallery";
 import { useEntranceInitial } from "@/components/motion/useEntrance";
+import { hapticTap } from "@/lib/haptics";
 
 /**
  * A single card's data. `product` is always the viewer-projected
@@ -182,7 +180,25 @@ export function ProductCardGrid({
             variants={staggerItemVariants}
             layout={!reduced}
           >
-            <ProductCard item={item} />
+            <ProductCard
+              product={item.product}
+              priceSlot={item.priceSlot}
+              overlay={<InCartChip productId={item.product.id} />}
+              // Variant products get the quick-pick sheet: choose a size right
+              // here instead of a full page trip. The trigger swallows its
+              // click (same pattern as QuickAddToCart), so the card link still
+              // works everywhere else; the sheet renders in a portal.
+              footer={
+                item.product.hasVariants ? (
+                  <VariantQuickSheet
+                    productId={item.product.id}
+                    slug={item.product.slug}
+                    gateSlot={item.priceSlot}
+                    className="mt-2"
+                  />
+                ) : null
+              }
+            />
           </motion.li>
         ))}
       </motion.ul>
@@ -190,13 +206,16 @@ export function ProductCardGrid({
       {!done ? (
         <div
           ref={sentinelRef}
-          className="mt-6 flex items-center justify-center"
+          className="mt-8 flex flex-col items-center gap-2"
         >
           <button
             type="button"
-            onClick={() => void handleLoadMore()}
+            onClick={() => {
+              hapticTap();
+              void handleLoadMore();
+            }}
             disabled={pending}
-            className="inline-flex min-h-11 items-center gap-2 rounded-full border border-border bg-card px-5 text-sm font-medium text-foreground shadow-sm outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-70"
+            className="inline-flex min-h-11 w-full max-w-xs items-center justify-center gap-2 rounded-full bg-card px-6 text-sm font-semibold text-foreground shadow-sm ring-1 ring-foreground/10 outline-none transition-[background-color,transform,box-shadow] hover:bg-muted hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.98] disabled:opacity-70"
           >
             {pending ? (
               <>
@@ -207,102 +226,11 @@ export function ProductCardGrid({
               "Load more"
             )}
           </button>
+          <p className="font-tabular text-xs text-muted-foreground">
+            Showing {visible.length.toLocaleString("en-IN")} so far
+          </p>
         </div>
       ) : null}
     </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Card                                                                */
-/* ------------------------------------------------------------------ */
-
-function primaryImage(product: PublicProduct) {
-  if (product.images.length === 0) return null;
-  const primary =
-    product.images.find((img) => img.isPrimary) ??
-    [...product.images].sort((a, b) => a.sortOrder - b.sortOrder)[0];
-  return primary ?? null;
-}
-
-function specSnippet(product: PublicProduct): string | null {
-  const { specs } = product;
-  if (specs && typeof specs === "object" && !Array.isArray(specs)) {
-    const parts = Object.entries(specs as Record<string, unknown>)
-      .filter(([, v]) => typeof v === "string" || typeof v === "number")
-      .slice(0, 2)
-      .map(([, v]) => String(v));
-    if (parts.length > 0) return parts.join(" · ");
-  }
-  return product.tags.length > 0 ? product.tags.slice(0, 2).join(" · ") : null;
-}
-
-function ProductCard({ item }: { item: ProductCardItem }) {
-  const { product } = item;
-  const image = primaryImage(product);
-  const snippet = specSnippet(product);
-
-  return (
-    <Link
-      href={`/p/${product.slug}`}
-      className="group md-reveal flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm outline-none transition-[box-shadow,transform] duration-200 ease-out focus-visible:ring-3 focus-visible:ring-ring/50 hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98]"
-      prefetch={false}>
-      <div className="relative aspect-square w-full overflow-hidden bg-muted">
-        <InCartChip productId={product.id} />
-        {image ? (
-          <Image
-            src={image.thumbUrl ?? image.url}
-            alt={product.name}
-            fill
-            sizes="(min-width: 1024px) 22vw, (min-width: 640px) 30vw, 45vw"
-            // Shared-element seam: the detail gallery's hero image carries the
-            // same `view-transition-name`, so a supporting browser morphs this
-            // thumbnail into the hero on navigation. Progressive enhancement —
-            // browsers without the View Transitions API just cross-fade.
-            className={`${GALLERY_HERO_CLASS} object-cover transition-transform duration-300 ease-out group-hover:scale-105`}
-            style={{ viewTransitionName: galleryTransitionName(product.id) }}
-          />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center text-muted-foreground">
-            <ImageOff className="size-7" aria-hidden />
-          </div>
-        )}
-      </div>
-
-      <div className="flex flex-1 flex-col gap-1 p-3">
-        {product.brandRef ? (
-          <BrandBadge
-            name={product.brandRef.name}
-            slug={product.brandRef.slug}
-            asLink={false}
-          />
-        ) : product.brand ? (
-          <span className="text-[0.7rem] font-medium tracking-wide text-muted-foreground uppercase">
-            {product.brand}
-          </span>
-        ) : null}
-        <h3 className="line-clamp-2 text-sm font-semibold text-foreground">
-          {product.name}
-        </h3>
-        {snippet ? (
-          <p className="line-clamp-1 text-xs text-muted-foreground">{snippet}</p>
-        ) : null}
-        <div className="mt-auto pt-2">{item.priceSlot}</div>
-        {/* Variant products get the quick-pick sheet: choose a size right
-            here instead of a full page trip. The trigger button swallows its
-            click (preventDefault + stopPropagation — same pattern as
-            QuickAddToCart), so the card link still works everywhere else, and
-            the sheet itself renders in a portal outside this <Link>. Non-
-            variant cards render exactly as before. */}
-        {product.hasVariants ? (
-          <VariantQuickSheet
-            productId={product.id}
-            slug={product.slug}
-            gateSlot={item.priceSlot}
-            className="mt-2"
-          />
-        ) : null}
-      </div>
-    </Link>
   );
 }

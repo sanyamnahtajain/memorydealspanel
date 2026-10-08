@@ -2,9 +2,15 @@
 
 /**
  * HomeSections — staggers the entrance of the home page's content sections
- * (category grid, featured strip, …). Purely presentational: it wraps
- * server-rendered children in a motion container and reveals them in
- * sequence, respecting reduced-motion. Contains no data and no prices.
+ * (trust strip, category grid, rails, the dark panel…) and owns the page's
+ * section rhythm: 2.5rem between sections on phones, 4rem from md. Purely
+ * presentational: it wraps server-rendered children in a motion container
+ * and reveals them in sequence, respecting reduced-motion. Contains no data
+ * and no prices.
+ *
+ * A child that renders NOTHING (a Suspense rail with no signal, a shelf with
+ * no reels) leaves an empty wrapper behind; `[&>*:empty]:hidden` collapses it
+ * so the gap above and below never doubles.
  */
 
 import * as React from "react";
@@ -28,7 +34,10 @@ export function HomeSections({ children, className }: HomeSectionsProps) {
   const entranceInitial = useEntranceInitial("hidden" as const);
   return (
     <motion.div
-      className={cn("mt-8 space-y-10", className)}
+      className={cn(
+        "mt-10 space-y-10 md:mt-14 md:space-y-16 [&>*:empty]:hidden",
+        className,
+      )}
       variants={container}
       initial={entranceInitial}
       animate="show"

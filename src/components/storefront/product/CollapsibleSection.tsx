@@ -2,7 +2,11 @@
 
 import * as React from "react";
 import { ChevronDown } from "lucide-react";
+import { motion, useReducedMotion } from "motion/react";
+
 import { cn } from "@/lib/utils";
+import { springs } from "@/components/motion/tokens";
+import { hapticTap } from "@/lib/haptics";
 
 /**
  * CollapsibleSection — a soft-rounded card with a chevron header row, used
@@ -17,6 +21,8 @@ import { cn } from "@/lib/utils";
  * The expand/collapse animates via the CSS `grid-template-rows` 0fr→1fr
  * trick; the app-wide reduced-motion rules in globals.css zero the
  * transition duration, so no extra JS is needed to respect the preference.
+ * The chevron rotates on a spring once the state is explicit (the CSS auto
+ * state keeps its breakpoint-driven rotation until the first tap).
  *
  * Price-free by construction — it renders whatever children it is handed.
  */
@@ -38,6 +44,7 @@ export function CollapsibleSection({
   const [open, setOpen] = React.useState<boolean | null>(null);
   const buttonRef = React.useRef<HTMLButtonElement>(null);
   const contentId = React.useId();
+  const reduced = useReducedMotion();
 
   // While in "auto" state the rendered aria-expanded (false) is only correct
   // below md. Sync the attribute to the EFFECTIVE state straight on the DOM —
@@ -54,6 +61,7 @@ export function CollapsibleSection({
   }, [open]);
 
   function toggle() {
+    hapticTap();
     setOpen((prev) => {
       // First tap: flip whatever the CSS auto state currently shows.
       const current =
@@ -68,7 +76,7 @@ export function CollapsibleSection({
   return (
     <section
       className={cn(
-        "overflow-hidden rounded-2xl bg-card ring-1 ring-foreground/5",
+        "overflow-hidden rounded-2xl bg-card shadow-sm ring-1 ring-foreground/5",
         className,
       )}
     >
@@ -79,9 +87,9 @@ export function CollapsibleSection({
           aria-expanded={open ?? false}
           aria-controls={contentId}
           onClick={toggle}
-          className="flex min-h-12 w-full items-center justify-between gap-3 px-4 py-3 text-left outline-none transition-colors hover:bg-muted/40 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset sm:px-5"
+          className="flex min-h-13 w-full items-center justify-between gap-3 px-4 py-3 text-left outline-none transition-colors hover:bg-muted/40 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset active:bg-muted/60 sm:px-5"
         >
-          <span className="flex items-center gap-2.5 font-heading text-sm font-semibold tracking-tight text-foreground sm:text-base">
+          <span className="flex items-center gap-2.5 font-heading text-[15px] font-semibold tracking-tight text-foreground sm:text-base">
             {icon ? (
               <span aria-hidden className="shrink-0 [&_svg]:size-4.5">
                 {icon}
@@ -89,14 +97,23 @@ export function CollapsibleSection({
             ) : null}
             {title}
           </span>
-          <ChevronDown
-            aria-hidden
-            className={cn(
-              "size-4 shrink-0 text-muted-foreground transition-transform duration-200",
-              open === null && "md:-rotate-180",
-              open === true && "-rotate-180",
-            )}
-          />
+          {open === null ? (
+            // Auto state: CSS decides per breakpoint, no script needed.
+            <ChevronDown
+              aria-hidden
+              className="size-4.5 shrink-0 text-muted-foreground transition-transform duration-200 md:-rotate-180"
+            />
+          ) : (
+            <motion.span
+              aria-hidden
+              className="grid size-6 shrink-0 place-items-center text-muted-foreground"
+              initial={false}
+              animate={{ rotate: open ? -180 : 0 }}
+              transition={reduced ? { duration: 0 } : springs.snappy}
+            >
+              <ChevronDown className="size-4.5" />
+            </motion.span>
+          )}
         </button>
       </h2>
       <div

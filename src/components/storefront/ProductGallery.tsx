@@ -11,6 +11,7 @@ import type {
 import { Lightbox } from "@/components/storefront/Lightbox";
 import { isVideoSlideActive } from "@/lib/video";
 import { cn } from "@/lib/utils";
+import { hapticTap } from "@/lib/haptics";
 import { catalogImageUrl } from "@/lib/image-loader";
 
 /**
@@ -168,8 +169,10 @@ export function ProductGallery({
       <div className="relative">
         <div
           ref={mainRef}
-          className="overflow-hidden rounded-3xl bg-card shadow-sm ring-1 ring-foreground/5"
+          className="overflow-hidden rounded-3xl bg-muted/40 shadow-sm ring-1 ring-foreground/5"
         >
+          {/* Embla: horizontal swipe with a snap per slide; vertical pans
+              still scroll the page (touch-pan-y). */}
           <div className="flex touch-pan-y">
             {ordered.map((image, index) => {
               const isHero = index === 0;
@@ -183,7 +186,7 @@ export function ProductGallery({
                     type="button"
                     onClick={() => setLightboxIndex(index)}
                     aria-label={`View image ${index + 1} full screen`}
-                    className="group relative block aspect-square w-full cursor-zoom-in overflow-hidden bg-muted/30"
+                    className="group relative block aspect-square w-full cursor-zoom-in overflow-hidden p-4 sm:p-6"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
@@ -198,7 +201,7 @@ export function ProductGallery({
                       // is eager (perf finding 3).
                       fetchPriority={isHero ? "high" : "auto"}
                       className={cn(
-                        "h-full w-full object-contain",
+                        "h-full w-full object-contain mix-blend-multiply",
                         isHero && GALLERY_HERO_CLASS,
                       )}
                       style={
@@ -213,7 +216,7 @@ export function ProductGallery({
                     {isActive ? (
                       <span
                         aria-hidden
-                        className="absolute right-2.5 bottom-2.5 inline-flex items-center gap-1 rounded-full bg-foreground/70 px-2 py-1 text-xs font-medium text-background opacity-0 transition-opacity group-hover:opacity-100"
+                        className="absolute right-3 bottom-3 inline-flex items-center gap-1 rounded-full bg-foreground/80 px-2.5 py-1 text-xs font-medium text-background opacity-0 transition-opacity group-hover:opacity-100"
                       >
                         <Maximize2 className="size-3.5" />
                         Expand
@@ -263,17 +266,54 @@ export function ProductGallery({
               disabled={!canNext}
               onClick={scrollNext}
             />
-            <div className="pointer-events-none absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-background/75 px-2 py-1.5 backdrop-blur-sm sm:hidden">
-              {Array.from({ length: slideCount }).map((_, index) => (
-                <span
-                  key={index}
-                  className={cn(
-                    "h-1.5 rounded-full transition-all duration-300",
-                    index === selected ? "w-5 bg-foreground" : "w-1.5 bg-foreground/25",
-                  )}
-                />
-              ))}
+            {/* Phone indicator: tappable dots — each button is 44px tall
+                (h-11) and pulled back into the 32px pill with a negative
+                margin so the hit area is real while the visual stays small —
+                plus a "2 / 6" counter. Hidden from sm: up where the thumbnail
+                rail does the job. */}
+            <div
+              role="tablist"
+              aria-label="Gallery position"
+              className="absolute inset-x-0 bottom-2 flex items-center justify-center gap-0 sm:hidden"
+            >
+              <div className="flex items-center rounded-full bg-background/80 px-1.5 shadow-sm ring-1 ring-foreground/5 backdrop-blur-sm">
+                {Array.from({ length: slideCount }).map((_, index) => {
+                  const isActive = index === selected;
+                  return (
+                    <button
+                      key={index}
+                      type="button"
+                      role="tab"
+                      aria-selected={isActive}
+                      aria-label={
+                        index >= videoStart
+                          ? `Video ${index - videoStart + 1}`
+                          : `Image ${index + 1}`
+                      }
+                      onClick={() => {
+                        hapticTap();
+                        scrollTo(index);
+                      }}
+                      className="-my-1.5 grid h-11 min-w-7 place-items-center px-0.5 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                    >
+                      <span
+                        aria-hidden
+                        className={cn(
+                          "block h-1.5 rounded-full transition-all duration-300",
+                          isActive ? "w-5 bg-foreground" : "w-1.5 bg-foreground/25",
+                        )}
+                      />
+                    </button>
+                  );
+                })}
+              </div>
             </div>
+            <span
+              aria-hidden
+              className="font-tabular absolute top-3 left-3 rounded-full bg-background/80 px-2 py-0.5 text-[11px] font-medium text-muted-foreground shadow-sm ring-1 ring-foreground/5 backdrop-blur-sm sm:hidden"
+            >
+              {selected + 1} / {slideCount}
+            </span>
           </>
         ) : null}
       </div>
@@ -287,14 +327,17 @@ export function ProductGallery({
                 <button
                   key={`thumb-${image.url}-${index}`}
                   type="button"
-                  onClick={() => scrollTo(index)}
+                  onClick={() => {
+                    hapticTap();
+                    scrollTo(index);
+                  }}
                   aria-label={`Show image ${index + 1}`}
                   aria-current={isActive}
                   className={cn(
-                    "relative aspect-square w-16 shrink-0 overflow-hidden rounded-xl border bg-muted/30 transition-[border-color,opacity,box-shadow] sm:w-20",
+                    "relative aspect-square w-16 shrink-0 overflow-hidden rounded-xl bg-muted/40 p-1.5 ring-1 transition-[opacity,box-shadow,transform] active:scale-95 sm:w-20",
                     isActive
-                      ? "border-primary ring-2 ring-primary/40"
-                      : "border-border opacity-80 hover:border-foreground/30 hover:opacity-100",
+                      ? "ring-2 ring-foreground"
+                      : "opacity-75 ring-foreground/10 hover:opacity-100 hover:ring-foreground/30",
                   )}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -303,7 +346,7 @@ export function ProductGallery({
                     alt=""
                     draggable={false}
                     loading="lazy"
-                    className="h-full w-full object-contain"
+                    className="h-full w-full object-contain mix-blend-multiply"
                   />
                 </button>
               );
@@ -316,14 +359,17 @@ export function ProductGallery({
                 <button
                   key={`thumb-video-${video.url}`}
                   type="button"
-                  onClick={() => scrollTo(slide)}
+                  onClick={() => {
+                    hapticTap();
+                    scrollTo(slide);
+                  }}
                   aria-label={`Show video ${index + 1}`}
                   aria-current={isActive}
                   className={cn(
-                    "relative aspect-square w-16 shrink-0 overflow-hidden rounded-xl border bg-muted/30 transition-[border-color,opacity,box-shadow] sm:w-20",
+                    "relative aspect-square w-16 shrink-0 overflow-hidden rounded-xl bg-muted/40 ring-1 transition-[opacity,box-shadow,transform] active:scale-95 sm:w-20",
                     isActive
-                      ? "border-primary ring-2 ring-primary/40"
-                      : "border-border opacity-80 hover:border-foreground/30 hover:opacity-100",
+                      ? "ring-2 ring-foreground"
+                      : "opacity-75 ring-foreground/10 hover:opacity-100 hover:ring-foreground/30",
                   )}
                 >
                   {video.posterUrl ?? posterFallback ? (
@@ -382,8 +428,8 @@ function GalleryArrow({ direction, disabled, onClick }: GalleryArrowProps) {
       disabled={disabled}
       aria-label={isPrev ? "Previous image" : "Next image"}
       className={cn(
-        "absolute top-1/2 hidden size-9 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-background/85 text-foreground shadow-sm backdrop-blur transition-opacity hover:bg-background disabled:pointer-events-none disabled:opacity-0 sm:flex",
-        isPrev ? "left-2" : "right-2",
+        "absolute top-1/2 hidden size-10 -translate-y-1/2 items-center justify-center rounded-full bg-background/90 text-foreground shadow-md ring-1 ring-foreground/10 backdrop-blur transition-[opacity,transform] hover:bg-background active:scale-95 disabled:pointer-events-none disabled:opacity-0 sm:flex",
+        isPrev ? "left-3" : "right-3",
       )}
     >
       <Icon className="size-5" aria-hidden />

@@ -13,6 +13,10 @@ function allowed(): boolean {
   try {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return false;
     if (document.documentElement.dataset.reduceMotion === "true") return false;
+    // Chrome refuses (and logs a console error for) vibrate before the page
+    // has ever been tapped; skip quietly until then where the API exists.
+    const activation = (navigator as Navigator & { userActivation?: { hasBeenActive: boolean } }).userActivation;
+    if (activation && !activation.hasBeenActive) return false;
   } catch {
     return false;
   }
@@ -30,5 +34,7 @@ function buzz(pattern: number | number[]): void {
 
 /** A tab or chip tap. */
 export const hapticTap = (): void => buzz(8);
+/** A gesture crossed its threshold (pull-to-refresh armed, swipe committed). */
+export const hapticThreshold = (): void => buzz(14);
 /** Something was added or confirmed. */
 export const hapticSuccess = (): void => buzz([10, 30, 14]);

@@ -207,7 +207,7 @@ export function InfoPill({ icon, label, value, className }: InfoPillProps) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-muted/40 py-1.5 pr-3 pl-2",
+        "inline-flex min-h-9 items-center gap-1.5 rounded-full bg-muted/50 py-1.5 pr-3.5 pl-2.5 ring-1 ring-foreground/5",
         className,
       )}
     >
@@ -215,7 +215,7 @@ export function InfoPill({ icon, label, value, className }: InfoPillProps) {
         {icon}
       </span>
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      <span className="text-xs font-semibold text-foreground tabular-nums">
+      <span className="text-[13px] font-semibold text-foreground tabular-nums">
         {value}
       </span>
     </span>
@@ -251,17 +251,22 @@ export function TrustRow({ gstInvoice, className }: TrustRowProps) {
   }
   return (
     <ul
+      aria-label="Buying on this shop"
       className={cn(
-        "flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border/60 pt-3.5",
+        "flex flex-wrap items-center gap-2 border-t border-foreground/5 pt-4",
         className,
       )}
     >
       {items.map((item) => (
         <li
           key={item.label}
-          className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
+          // Icon chips: the glyph in a soft disc, the claim beside it.
+          className="inline-flex items-center gap-2 rounded-full bg-muted/50 py-1 pr-3 pl-1 text-xs font-medium text-muted-foreground ring-1 ring-foreground/5"
         >
-          <span aria-hidden className="shrink-0 [&_svg]:size-4">
+          <span
+            aria-hidden
+            className="grid size-6 shrink-0 place-items-center rounded-full bg-card shadow-sm ring-1 ring-foreground/5 [&_svg]:size-3.5"
+          >
             {item.icon}
           </span>
           {item.label}

@@ -11,6 +11,13 @@ export { WhatsAppEnquire } from "./WhatsAppEnquire";
 export type { WhatsAppEnquireProps } from "./WhatsAppEnquire";
 export { RelatedRail } from "./RelatedRail";
 export type { RelatedRailProps, RelatedRailItem } from "./RelatedRail";
+export {
+  ProductCard,
+  PRODUCT_CARD_SIZES,
+  cardImages,
+  cardSpecSnippet,
+} from "./ProductCard";
+export type { ProductCardProps } from "./ProductCard";
 export { StickyMobileBar } from "./StickyMobileBar";
 export type { StickyMobileBarProps } from "./StickyMobileBar";
 export { VariantSelector } from "./VariantSelector";

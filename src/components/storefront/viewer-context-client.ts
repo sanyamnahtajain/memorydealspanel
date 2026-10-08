@@ -96,8 +96,18 @@ async function run(): Promise<void> {
   for (const slice of slices) fetchedSlices.add(slice);
   for (const id of ids) fetchedIds.add(id);
 
+  // The server fills `priceLabels` ONLY when that slice is named in `want`.
+  // Ids that register after the first batch has gone out (a rail streaming
+  // in through a Suspense boundary) arrive with the slice already marked
+  // fetched — so re-name it here whenever ids ride along. The route resolves
+  // entitlement per request; we are only asking, never deciding.
+  const wanted =
+    ids.length > 0 && !slices.includes(CONTEXT_SLICES.priceLabels)
+      ? [...slices, CONTEXT_SLICES.priceLabels]
+      : slices;
+
   const params = new URLSearchParams();
-  if (slices.length > 0) params.set("want", slicesParam(slices));
+  if (wanted.length > 0) params.set("want", slicesParam(wanted));
   if (ids.length > 0) params.set("ids", ids.join(","));
 
   try {

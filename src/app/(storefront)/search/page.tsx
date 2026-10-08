@@ -12,7 +12,6 @@ import { cartCountForViewer } from "@/server/services/cart";
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
 import { FadeUp } from "@/components/motion/primitives";
 import {
-  StorefrontListing,
   buildListingItems,
   type ListingItem,
   type LoadMoreResult,
@@ -27,7 +26,7 @@ import {
   FeaturedRail,
   SectionHeading,
 } from "@/components/storefront/home";
-import { DiscoveryFilters } from "@/components/storefront/filters";
+import { DiscoveryListing } from "@/components/storefront/filters";
 import {
   loadFacetData,
   selectionToDiscoverParams,
@@ -50,7 +49,7 @@ export const metadata: Metadata = {
  * (brand / spec / stock / tag, and — approved only — a price band). Facets are
  * scoped to the search result set and the first faceted page is loaded
  * server-side via `discoverProducts`, then handed to the client
- * {@link DiscoveryFilters} + {@link StorefrontListing}.
+ * {@link DiscoveryListing} (DiscoveryFilters + StorefrontListing).
  *
  * PRICE GATE: the price-band facet is a real control only for approved viewers;
  * for everyone else it is the "log in to filter by price" chip, and the band is
@@ -213,18 +212,17 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
             Showing results for{" "}
             <span className="font-medium text-foreground">“{rawQuery}”</span>
           </p>
-          <DiscoveryFilters facets={facets} resultCount={firstPage.total}>
-            <StorefrontListing
-              initialItems={items}
-              loadMore={loadMore}
-              initialNextCursor={firstPage.nextCursor}
-              canSeePrices={approved}
-              total={firstPage.total}
-              emptyTitle={`No results for “${rawQuery}”`}
-              emptyDescription="Try a different keyword, or browse by category."
-              savedProductIds={wishlistState.savedProductIds}
-            />
-          </DiscoveryFilters>
+          <DiscoveryListing
+            facets={facets}
+            initialItems={items}
+            loadMore={loadMore}
+            initialNextCursor={firstPage.nextCursor}
+            canSeePrices={approved}
+            total={firstPage.total}
+            emptyTitle={`No results for “${rawQuery}”`}
+            emptyDescription="Try a different keyword, or browse by category."
+            savedProductIds={wishlistState.savedProductIds}
+          />
         </div>
       )}
     </StorefrontShell>

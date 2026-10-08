@@ -49,7 +49,7 @@ export function ProductCompactView({
 
   return (
     <motion.ul
-      className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card"
+      className="divide-y divide-border/70 overflow-hidden rounded-2xl bg-card shadow-sm ring-1 ring-foreground/5"
       variants={{ hidden: {}, show: { transition: { staggerChildren: 0.025 } } }}
       initial={entranceInitial}
       animate="show"
@@ -94,7 +94,7 @@ function CompactRow({
       prefetch={false}>
       <div
         className={cn(
-          "relative shrink-0 overflow-hidden rounded-lg bg-muted",
+          "relative shrink-0 overflow-hidden rounded-xl bg-muted/60 p-1",
           compactDensity ? "size-12" : "size-14",
         )}
       >
@@ -104,7 +104,7 @@ function CompactRow({
             alt={product.name}
             fill
             sizes="56px"
-            className="object-cover transition-transform duration-300 group-hover:scale-105"
+            className="object-contain mix-blend-multiply transition-transform duration-300 group-hover:scale-105"
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-muted-foreground">
@@ -158,8 +158,10 @@ function CompactRow({
         />
       </div>
 
-      {/* Quick add — swallow the click so it doesn't follow the row link. */}
-      {quickAdd ? (
+      {/* Quick add — swallow the click so it doesn't follow the row link. An
+          allocation product's flow is the breakdown builder on its page, so
+          it gets no one-tap add here. */}
+      {quickAdd && !product.allocation?.required ? (
         <div
           className="shrink-0"
           onClick={(e) => {
@@ -167,13 +169,11 @@ function CompactRow({
             e.stopPropagation();
           }}
         >
-          product.allocation?.required ? null : (
-            <QuickAddToCart
-              productId={product.id}
-              moq={product.moq}
-              packMultiple={product.packMultiple}
-            />
-          )
+          <QuickAddToCart
+            productId={product.id}
+            moq={product.moq}
+            packMultiple={product.packMultiple}
+          />
         </div>
       ) : null}
     </Link>

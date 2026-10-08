@@ -1,29 +1,45 @@
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
-import { Shimmer, SkeletonProductCard } from "@/components/common";
 import { LoadingWatchdog } from "@/components/common/LoadingWatchdog";
+import {
+  SkeletonBanner,
+  SkeletonBrandRow,
+  SkeletonCategoryGrid,
+  SkeletonProductRail,
+  SkeletonSectionHeader,
+} from "./_skeletons/parts";
 
 /**
  * Storefront segment fallback (App Router `loading.tsx`).
  *
  * Rendered inside the {@link StorefrontShell} so the header / bottom tab chrome
- * stays put and only the content shows a hero + product-grid skeleton. More
- * specific storefront routes ship their own tailored fallbacks.
+ * stays put and only the content shimmers. Mirrors the home page's rhythm —
+ * banner strip, category teaser (8 tiles on phones, 12 from md), brand row,
+ * best-seller rail — with the same header boxes (subtitle lines reserved
+ * where the real header has one), so the real page develops in place
+ * without a height jump. More specific routes ship their own fallbacks.
  */
 export default function StorefrontLoading() {
   return (
     <StorefrontShell>
-      <div className="space-y-8" aria-busy>
+      <div className="space-y-10 md:space-y-16" aria-busy>
         <LoadingWatchdog label="Loading…" />
 
-        {/* Hero */}
-        <Shimmer className="mt-2 h-48 w-full rounded-2xl md:h-64" />
+        <SkeletonBanner className="mt-3" />
 
-        {/* Product grid */}
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          {Array.from({ length: 8 }, (_, i) => (
-            <SkeletonProductCard key={i} />
-          ))}
-        </div>
+        <section>
+          <SkeletonSectionHeader subtitle />
+          <SkeletonCategoryGrid teaser />
+        </section>
+
+        <section>
+          <SkeletonSectionHeader />
+          <SkeletonBrandRow />
+        </section>
+
+        <section>
+          <SkeletonSectionHeader seeAll={false} subtitle />
+          <SkeletonProductRail />
+        </section>
       </div>
     </StorefrontShell>
   );

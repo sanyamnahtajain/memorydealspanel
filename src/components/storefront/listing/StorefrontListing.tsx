@@ -28,6 +28,7 @@
 import * as React from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
+import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/common/EmptyState";
 import {
   usePreferences,
@@ -46,7 +47,7 @@ import {
   type SortKey,
 } from "./types";
 
-interface StorefrontListingProps {
+export interface StorefrontListingProps {
   initialItems: ListingItem[];
   /** Server action to fetch subsequent pages (already gated). */
   loadMore?: LoadMoreFn;
@@ -249,39 +250,31 @@ export function StorefrontListing({
   return (
     <div>
       {/* Toolbar */}
-      <div className="mb-4 flex flex-col gap-3">
-        <div className="flex items-center gap-3">
-          <p
-            className="text-sm text-muted-foreground"
-            aria-live="polite"
-            role="status"
-          >
-            {formatCount(resultCount, total)}
-          </p>
-        </div>
-        {filterSlot ? (
-          /* One chip bar: Filters sheet + context chips + sort. Horizontally
-             scrollable, and sticky just under the condensed header on phones
-             so refinements stay reachable mid-scroll. Desktop wraps inline. */
-          <div className="sticky top-[calc(3rem+env(safe-area-inset-top))] z-30 -mx-4 border-b border-transparent bg-background/95 px-4 py-2 backdrop-blur supports-backdrop-filter:bg-background/85 md:static md:z-auto md:mx-0 md:border-0 md:bg-transparent md:p-0 md:backdrop-blur-none">
-            <div className="no-scrollbar flex items-center gap-2 overflow-x-auto md:flex-wrap md:overflow-visible">
-              {filterSlot}
-              <div className="shrink-0 md:ml-auto">
-                <ListingControls
-                  sort={sort}
-                  onSort={changeSort}
-                  canSortPrice={canSeePrices}
-                />
-              </div>
+      <div className="mb-4 flex flex-col gap-3 md:mb-6">
+        <p
+          className="font-tabular text-sm text-muted-foreground"
+          aria-live="polite"
+          role="status"
+        >
+          {formatCount(resultCount, total)}
+        </p>
+        {/* ONE pill bar: Filters sheet + context chips + sort. Horizontally
+            scrollable, and sticky just under the condensed header on phones
+            so refinements stay reachable mid-scroll — a hairline appears
+            under it only once it is actually stuck (see the page padding).
+            Desktop wraps inline. */}
+        <div className="sticky top-[calc(3rem+env(safe-area-inset-top))] z-30 -mx-4 bg-background/95 px-4 py-2 shadow-[0_1px_0_0_var(--color-border)] backdrop-blur supports-backdrop-filter:bg-background/85 md:static md:z-auto md:mx-0 md:bg-transparent md:p-0 md:shadow-none md:backdrop-blur-none">
+          <div className="no-scrollbar flex items-center gap-2 overflow-x-auto md:flex-wrap md:overflow-visible">
+            {filterSlot}
+            <div className={cn("shrink-0", filterSlot ? "md:ml-auto" : "ml-auto")}>
+              <ListingControls
+                sort={sort}
+                onSort={changeSort}
+                canSortPrice={canSeePrices}
+              />
             </div>
           </div>
-        ) : (
-          <ListingControls
-            sort={sort}
-            onSort={changeSort}
-            canSortPrice={canSeePrices}
-          />
-        )}
+        </div>
       </div>
 
       {/* Results */}
@@ -316,6 +309,11 @@ export function StorefrontListing({
           pending={pending}
           onLoadMore={() => void handleLoadMore()}
           disableAutoLoad={prefs.reduceMotion}
+          shown={resultCount}
+          total={total}
+          // Skeletons mimic the grid; the deep-link-only compact/table views
+          // just show the button.
+          skeletonCount={viewMode === "grid" ? 4 : 0}
         />
       ) : null}
     </div>

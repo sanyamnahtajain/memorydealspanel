@@ -224,11 +224,11 @@ export function VariantSelector({
         {optionTypes.map((option) => {
           const chosen = selection[option.name];
           return (
-            <fieldset key={option.name} className="space-y-2">
-              <legend className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            <fieldset key={option.name} className="space-y-2.5">
+              <legend className="text-[11px] font-medium tracking-[0.18em] text-muted-foreground uppercase">
                 {option.name}
                 {chosen ? (
-                  <span className="ml-2 text-foreground normal-case">
+                  <span className="ml-2 text-sm font-semibold tracking-normal text-foreground normal-case">
                     {chosen}
                   </span>
                 ) : null}
@@ -255,11 +255,11 @@ export function VariantSelector({
                         // Matches the quick-pick sheet's pills: rounded-full,
                         // filled active state, struck-through when the combo
                         // doesn't exist. Tactile press via a tiny scale.
-                        "inline-flex min-h-9 items-center gap-1.5 rounded-full border px-4 py-1.5 text-sm font-medium transition-[background-color,border-color,color,transform] active:scale-[0.96]",
+                        "inline-flex min-h-10 items-center gap-1.5 rounded-full border px-4 py-1.5 text-sm font-medium transition-[background-color,border-color,color,transform] active:scale-[0.96]",
                         "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
                         isSelected
-                          ? "border-primary bg-primary text-primary-foreground shadow-sm"
-                          : "border-border bg-card text-foreground hover:border-foreground/30 hover:bg-muted/60",
+                          ? "border-foreground bg-foreground text-background shadow-sm"
+                          : "border-foreground/10 bg-card text-foreground shadow-sm hover:border-foreground/30 hover:bg-muted/60",
                         !available &&
                           "cursor-not-allowed border-dashed text-muted-foreground/60 line-through hover:border-border hover:bg-card active:scale-100",
                       )}
@@ -283,12 +283,12 @@ export function VariantSelector({
           StickyMobileBar can watch it scroll out of view. */}
       <div
         id={PRICE_PANEL_ID}
-        className="rounded-3xl bg-card p-4 shadow-sm ring-1 ring-foreground/5 sm:p-5"
+        className="rounded-3xl bg-card p-4 shadow-[0_1px_2px_rgb(0_0_0/0.04),0_12px_40px_-24px_rgb(0_0_0/0.25)] ring-1 ring-foreground/5 sm:p-6"
       >
         {selected ? (
           <>
             <div className="flex items-center justify-between gap-3">
-              <p className="text-[0.7rem] font-medium tracking-[0.08em] text-muted-foreground uppercase">
+              <p className="text-[11px] font-medium tracking-[0.18em] text-muted-foreground uppercase">
                 Wholesale price
               </p>
               <StatusChip
@@ -298,8 +298,8 @@ export function VariantSelector({
             </div>
 
             {priced ? (
-              <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <span className="font-heading text-[2rem] font-semibold tracking-tight text-foreground tabular-nums sm:text-4xl">
+              <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <span className="font-heading text-[2.5rem] leading-none font-semibold tracking-tight text-foreground tabular-nums sm:text-5xl">
                   {formatPaise(priced.price)}
                 </span>
                 {priced.mrp && priced.mrp > priced.price ? (
@@ -308,7 +308,7 @@ export function VariantSelector({
                   </span>
                 ) : null}
                 {priced.marginPct && priced.marginPct > 0 ? (
-                  <span className="rounded-full bg-success/10 px-2 py-0.5 text-sm font-semibold text-success">
+                  <span className="rounded-full bg-success/10 px-2.5 py-0.5 text-sm font-semibold text-success ring-1 ring-success/20">
                     {priced.marginPct}% off
                   </span>
                 ) : null}
@@ -330,7 +330,7 @@ export function VariantSelector({
         {/* MOQ / pack facts for the SELECTED variant (variant override first,
             product level as fallback) — small labelled pills. */}
         {(selected?.moq ?? moq) || (selected?.packMultiple ?? packMultiple) ? (
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="mt-5 flex flex-wrap gap-2">
             {(selected?.moq ?? moq) ? (
               <InfoPill
                 icon={<BoxGlyph />}
@@ -348,7 +348,7 @@ export function VariantSelector({
           </div>
         ) : null}
 
-        <div className="mt-4 flex flex-col gap-3">
+        <div className="mt-5 flex flex-col gap-3 [&_[data-slot=button]]:rounded-full">
           {/* Add to cart — approved-only, bound to the SELECTED variant. The
               button self-gates (locked CTA for anon/unapproved), and
               OUT_OF_STOCK or "no variant selected yet" disables it. Sends only
@@ -454,7 +454,7 @@ function GatedPrice({
         <StatusChip variant={ACCESS_CHIP_VARIANT[state]} label={copy.chip} />
         <p className="text-sm text-muted-foreground">{copy.body}</p>
         {state === "expired" || state === "rejected" ? (
-          <GatedRenewCta state={state} size="sm" className="h-9" />
+          <GatedRenewCta state={state} size="sm" className="h-11 rounded-full px-5" />
         ) : null}
       </div>
     );
@@ -470,7 +470,12 @@ function GatedPrice({
         Pricing is visible to approved wholesale buyers. Request access to
         unlock prices across the catalog.
       </p>
-      <Button variant="outline" size="sm" className="h-9" onClick={onRequest}>
+      <Button
+        variant="default"
+        size="sm"
+        className="h-11 rounded-full px-5 text-sm"
+        onClick={onRequest}
+      >
         Request access
       </Button>
     </div>

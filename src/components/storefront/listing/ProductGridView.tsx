@@ -10,28 +10,23 @@
  * PriceGate chip, so no amount reaches the client here.
  *
  * Pure renderer: pagination and filtering live in the parent
- * {@link import("./StorefrontListing").StorefrontListing}.
+ * {@link import("./StorefrontListing").StorefrontListing}. The card is the
+ * shared {@link ProductCard}; this file adds the listing-only controls (save
+ * heart, in-cart chip, quick add, variant quick-pick).
  */
 
 import * as React from "react";
-import { InCartChip } from "@/components/storefront/cart/InCartChip";
-import Link from "next/link";
-import Image from "next/image";
-import { ImageOff } from "lucide-react";
 import { motion } from "motion/react";
 
 import { cn } from "@/lib/utils";
 import { staggerItemVariants } from "@/components/motion/primitives";
-import {
-  GALLERY_HERO_CLASS,
-  galleryTransitionName,
-} from "@/components/storefront/ProductGallery";
-import { BrandBadge } from "@/components/storefront/BrandBadge";
 import { HeartButton } from "@/components/storefront/wishlist/HeartButton";
+import { InCartChip } from "@/components/storefront/cart/InCartChip";
 import { QuickAddToCart } from "@/components/storefront/cart/QuickAddToCart";
 import { VariantQuickSheet } from "@/components/storefront/VariantQuickSheet";
+import { ProductCard } from "@/components/storefront/product/ProductCard";
 import type { ListingItem } from "./types";
-import { canQuickAdd, keySpec, primaryImage } from "./product-display";
+import { canQuickAdd } from "./product-display";
 import { useEntranceInitial } from "@/components/motion/useEntrance";
 
 interface ProductGridViewProps {
@@ -106,95 +101,58 @@ function GridCard({
   priorityImage?: boolean;
 }) {
   const { product } = item;
-  const image = primaryImage(product);
-  const snippet = keySpec(product);
-  const quickAdd = canQuickAdd(product, canAddToCart);
+  const quickAdd = canQuickAdd(product, canAddToCart) && !product.allocation?.required;
 
   return (
-    <Link
-      href={`/p/${product.slug}`}
-      className="group md-reveal flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm outline-none transition-[box-shadow,transform] duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.98]"
-      prefetch={false}>
-      <div className="relative aspect-square w-full overflow-hidden bg-muted">
-        {/* Save heart — floats over the image. The wrapper swallows the click so
-            tapping the heart toggles the save WITHOUT following the card link. */}
-        <div
-          className="absolute top-1.5 right-1.5 z-10"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-          }}
-        >
-          <HeartButton
-            productId={product.id}
-            initialSaved={saved}
-            size="compact"
-            className="bg-background/80 shadow-sm ring-1 ring-border/50 backdrop-blur hover:bg-background"
-          />
-        </div>
-        <InCartChip productId={product.id} />
-        {image ? (
-          <Image
-            src={image.thumbUrl ?? image.url}
-            alt={product.name}
-            fill
-            priority={priorityImage}
-            sizes="(min-width: 1024px) 22vw, (min-width: 640px) 30vw, 45vw"
-            className={`${GALLERY_HERO_CLASS} object-cover transition-transform duration-300 ease-out group-hover:scale-105`}
-            style={{ viewTransitionName: galleryTransitionName(product.id) }}
-          />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center text-muted-foreground">
-            <ImageOff className="size-7" aria-hidden />
+    <ProductCard
+      product={product}
+      priceSlot={item.priceSlot}
+      priorityImage={priorityImage}
+      overlay={
+        <>
+          {/* Save heart — floats over the image, a 44px target on phones.
+              The wrapper swallows the click so tapping the heart toggles the
+              save WITHOUT following the card link. */}
+          <div
+            className="absolute top-1.5 right-1.5 z-10 md:top-2 md:right-2"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+          >
+            <HeartButton
+              productId={product.id}
+              initialSaved={saved}
+              size="card"
+              className="bg-background/85 shadow-sm ring-1 ring-foreground/10 backdrop-blur hover:bg-background"
+            />
           </div>
-        )}
-      </div>
-
-      <div className="flex flex-1 flex-col gap-1 p-3">
-        {product.brandRef ? (
-          <BrandBadge
-            name={product.brandRef.name}
-            slug={product.brandRef.slug}
-            asLink={false}
+          <InCartChip productId={product.id} className="bottom-2 left-2" />
+        </>
+      }
+      action={
+        quickAdd ? (
+          <QuickAddToCart
+            productId={product.id}
+            moq={product.moq}
+            packMultiple={product.packMultiple}
           />
-        ) : product.brand ? (
-          <span className="text-[0.7rem] font-medium tracking-wide text-muted-foreground uppercase">
-            {product.brand}
-          </span>
-        ) : null}
-        <h3 className="line-clamp-2 text-sm font-semibold text-foreground">
-          {product.name}
-        </h3>
-        {snippet ? (
-          <p className="line-clamp-1 text-xs text-muted-foreground">{snippet}</p>
-        ) : null}
-        <div className="mt-auto flex items-end justify-between gap-2 pt-2">
-          <div className="min-w-0">{item.priceSlot}</div>
-          {quickAdd ? (
-            product.allocation?.required ? null : (
-              <QuickAddToCart
-                productId={product.id}
-                moq={product.moq}
-                packMultiple={product.packMultiple}
-                className="shrink-0"
-              />
-            )
-          ) : null}
-        </div>
-        {/* Variant products can't one-tap quick-add (a variant must be picked
-            first — see canQuickAdd), so they get the quick-pick bottom sheet
-            instead: size pills + add, no page trip. The trigger swallows its
-            click (same pattern as QuickAddToCart) so the card link is
-            untouched; the sheet renders in a portal outside this <Link>. */}
-        {product.hasVariants ? (
+        ) : null
+      }
+      // Variant products can't one-tap quick-add (a variant must be picked
+      // first — see canQuickAdd), so they get the quick-pick bottom sheet
+      // instead: size pills + add, no page trip. The trigger swallows its
+      // click; the sheet renders in a portal outside the card link.
+      footer={
+        product.hasVariants ? (
           <VariantQuickSheet
             productId={product.id}
             slug={product.slug}
             gateSlot={item.priceSlot}
             className="mt-2"
           />
-        ) : null}
-      </div>
-    </Link>
+        ) : null
+      }
+    />
   );
 }

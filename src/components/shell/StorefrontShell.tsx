@@ -4,7 +4,7 @@ import * as React from "react"
 import { NoticeMarquee } from "@/components/storefront/NoticeMarquee";
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { CircleUserRound, Search } from "lucide-react"
+import { CircleUserRound, Clapperboard, Search } from "lucide-react"
 import { motion, useReducedMotion, type Transition } from "motion/react"
 
 import { cn } from "@/lib/utils"
@@ -36,6 +36,49 @@ const SNAPPY_SPRING: Transition = {
   stiffness: 520,
   damping: 38,
   mass: 0.7,
+}
+
+/**
+ * Layout metrics the rest of the storefront can size against. They are set
+ * as inline CSS custom properties on the shell's root wrapper, so any
+ * descendant (the reels feed, a sticky purchase bar, a bottom sheet) can read
+ * them with `var(--md-tab-h)` / `var(--md-header-h)` instead of hard-coding
+ * the numbers.
+ *
+ *  --md-tab-h     Height of the FIXED mobile bottom tab bar, EXCLUDING the
+ *                 safe-area inset. Anything that must sit above the bar on a
+ *                 phone uses `bottom: calc(var(--md-tab-h) + env(safe-area-inset-bottom))`.
+ *                 The bar is `md:hidden`, so treat it as 0 on md+ yourself.
+ *  --md-header-h  Height of the sticky header in its CONDENSED state (the
+ *                 state it is in whenever the page has scrolled), EXCLUDING
+ *                 the safe-area-top inset and the optional notice marquee.
+ *
+ * Keep these in step with the `h-12` / `min-h-14` classes below.
+ */
+export const SHELL_METRICS = {
+  tabBarHeight: "3.5rem",
+  condensedHeaderHeight: "3rem",
+} as const
+
+const SHELL_STYLE = {
+  "--md-tab-h": SHELL_METRICS.tabBarHeight,
+  "--md-header-h": SHELL_METRICS.condensedHeaderHeight,
+} as React.CSSProperties
+
+/** Shared look for every round icon button in the header action cluster. */
+const HEADER_ICON =
+  "relative inline-flex size-11 shrink-0 items-center md:size-10 justify-center rounded-full outline-none transition-[background-color,color,transform] duration-150 hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-90"
+const HEADER_ICON_ACTIVE = "bg-muted text-foreground"
+const HEADER_ICON_IDLE = "text-foreground/70 hover:text-foreground"
+
+function isReelsPath(pathname: string): boolean {
+  return pathname === "/reels" || pathname.startsWith("/reels/")
+}
+
+/** Active-route check for a storefront destination, looked up by href (never by index). */
+function isHrefActive(href: string, pathname: string): boolean {
+  const item = storefrontNav.find((entry) => entry.href === href)
+  return item ? isNavItemActive(item, pathname) : false
 }
 
 export interface StorefrontShellProps {
@@ -70,10 +113,12 @@ export interface StorefrontShellProps {
 /**
  * Storefront app shell (light surface).
  *
- * - Sticky header that condenses on scroll (logo + search / account actions).
- * - Mobile: fixed bottom tab bar with a spring-animated active indicator.
- * - Desktop: inline top nav instead of bottom tabs.
+ * - Sticky header that condenses on scroll (logo + search / reels / account
+ *   actions). Desktop adds inline nav pills with a sliding active indicator.
+ * - Mobile: fixed bottom tab bar (exactly the 5 `storefrontNav` items) with a
+ *   spring-animated active pill. Reels is an icon in the header, NOT a tab.
  * - Safe-area padding on both the header and the tab bar.
+ * - Publishes `--md-tab-h` / `--md-header-h` (see SHELL_METRICS).
  */
 export function StorefrontShell({
   children,
@@ -121,14 +166,36 @@ export function StorefrontShell({
     return () => window.removeEventListener("scroll", onScroll)
   }, [])
 
+  // Desktop affordance: ⌘K / Ctrl+K opens search from anywhere on the page.
+  // Ignored while typing in a field so it never hijacks a form.
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== "k" || !(e.metaKey || e.ctrlKey)) return
+      if (e.defaultPrevented) return
+      const target = e.target as HTMLElement | null
+      const tag = target?.tagName
+      if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return
+      e.preventDefault()
+      openSearch()
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [openSearch])
+
+  const reelsActive = isReelsPath(pathname)
+
   return (
-    <div className="flex min-h-dvh flex-col bg-background text-foreground">
+    <div
+      className="flex min-h-dvh flex-col bg-background text-foreground"
+      style={SHELL_STYLE}
+      data-shell="storefront"
+    >
       {topNotice ? <NoticeMarquee text={topNotice} /> : null}
       {/* ——— Sticky condensing header ——— */}
       <header
         className={cn(
-          "sticky top-0 z-40 border-b bg-background/90 pt-[env(safe-area-inset-top)] backdrop-blur supports-backdrop-filter:bg-background/75 transition-colors duration-200",
-          condensed ? "border-border shadow-xs" : "border-transparent"
+          "sticky top-0 z-40 bg-background/90 pt-[env(safe-area-inset-top)] backdrop-blur-xl supports-backdrop-filter:bg-background/75 transition-shadow duration-200",
+          condensed ? "shadow-[0_1px_0_0_var(--border)]" : "shadow-none"
         )}
       >
         <div
@@ -161,7 +228,7 @@ export function StorefrontShell({
               desktop (and a bottom tab on mobile), so listing it as a pill too
               would be a duplicate link. */}
           <nav aria-label="Primary" className="ml-6 hidden md:block">
-            <ul className="flex items-center gap-1">
+            <ul className="flex items-center gap-0.5">
               {storefrontNav
                 .filter((item) => item.href !== "/account")
                 .map((item) => {
@@ -173,21 +240,21 @@ export function StorefrontShell({
                       href={item.href}
                       aria-current={active ? "page" : undefined}
                       className={cn(
-                        "relative flex min-h-11 items-center rounded-full px-4 text-sm font-medium outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97]",
+                        "relative flex min-h-10 items-center rounded-full px-4 text-sm font-medium outline-none transition-colors duration-200 focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97]",
                         active
-                          ? "text-foreground"
-                          : "text-muted-foreground hover:text-foreground"
+                          ? "text-background"
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
                       )}
                     >
                       {active && (
                         <motion.span
                           layoutId="storefront-desktop-active"
                           transition={spring}
-                          className="absolute inset-1 rounded-full bg-muted"
+                          className="absolute inset-x-0 inset-y-0.5 rounded-full bg-foreground shadow-sm"
                           aria-hidden
                         />
                       )}
-                      <span className="relative">
+                      <span className="relative z-10">
                         {item.label}
                         <TabBadge
                           count={count}
@@ -202,9 +269,13 @@ export function StorefrontShell({
             </ul>
           </nav>
 
-          <div className="ml-auto flex items-center gap-0.5">
+          {/* Action cluster — every button is a round target, 44px on phones
+              (size-11) and size-10 from md, with a
+              hover surface. Order: theme (sm+), search, reels, wishlist,
+              cart, account. */}
+          <div className="ml-auto flex items-center gap-0.5 sm:gap-1">
             <ThemeToggle variant="compact" className="mr-1 hidden sm:inline-flex" />
-            <Tooltip content="Search">
+            <Tooltip content="Search (⌘K)">
               <button
                 type="button"
                 onClick={openSearch}
@@ -212,22 +283,26 @@ export function StorefrontShell({
                 aria-haspopup="dialog"
                 aria-expanded={searchOpen}
                 className={cn(
-                  "inline-flex size-11 items-center justify-center rounded-full outline-none transition-[background-color,color,transform] duration-150 hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-90",
-                  searchOpen || isNavItemActive(storefrontNav[2], pathname)
-                    ? "bg-muted text-foreground"
-                    : "text-foreground/70 hover:text-foreground",
+                  HEADER_ICON,
+                  searchOpen || isHrefActive("/search", pathname)
+                    ? HEADER_ICON_ACTIVE
+                    : HEADER_ICON_IDLE,
                 )}
               >
                 <Search className="size-5" aria-hidden />
               </button>
             </Tooltip>
+            {/* Reels entry point — an icon on ALL widths (it is not one of the
+                five bottom tabs). */}
+            <HeaderIconLink href="/reels" label="Reels" active={reelsActive}>
+              <Clapperboard className="size-5" aria-hidden />
+            </HeaderIconLink>
             {showWishlist ? (
               <WishlistBadge
                 initialCount={wishlistCount}
                 className={cn(
-                  "size-11",
-                  pathname.startsWith("/account/wishlist") &&
-                    "bg-muted text-foreground",
+                  "size-11 transition-[background-color,color,transform] active:scale-90 md:size-10",
+                  pathname.startsWith("/account/wishlist") && HEADER_ICON_ACTIVE,
                 )}
               />
             ) : null}
@@ -235,16 +310,15 @@ export function StorefrontShell({
               <CartBadge
                 initialCount={cartCount}
                 className={cn(
-                  "size-11",
-                  pathname.startsWith("/account/cart") &&
-                    "bg-muted text-foreground",
+                  "size-11 transition-[background-color,color,transform] active:scale-90 md:size-10",
+                  pathname.startsWith("/account/cart") && HEADER_ICON_ACTIVE,
                 )}
               />
             ) : null}
             <HeaderIconLink
               href="/account"
               label="Account"
-              active={isNavItemActive(storefrontNav[3], pathname)}
+              active={isHrefActive("/account", pathname)}
             >
               <span className="relative flex items-center justify-center">
                 <CircleUserRound className="size-5" aria-hidden />
@@ -262,10 +336,9 @@ export function StorefrontShell({
       <TrustStrip />
 
       {/* ——— Content ——— */}
-      {/* Bottom padding clears the FIXED mobile tab bar (~3.5rem + safe
-          area) — the clearance used to ride the footer wrapper, but the
-          footer is desktop-only now, so main owns it. */}
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:px-6 md:pb-12">
+      {/* Bottom padding clears the FIXED mobile tab bar (--md-tab-h + safe
+          area + breathing room) — the footer is desktop-only, so main owns it. */}
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-[calc(var(--md-tab-h)+1rem+env(safe-area-inset-bottom))] md:px-6 md:pb-12">
         {children}
       </main>
 
@@ -282,10 +355,10 @@ export function StorefrontShell({
           browser tab, which already has its own). */}
       <PullToRefresh />
 
-      {/* ——— Mobile bottom tab bar ——— */}
+      {/* ——— Mobile bottom tab bar ——— exactly the 5 storefrontNav items. */}
       <nav
         aria-label="Primary"
-        className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur supports-backdrop-filter:bg-background/85 md:hidden"
+        className="fixed inset-x-0 bottom-0 z-40 border-t border-foreground/8 bg-background/92 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl supports-backdrop-filter:bg-background/80 md:hidden"
       >
         <ul className="grid grid-cols-5">
           {storefrontNav.map((item) => {
@@ -298,31 +371,39 @@ export function StorefrontShell({
                   href={item.href}
                   aria-current={active ? "page" : undefined}
                   onClick={hapticTap}
-                  className="group relative flex min-h-14 flex-col items-center justify-center gap-1 outline-none focus-visible:bg-muted/60"
+                  className="group relative flex min-h-14 flex-col items-center justify-center gap-0.5 outline-none focus-visible:bg-muted/60"
                 >
-                  <span className="relative flex h-8 w-14 items-center justify-center transition-transform duration-150 ease-out group-active:scale-90">
+                  <span className="relative flex h-8 w-16 items-center justify-center">
                     {active && (
                       <motion.span
                         layoutId="storefront-tab-active"
                         transition={spring}
-                        className="absolute inset-0 rounded-full bg-primary/10"
+                        className="absolute inset-0 rounded-full bg-primary/12"
                         aria-hidden
                       />
                     )}
-                    <Icon
-                      className={cn(
-                        "relative size-5 transition-colors duration-150",
-                        active ? "text-primary" : "text-muted-foreground"
-                      )}
-                      strokeWidth={active ? 2.3 : 2}
-                      aria-hidden
-                    />
+                    <motion.span
+                      className="relative flex items-center justify-center transition-transform duration-150 ease-out group-active:scale-90"
+                      animate={{ scale: active ? 1.08 : 1 }}
+                      transition={spring}
+                    >
+                      <Icon
+                        className={cn(
+                          "size-5 transition-colors duration-150",
+                          active ? "text-primary" : "text-muted-foreground"
+                        )}
+                        strokeWidth={active ? 2.3 : 2}
+                        fill={active ? "currentColor" : "none"}
+                        fillOpacity={active ? 0.18 : 0}
+                        aria-hidden
+                      />
+                    </motion.span>
                     <TabBadge count={count} label={`${item.label} updates`} />
                   </span>
                   <span
                     className={cn(
-                      "text-[11px] leading-none font-medium transition-colors duration-150",
-                      active ? "text-primary" : "text-muted-foreground"
+                      "text-[11px] leading-none transition-colors duration-150",
+                      active ? "font-semibold text-primary" : "font-medium text-muted-foreground"
                     )}
                   >
                     {item.label}
@@ -367,10 +448,7 @@ function HeaderIconLink({
         href={href}
         aria-label={label}
         aria-current={active ? "page" : undefined}
-        className={cn(
-          "inline-flex size-11 items-center justify-center rounded-full outline-none transition-[background-color,color,transform] duration-150 hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-90",
-          active ? "bg-muted text-foreground" : "text-foreground/70 hover:text-foreground"
-        )}
+        className={cn(HEADER_ICON, active ? HEADER_ICON_ACTIVE : HEADER_ICON_IDLE)}
       >
         {children}
       </Link>

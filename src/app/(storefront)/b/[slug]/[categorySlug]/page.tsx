@@ -15,13 +15,12 @@ import { cartCountForViewer } from "@/server/services/cart";
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
 import { FadeUp } from "@/components/motion/primitives";
 import {
-  StorefrontListing,
   buildListingItems,
   type ListingItem,
   type LoadMoreResult,
 } from "@/components/storefront/listing";
 import { isObjectId } from "@/components/storefront/listing/filter-params";
-import { DiscoveryFilters } from "@/components/storefront/filters";
+import { DiscoveryListing } from "@/components/storefront/filters";
 import {
   loadFacetData,
   selectionToDiscoverParams,
@@ -174,21 +173,17 @@ export default async function BrandCategoryPage({
           The DAL's brandFacet deliberately ignores brandIds scoping (see its
           comment) because /search must keep sibling brands visible; on this
           page that behaviour would list the whole category's brands. */}
-      <DiscoveryFilters
+      <DiscoveryListing
         facets={{ ...facets, brand: { buckets: [] } }}
-        resultCount={firstPage.total}
-      >
-        <StorefrontListing
-          initialItems={items}
-          loadMore={loadMore}
-          initialNextCursor={firstPage.nextCursor}
-          canSeePrices={approved}
-          total={firstPage.total}
-          emptyTitle={`No ${brand.name} ${category.name} match`}
-          emptyDescription="Try clearing a filter, or check back as we add stock."
-          savedProductIds={wishlistState.savedProductIds}
-        />
-      </DiscoveryFilters>
+        initialItems={items}
+        loadMore={loadMore}
+        initialNextCursor={firstPage.nextCursor}
+        canSeePrices={approved}
+        total={firstPage.total}
+        emptyTitle={`No ${brand.name} ${category.name} match`}
+        emptyDescription="Try clearing a filter, or check back as we add stock."
+        savedProductIds={wishlistState.savedProductIds}
+      />
     </StorefrontShell>
   );
 }

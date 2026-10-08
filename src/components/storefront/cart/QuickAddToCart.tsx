@@ -13,7 +13,7 @@ import { minOrderableQty } from "@/lib/quantity";
 import { addToCartAction } from "@/server/actions/cart";
 import { broadcastCartCount } from "./CartBadge";
 import { setCartLineQty } from "./cart-lines-store";
-import { hapticSuccess } from "@/lib/haptics";
+import { hapticSuccess, hapticTap } from "@/lib/haptics";
 
 /**
  * QuickAddToCart — a compact, single-tap add-to-cart control for product cards.
@@ -71,6 +71,7 @@ export function QuickAddToCart({
     e.preventDefault();
     e.stopPropagation();
     if (pending) return;
+    hapticTap();
 
     startTransition(async () => {
       const result = await addToCartAction({
@@ -126,20 +127,24 @@ export function QuickAddToCart({
         whileTap={reduced || pending ? undefined : { scale: 0.9 }}
         transition={springs.snappy}
         className={cn(
-          "inline-flex size-8 items-center justify-center rounded-full",
-          "bg-primary text-primary-foreground shadow-sm outline-none",
-          "transition-[background-color,transform] hover:bg-primary/90",
+          // 36px on phones (a comfortable thumb target inside a card), 32px
+          // from md: up where a pointer is precise.
+          "inline-flex size-9 items-center justify-center rounded-full md:size-8",
+          "shadow-sm outline-none transition-[background-color,color,transform,box-shadow]",
           "focus-visible:ring-3 focus-visible:ring-ring/50",
           "disabled:opacity-70",
+          justAdded
+            ? "bg-success text-success-foreground"
+            : "bg-foreground text-background hover:bg-foreground/90 hover:shadow-md",
           className,
         )}
       >
         {pending ? (
           <Loader2 aria-hidden className="size-4 animate-spin" />
         ) : justAdded ? (
-          <Check aria-hidden className="size-4" />
+          <Check aria-hidden className="size-4" strokeWidth={2.5} />
         ) : (
-          <Plus aria-hidden className="size-4" />
+          <Plus aria-hidden className="size-4" strokeWidth={2.5} />
         )}
       </motion.button>
     </Tooltip>

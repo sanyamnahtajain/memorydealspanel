@@ -30,8 +30,12 @@ export interface HeartButtonProps {
   productId: string;
   /** Server-hydrated initial saved state (from `wishlistProductIds`). */
   initialSaved?: boolean;
-  /** Compact hearts sit on dense cards; default is the roomier product-page size. */
-  size?: "default" | "compact";
+  /**
+   * Compact hearts sit on dense rows (table / compact list); default is the
+   * roomier product-page size; "card" floats over a listing-card image —
+   * a 44px target on phones, settling to 36px from md where a pointer aims.
+   */
+  size?: "default" | "compact" | "card";
   /** Notified after a successful toggle so parents can update counts/lists. */
   onToggled?: (saved: boolean) => void;
   className?: string;
@@ -43,6 +47,7 @@ const SIZE_STYLES: Record<
 > = {
   default: { button: "size-9", icon: "size-5" },
   compact: { button: "size-7", icon: "size-4" },
+  card: { button: "size-11 md:size-9", icon: "size-5" },
 };
 
 export function HeartButton({

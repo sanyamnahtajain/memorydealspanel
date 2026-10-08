@@ -1,4 +1,6 @@
 export { DiscoveryFilters } from "./DiscoveryFilters";
+export type { DiscoveryFilterSlots } from "./DiscoveryFilters";
+export { DiscoveryListing } from "./DiscoveryListing";
 export { ActiveFilterChips } from "./ActiveFilterChips";
 export { BrandFacet } from "./BrandFacet";
 export { SpecFacet } from "./SpecFacet";

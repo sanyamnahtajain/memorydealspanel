@@ -157,7 +157,7 @@ export function ListingFilters({ contextFacet, stockCounts }: ListingFiltersProp
           render={
             <button
               type="button"
-              className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-full border border-border bg-card px-4 text-sm font-medium text-foreground shadow-sm outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97]"
+              className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full bg-card px-4 text-sm font-medium text-foreground shadow-sm ring-1 ring-foreground/10 outline-none transition-[background-color,transform] hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97]"
             >
               <SlidersHorizontal className="size-4" aria-hidden />
               Filters
@@ -256,10 +256,10 @@ export function ListingFilters({ contextFacet, stockCounts }: ListingFiltersProp
                   )
                 }
                 className={cn(
-                  "inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-full border px-4 text-sm font-medium outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97] disabled:opacity-60",
+                  "inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full px-4 text-sm font-medium ring-1 outline-none transition-[background-color,color,transform] focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97] disabled:opacity-60",
                   active
-                    ? "border-primary bg-primary/10 text-primary"
-                    : "border-border bg-card text-foreground shadow-sm hover:bg-muted",
+                    ? "bg-foreground text-background ring-foreground"
+                    : "bg-card text-foreground shadow-sm ring-foreground/10 hover:bg-muted",
                 )}
               >
                 {bucket.label}
@@ -288,7 +288,7 @@ function FacetRowGroup({
       <legend className="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
         {title}
       </legend>
-      <div className="flex flex-col overflow-hidden rounded-xl border border-border">
+      <div className="flex flex-col overflow-hidden rounded-2xl ring-1 ring-foreground/10">
         {children}
       </div>
     </fieldset>

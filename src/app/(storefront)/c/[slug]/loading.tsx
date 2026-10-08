@@ -1,30 +1,23 @@
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
-import { Shimmer, SkeletonProductCard } from "@/components/common";
 import { LoadingWatchdog } from "@/components/common/LoadingWatchdog";
+import {
+  SkeletonFilterBar,
+  SkeletonPageTitle,
+  SkeletonProductGrid,
+} from "../../_skeletons/parts";
 
 /**
- * Fallback for a storefront category page: breadcrumb + title, then a grid of
- * skeleton product cards.
+ * Fallback for a storefront category page: back link + title + subtitle, the
+ * filter/sort bar, then the product grid in the listing's column counts.
  */
 export default function CategoryLoading() {
   return (
     <StorefrontShell>
-      <div className="space-y-6" aria-busy>
+      <div className="space-y-5" aria-busy>
         <LoadingWatchdog label="Loading category…" />
-
-        {/* Breadcrumb + heading */}
-        <div className="mt-2 space-y-3">
-          <Shimmer className="h-4 w-40" />
-          <Shimmer className="h-8 w-56" />
-          <Shimmer className="h-4 w-72" />
-        </div>
-
-        {/* Product grid */}
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          {Array.from({ length: 9 }, (_, i) => (
-            <SkeletonProductCard key={i} />
-          ))}
-        </div>
+        <SkeletonPageTitle />
+        <SkeletonFilterBar />
+        <SkeletonProductGrid count={8} />
       </div>
     </StorefrontShell>
   );

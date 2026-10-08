@@ -17,6 +17,7 @@ import * as React from "react";
 import { ArrowUpDown, Check } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { hapticTap } from "@/lib/haptics";
 import { useIsMobile } from "@/components/common/use-is-mobile";
 import {
   Sheet,
@@ -103,7 +104,7 @@ function MobileControls({ sort, onSort, canSortPrice }: ListingControlsProps) {
         render={
           <button
             type="button"
-            className="inline-flex min-h-10 items-center gap-2 rounded-full border border-border bg-card px-4 text-sm font-medium text-foreground shadow-sm outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97]"
+            className="inline-flex min-h-11 items-center gap-2 rounded-full bg-card px-4 text-sm font-medium text-foreground shadow-sm ring-1 ring-foreground/10 outline-none transition-[background-color,transform] hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97]"
           >
             <ArrowUpDown className="size-4" aria-hidden />
             Sort
@@ -123,7 +124,7 @@ function MobileControls({ sort, onSort, canSortPrice }: ListingControlsProps) {
             <legend className="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
               Sort by
             </legend>
-            <div className="flex flex-col overflow-hidden rounded-xl border border-border">
+            <div className="flex flex-col overflow-hidden rounded-2xl ring-1 ring-foreground/10">
               {options.map((key) => {
                 const active = key === sort;
                 return (
@@ -131,7 +132,10 @@ function MobileControls({ sort, onSort, canSortPrice }: ListingControlsProps) {
                     key={key}
                     type="button"
                     aria-pressed={active}
-                    onClick={() => onSort(key)}
+                    onClick={() => {
+                      hapticTap();
+                      onSort(key);
+                    }}
                     className={cn(
                       "flex min-h-11 items-center justify-between border-b border-border px-4 text-sm outline-none transition-colors last:border-b-0 focus-visible:bg-muted focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/50",
                       active

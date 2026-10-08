@@ -16,6 +16,7 @@ import {
   type Variants,
 } from "motion/react";
 import { cn } from "@/lib/utils";
+import { hapticTap } from "@/lib/haptics";
 import { durations, easeOut, springs, stagger } from "./tokens";
 import { useEntranceInitial } from "./useEntrance";
 
@@ -235,3 +236,49 @@ export function Collapse({ open, children, className }: CollapseProps) {
     </motion.div>
   );
 }
+
+/* ------------------------------------------------------------------ */
+/* PressScale                                                          */
+/* ------------------------------------------------------------------ */
+
+interface PressScaleProps extends Omit<React.ComponentProps<typeof motion.button>, "children"> {
+  children: React.ReactNode;
+  /** Scale applied while pressed. */
+  pressScale?: number;
+  /** Scale applied on hover (pointer devices only — ignored on touch). */
+  hoverScale?: number;
+  /** Fire a short haptic on press (installed app, Android). */
+  haptic?: boolean;
+}
+
+/**
+ * A `<button>` with spring press feedback — the primary-action press used by
+ * the PWA surfaces (install sheet, pull-to-refresh, search launcher). Unlike
+ * {@link ScaleTap} it IS the interactive element, so the focus ring, aria and
+ * click handler land on one node. Reduced motion disables the scale and the
+ * buzz; the button keeps working.
+ */
+export const PressScale = React.forwardRef<HTMLButtonElement, PressScaleProps>(
+  function PressScale(
+    { children, pressScale = 0.96, hoverScale, haptic = false, onPointerDown, className, ...rest },
+    ref,
+  ) {
+    const reduced = useReducedMotion();
+    return (
+      <motion.button
+        ref={ref}
+        className={className}
+        whileTap={reduced ? undefined : { scale: pressScale }}
+        whileHover={reduced || hoverScale === undefined ? undefined : { scale: hoverScale }}
+        transition={springs.snappy}
+        onPointerDown={(e) => {
+          if (haptic) hapticTap();
+          onPointerDown?.(e);
+        }}
+        {...rest}
+      >
+        {children}
+      </motion.button>
+    );
+  },
+);

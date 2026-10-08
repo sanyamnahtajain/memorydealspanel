@@ -15,7 +15,9 @@ import type { PublicProduct, PricedProduct } from "@/server/dto/product";
 import type { StockStatus } from "@/lib/schemas/shared";
 import { APP_NAME } from "@/lib/constants";
 import { formatPaise } from "@/lib/money";
+import { titleCase } from "@/lib/display-case";
 import { StorefrontShell } from "@/components/shell/StorefrontShell";
+import { SectionHeading } from "@/components/storefront/home/SectionHeading";
 import { StatusChip, type StatusChipVariant } from "@/components/common";
 import { FadeUp } from "@/components/motion/primitives";
 import { ProductGallery } from "@/components/storefront/ProductGallery";
@@ -273,30 +275,31 @@ export default async function ProductDetailPage({ params }: PageParams) {
   // type, then ONE quiet line with the SKU and the stock chip. The wishlist
   // heart now floats over the gallery (see `galleryHeart`), not up here.
   const heroHeader = (
-    <header className="space-y-2.5">
+    <header className="space-y-3">
       {product.brandRef ? (
         <div>
           <BrandBadge
             name={product.brandRef.name}
             slug={product.brandRef.slug}
             size="md"
+            className="min-h-8 rounded-full border-0 bg-muted/50 px-3 text-[11px] tracking-[0.14em] ring-1 ring-foreground/5"
           />
         </div>
       ) : product.brand ? (
-        <span className="text-sm font-medium tracking-wide text-muted-foreground uppercase">
+        <span className="text-[11px] font-medium tracking-[0.18em] text-muted-foreground uppercase">
           {product.brand}
         </span>
       ) : null}
-      <h1 className="font-heading text-[1.65rem] leading-[1.15] font-semibold tracking-tight text-balance sm:text-3xl lg:text-4xl">
+      <h1 className="font-heading text-[1.75rem] leading-[1.1] font-bold tracking-tight text-balance sm:text-4xl lg:text-[2.75rem]">
         {product.name}
       </h1>
-      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <StatusChip
           variant={STOCK_CHIP[product.stockStatus]}
           label={STOCK_LABEL[product.stockStatus]}
         />
         {product.sku ? (
-          <span className="text-xs text-muted-foreground">
+          <span className="font-tabular text-xs text-muted-foreground">
             SKU {product.sku}
           </span>
         ) : null}
@@ -307,7 +310,7 @@ export default async function ProductDetailPage({ params }: PageParams) {
   // Save to wishlist — floats over the gallery's corner. Carries no price;
   // prompts login for anon.
   const galleryHeart = (
-    <span className="inline-flex rounded-full bg-background/90 shadow-md ring-1 ring-foreground/10 backdrop-blur-sm">
+    <span className="inline-flex rounded-full bg-background/90 shadow-md ring-1 ring-foreground/10 backdrop-blur-sm transition-transform active:scale-95">
       <HeartButton
         productId={product.id}
         initialSaved={initialSaved}
@@ -468,7 +471,7 @@ export default async function ProductDetailPage({ params }: PageParams) {
                 <section
                   id={PRICE_PANEL_ID}
                   aria-label="Price and ordering"
-                  className="rounded-3xl bg-card p-4 shadow-sm ring-1 ring-foreground/5 sm:p-6"
+                  className="rounded-3xl bg-card p-4 shadow-[0_1px_2px_rgb(0_0_0/0.04),0_12px_40px_-24px_rgb(0_0_0/0.25)] ring-1 ring-foreground/5 sm:p-6"
                 >
                   <ProductPriceArea
                     googleGateHref={googleGateHref}
@@ -481,7 +484,7 @@ export default async function ProductDetailPage({ params }: PageParams) {
                   {/* MOQ / pack facts as small labelled pills (same data the
                       old sentence carried). */}
                   {product.moq || effectivePack ? (
-                    <div className="mt-4 flex flex-wrap gap-2">
+                    <div className="mt-5 flex flex-wrap gap-2">
                       {product.moq ? (
                         <InfoPill
                           icon={<BoxGlyph />}
@@ -499,7 +502,7 @@ export default async function ProductDetailPage({ params }: PageParams) {
                     </div>
                   ) : null}
 
-                  <div className="mt-4 flex flex-col gap-3">
+                  <div className="mt-5 flex flex-col gap-3 [&_[data-slot=button]]:rounded-full">
                     {/* Add to cart — approved-only. The button self-gates: an
                         unapproved/anon viewer sees a locked CTA that routes to
                         login/request-access; OUT_OF_STOCK is blocked. It sends
@@ -566,13 +569,21 @@ export default async function ProductDetailPage({ params }: PageParams) {
 
         {related.length > 0 ? (
           <FadeUp delay={0.1}>
-            <section className="mt-12" aria-labelledby="related-heading">
-              <h2
+            <section className="mt-10 md:mt-16" aria-labelledby="related-heading">
+              {/* The house section header (shared with home). Category names
+                  are typed in mixed casing in the master data; titleCase is
+                  display-only. */}
+              <SectionHeading
                 id="related-heading"
-                className="mb-4 font-heading text-lg font-semibold tracking-tight sm:text-xl"
-              >
-                Shops also ordered
-              </h2>
+                eyebrow="Often bought together"
+                title="Shops also ordered"
+                subtitle={
+                  category
+                    ? `From orders that included this product, and more in ${titleCase(category.name)}.`
+                    : undefined
+                }
+                seeAllHref={category ? `/c/${category.slug}` : undefined}
+              />
               <RelatedRail items={related} bleed />
             </section>
           </FadeUp>
@@ -689,9 +700,11 @@ function DeliveryNote({
   return (
     <section
       aria-label="Delivery"
-      className="flex items-start gap-3 rounded-2xl bg-card p-4 ring-1 ring-foreground/5 sm:p-5"
+      className="flex items-start gap-3 rounded-2xl bg-card p-4 shadow-sm ring-1 ring-foreground/5 sm:p-5"
     >
-      <TruckGlyph className="mt-0.5 size-6 shrink-0" />
+      <span className="grid size-10 shrink-0 place-items-center rounded-full bg-muted/60 ring-1 ring-foreground/5">
+        <TruckGlyph className="size-5" />
+      </span>
       <div className="min-w-0">
         <p className="text-sm font-semibold text-foreground">{copy.title}</p>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">

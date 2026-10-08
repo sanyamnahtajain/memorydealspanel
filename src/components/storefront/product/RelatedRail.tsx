@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * RelatedRail — a horizontal "More in this category" rail on the product
+ * RelatedRail — a horizontal "Shops also ordered" rail on the product
  * detail page.
  *
  * PRICE-GATE CONTRACT (identical to ProductCardGrid): this client component
@@ -12,25 +12,20 @@
  * chip and no amount ever crosses into this client component.
  *
  * The rail is an Embla carousel (swipe on touch, arrow buttons on pointer
- * devices) with snap points per card. It reuses the same shared-element
- * `view-transition-name` seam as the grid card so navigating into a related
- * product morphs its thumbnail into the next page's hero.
+ * devices) with snap points per card and the next card peeking on phones. It
+ * renders the shared {@link ProductCard}, so a related product morphs its
+ * thumbnail into the next page's hero through the same view-transition seam
+ * as the listing grid.
  */
 
 import * as React from "react";
-import Link from "next/link";
-import Image from "next/image";
 import useEmblaCarousel from "embla-carousel-react";
 import { useReducedMotion } from "motion/react";
-import { ChevronLeft, ChevronRight, ImageOff } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import type { PublicProduct } from "@/server/dto/product";
-import {
-  GALLERY_HERO_CLASS,
-  galleryTransitionName,
-} from "@/components/storefront/ProductGallery";
-import { BrandBadge } from "@/components/storefront/BrandBadge";
 import { cn } from "@/lib/utils";
+import { ProductCard } from "./ProductCard";
 
 export interface RelatedRailItem {
   product: PublicProduct;
@@ -97,9 +92,15 @@ export function RelatedRail({ items, bleed = false, className }: RelatedRailProp
           {items.map((item) => (
             <li
               key={item.product.id}
-              className="min-w-0 shrink-0 grow-0 basis-[45%] sm:basis-[32%] lg:basis-[23%]"
+              // 42% on phones leaves the third card peeking in from the edge.
+              className="min-w-0 shrink-0 grow-0 basis-[42%] sm:basis-[32%] lg:basis-[23%]"
             >
-              <RelatedCard item={item} />
+              <ProductCard
+                product={item.product}
+                priceSlot={item.priceSlot}
+                showSnippet={false}
+                sizes="(min-width: 1024px) 22vw, (min-width: 640px) 30vw, 42vw"
+              />
             </li>
           ))}
         </ul>
@@ -123,61 +124,6 @@ export function RelatedRail({ items, bleed = false, className }: RelatedRailProp
   );
 }
 
-function primaryImage(product: PublicProduct) {
-  if (product.images.length === 0) return null;
-  return (
-    product.images.find((img) => img.isPrimary) ??
-    [...product.images].sort((a, b) => a.sortOrder - b.sortOrder)[0] ??
-    null
-  );
-}
-
-function RelatedCard({ item }: { item: RelatedRailItem }) {
-  const { product } = item;
-  const image = primaryImage(product);
-
-  return (
-    <Link
-      href={`/p/${product.slug}`}
-      className="group flex h-full flex-col overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm outline-none transition-[box-shadow,transform] hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.98]"
-      prefetch={false}>
-      <div className="relative aspect-square w-full overflow-hidden bg-muted">
-        {image ? (
-          <Image
-            src={image.thumbUrl ?? image.url}
-            alt={product.name}
-            fill
-            sizes="(min-width: 1024px) 22vw, (min-width: 640px) 30vw, 45vw"
-            className={`${GALLERY_HERO_CLASS} object-cover transition-transform duration-300 ease-out group-hover:scale-105`}
-            style={{ viewTransitionName: galleryTransitionName(product.id) }}
-          />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center text-muted-foreground">
-            <ImageOff className="size-7" aria-hidden />
-          </div>
-        )}
-      </div>
-      <div className="flex flex-1 flex-col gap-1 p-3">
-        {product.brandRef ? (
-          <BrandBadge
-            name={product.brandRef.name}
-            slug={product.brandRef.slug}
-            asLink={false}
-          />
-        ) : product.brand ? (
-          <span className="text-[0.7rem] font-medium tracking-wide text-muted-foreground uppercase">
-            {product.brand}
-          </span>
-        ) : null}
-        <h3 className="line-clamp-2 text-sm font-semibold text-foreground">
-          {product.name}
-        </h3>
-        <div className="mt-auto pt-2">{item.priceSlot}</div>
-      </div>
-    </Link>
-  );
-}
-
 interface RailArrowProps {
   direction: "prev" | "next";
   disabled: boolean;
@@ -194,8 +140,8 @@ function RailArrow({ direction, disabled, onClick }: RailArrowProps) {
       disabled={disabled}
       aria-label={isPrev ? "Scroll to previous products" : "Scroll to more products"}
       className={cn(
-        "absolute top-[38%] hidden size-9 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-background/90 text-foreground shadow-sm backdrop-blur transition-opacity hover:bg-background disabled:pointer-events-none disabled:opacity-0 md:flex",
-        isPrev ? "-left-3" : "-right-3",
+        "absolute top-[38%] hidden size-10 -translate-y-1/2 items-center justify-center rounded-full bg-background/95 text-foreground shadow-md ring-1 ring-foreground/10 backdrop-blur transition-[opacity,transform] hover:bg-background active:scale-95 disabled:pointer-events-none disabled:opacity-0 md:flex",
+        isPrev ? "-left-4" : "-right-4",
       )}
     >
       <Icon className="size-5" aria-hidden />
