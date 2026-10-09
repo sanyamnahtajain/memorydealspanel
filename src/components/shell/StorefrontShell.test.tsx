@@ -34,6 +34,7 @@ vi.mock("@/components/storefront/cart/CartBadge", () => ({
 
 import { StorefrontShell, SHELL_METRICS } from "./StorefrontShell";
 import { storefrontNav } from "./nav";
+import { ReelsAvailabilityProvider } from "@/components/storefront/reels/ReelsAvailability";
 
 beforeAll(() => {
   Object.defineProperty(window, "matchMedia", {
@@ -72,15 +73,26 @@ describe("StorefrontShell", () => {
     expect(tabs.some((t) => t.getAttribute("href") === "/reels")).toBe(false);
   });
 
-  it("has a Reels entry point in the header action group", () => {
+  it("shows the Reels header entry point only when a reel is live", () => {
+    const { unmount } = render(
+      <ReelsAvailabilityProvider available>
+        <StorefrontShell>
+          <p>content</p>
+        </StorefrontShell>
+      </ReelsAvailabilityProvider>,
+    );
+    const reels = screen.getByRole("link", { name: "Reels" });
+    expect(reels).toHaveAttribute("href", "/reels");
+    expect(reels.closest("header")).not.toBeNull();
+    unmount();
+
+    // No live reel (and no provider at all) → no icon pointing at an empty feed.
     render(
       <StorefrontShell>
         <p>content</p>
       </StorefrontShell>,
     );
-    const reels = screen.getByRole("link", { name: "Reels" });
-    expect(reels).toHaveAttribute("href", "/reels");
-    expect(reels.closest("header")).not.toBeNull();
+    expect(screen.queryByRole("link", { name: "Reels" })).toBeNull();
   });
 
   it("publishes --md-tab-h and --md-header-h on its root wrapper", () => {

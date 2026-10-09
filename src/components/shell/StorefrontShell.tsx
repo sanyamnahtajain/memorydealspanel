@@ -12,6 +12,7 @@ import { Tooltip } from "@/components/ui/tooltip"
 import { ThemeToggle } from "@/components/theme/ThemeToggle"
 import { TabBadge } from "@/components/shell/TabBadge"
 import { Logo } from "@/components/brand/Logo"
+import { useReelsAvailable } from "@/components/storefront/reels/ReelsAvailability"
 import { IndependenceBadge } from "@/components/brand/IndependenceBadge"
 import { StorefrontFooter } from "@/components/shell/StorefrontFooter"
 import { AccessStatusBanner } from "@/components/access/AccessStatusBanner"
@@ -183,6 +184,7 @@ export function StorefrontShell({
   }, [openSearch])
 
   const reelsActive = isReelsPath(pathname)
+  const reelsAvailable = useReelsAvailable()
 
   return (
     <div
@@ -293,10 +295,14 @@ export function StorefrontShell({
               </button>
             </Tooltip>
             {/* Reels entry point — an icon on ALL widths (it is not one of the
-                five bottom tabs). */}
-            <HeaderIconLink href="/reels" label="Reels" active={reelsActive}>
-              <Clapperboard className="size-5" aria-hidden />
-            </HeaderIconLink>
+                five bottom tabs). Hidden until the owner has at least one live
+                reel (decided server-side in the storefront layout), so nobody
+                is sent to an empty feed. */}
+            {reelsAvailable ? (
+              <HeaderIconLink href="/reels" label="Reels" active={reelsActive}>
+                <Clapperboard className="size-5" aria-hidden />
+              </HeaderIconLink>
+            ) : null}
             {showWishlist ? (
               <WishlistBadge
                 initialCount={wishlistCount}
