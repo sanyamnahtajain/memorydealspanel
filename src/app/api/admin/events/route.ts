@@ -34,6 +34,8 @@ export const dynamic = "force-dynamic";
  * and the Last-Event-ID resume below now makes those lossless anyway.
  */
 export const maxDuration = 60;
+/** Close cleanly before the host's maxDuration kill (see the timer below). */
+const GRACEFUL_CLOSE_MS = (maxDuration - 5) * 1000;
 
 const encoder = new TextEncoder();
 
@@ -126,12 +128,20 @@ export async function GET(request: Request): Promise<Response> {
         closed = true;
         clearInterval(poll);
         clearInterval(heartbeat);
+        clearTimeout(graceful);
         try {
           controller.close();
         } catch {
           /* already closed */
         }
       };
+      // End the stream OURSELVES a few seconds before the platform would.
+      // A stream killed at maxDuration is logged as a timed-out invocation
+      // (every open admin tab produced one per minute — the whole "2% timeout
+      // rate" on the dashboard), while a stream we close is a clean 200; the
+      // browser reconnects either way and resumes from Last-Event-ID.
+      const graceful = setTimeout(cleanup, GRACEFUL_CLOSE_MS);
+
       request.signal.addEventListener("abort", cleanup, { once: true });
     },
     cancel() {
