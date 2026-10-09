@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { resetSwrCache } from "@/server/cache/swr";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/server/db";
@@ -90,6 +91,9 @@ function revalidateProductViews(id?: string): void {
   // and rebuild per request. Revalidating just "/" (a page, not the whole
   // layout tree) keeps that fresh without busting the entire app cache on
   // every single field save — the grid fires one of these per edited cell.
+  // The home shell memoises its catalogue bundle in process (see
+  // src/app/(storefront)/page.tsx); drop it so the change shows at once.
+  resetSwrCache("home-data");
   revalidatePath("/");
 }
 

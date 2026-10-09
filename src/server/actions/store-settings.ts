@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { resetSwrCache } from "@/server/cache/swr";
 import { z } from "zod";
 
 import { PERMISSIONS } from "@/lib/permissions";
@@ -162,7 +163,10 @@ export async function saveMaintenanceAction(
     });
 
     revalidatePath(SETTINGS_PATH);
-    revalidatePath("/");
+    // The home shell memoises its catalogue bundle in process (see
+  // src/app/(storefront)/page.tsx); drop it so the change shows at once.
+  resetSwrCache("home-data");
+  revalidatePath("/");
     return { ok: true };
   } catch (error) {
     if (isForbiddenError(error)) {

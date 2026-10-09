@@ -1,6 +1,7 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
+import { resetSwrCache } from "@/server/cache/swr";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
@@ -59,6 +60,9 @@ async function currentActor(): Promise<{ actorId: string }> {
 /** Home is ISR-cached; a banner change must reach it without waiting out the TTL. */
 function revalidateBannerSurfaces(): void {
   revalidatePath("/admin/banners");
+  // The home shell memoises its catalogue bundle in process (see
+  // src/app/(storefront)/page.tsx); drop it so the change shows at once.
+  resetSwrCache("home-data");
   revalidatePath("/");
 }
 

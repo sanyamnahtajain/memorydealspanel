@@ -26,6 +26,7 @@ import {
 } from "@/components/storefront/home/LivePriceSlot";
 import { BannerCarousel } from "@/components/storefront/home/BannerCarousel";
 import { listLiveBanners } from "@/server/services/banners";
+import { swrCached } from "@/server/cache/swr";
 import { BuyAgainRail } from "@/components/storefront/home/BuyAgainRail";
 import { LastOrderCard } from "@/components/storefront/home/LastOrderCard";
 import { APP_NAME } from "@/lib/constants";
@@ -53,27 +54,61 @@ export const revalidate = 300;
 const FEATURED_LIMIT = 8;
 const BEST_SELLER_LIMIT = 8;
 
-export default async function HomePage() {
+/**
+ * Everything the home shell reads, as ONE price-free bundle. Every read here
+ * is for the ANONYMOUS viewer and identical for every visitor, so the bundle
+ * is memoised in process (stale-while-revalidate, 3 minutes — the same
+ * freshness the page's ISR interval promised before the CSP nonce made every
+ * route per-request). A warm instance now answers home from memory in
+ * milliseconds instead of running six catalogue queries per visit; a cold
+ * one still computes, and a compute that overruns the budget renders the
+ * empty shell rather than hanging the visitor.
+ */
+interface HomeData {
+  categories: Awaited<ReturnType<typeof listActive>>;
+  brands: Awaited<ReturnType<typeof listActivePublicBrands>>;
+  featured: Awaited<ReturnType<typeof listForViewer>>;
+  bestSellers: Awaited<ReturnType<typeof listByIdsForViewer>>;
+  heroBanners: Awaited<ReturnType<typeof listLiveBanners>>;
+}
+
+const EMPTY_HOME: HomeData = { categories: [], brands: [], featured: [], bestSellers: [], heroBanners: [] };
+
+async function computeHomeData(): Promise<HomeData> {
   const [categories, brands, featured, bestSellerIds, heroBanners] =
     await Promise.all([
-    listActive(),
-    listActivePublicBrands(),
-    listForViewer(ANON_VIEWER, { take: FEATURED_LIMIT }),
-    bestSellerProductIds(BEST_SELLER_LIMIT),
-    // Global and price-free, so it caches with the ISR shell like every other
-    // rail here. Fails to an empty list rather than throwing (see the service).
-    listLiveBanners("HOME_HERO"),
-  ]);
+      listActive(),
+      listActivePublicBrands(),
+      listForViewer(ANON_VIEWER, { take: FEATURED_LIMIT }),
+      bestSellerProductIds(BEST_SELLER_LIMIT),
+      // Global and price-free. Fails to an empty list rather than throwing.
+      listLiveBanners("HOME_HERO"),
+    ]);
 
   // Best sellers — the shop's recency-weighted top movers, resolved through
-  // the gated DAL read (ranking preserved, hidden products drop out). Safe to
-  // render INSIDE the ISR shell: the ranking is GLOBAL (built from all orders,
-  // not the viewer's), the slots are ANON locked pills, and the section is
-  // therefore byte-identical for every visitor sharing a cache entry.
+  // the gated DAL read (ranking preserved, hidden products drop out). The
+  // ranking is GLOBAL (built from all orders, not the viewer's), the slots
+  // are ANON locked pills, so the section is byte-identical for everyone.
   const bestSellers =
     bestSellerIds.length > 0
       ? await listByIdsForViewer(ANON_VIEWER, bestSellerIds)
       : [];
+
+  return { categories, brands, featured, bestSellers, heroBanners };
+}
+
+function loadHomeData(): Promise<HomeData> {
+  return swrCached<HomeData>("home-data", computeHomeData, {
+    ttlMs: 180_000,
+    coldBudgetMs: 8_000,
+    fallback: EMPTY_HOME,
+    label: "home data",
+  });
+}
+
+export default async function HomePage() {
+  const { categories, brands, featured, bestSellers, heroBanners } =
+    await loadHomeData();
 
   const bestSellerItems: ProductCardItem[] = bestSellers.map((product) => ({
     product,
