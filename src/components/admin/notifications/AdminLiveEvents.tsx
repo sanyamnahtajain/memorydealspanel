@@ -17,7 +17,11 @@ import {
 } from "lucide-react";
 
 import { formatPaise } from "@/components/common/PricePill";
-import { ADMIN_EVENT_NAME, type AdminEventDTO } from "@/lib/admin-events";
+import {
+  ADMIN_EVENTS_CLIENT_POLL_MS,
+  type AdminEventDTO,
+  type AdminEventsPage,
+} from "@/lib/admin-events";
 import {
   installAudioUnlockListeners,
   startLoopingTune,
@@ -30,8 +34,9 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 
 /**
- * Live admin events (the "socket" client): one EventSource to
- * /api/admin/events for the whole panel.
+ * Live admin events: one 15-second poll of /api/admin/events for the whole
+ * panel while the tab is visible, nothing while it is hidden. (It was an
+ * EventSource; see the route for why a poll costs a fraction as much.)
  *
  * ZOMATO-PANEL BEHAVIOUR (owner request): an order / access request takes over
  * the WHOLE SCREEN — no backdrop, no auto-dismiss — and a LOUD ring loops the
@@ -254,25 +259,20 @@ export function AdminLiveEvents() {
   const [queue, setQueue] = React.useState<AdminEventDTO[]>([]);
   const current = queue[0] ?? null;
 
-  // Last event this tab actually saw. Carried by hand on reopen: a fresh
-  // EventSource does NOT send the browser's automatic Last-Event-ID header,
-  // so without this a hidden tab would miss whatever arrived while it slept.
-  const lastEventIdRef = React.useRef<string | null>(null);
+  // Newest event this tab has seen — the cursor the next poll asks from.
+  // Carried across hide/show so a tab that slept catches up on its first
+  // tick back (the route bounds the resume window to ten minutes).
+  const cursorRef = React.useRef<string | null>(null);
   /** Pending coalesced router.refresh() — see the call site for why. */
   const refreshTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   React.useEffect(() => {
     installAudioUnlockListeners();
-    let source: EventSource | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let inflight = false;
+    let stopped = false;
 
-    const onEvent = (raw: MessageEvent) => {
-      lastEventIdRef.current = raw.lastEventId || lastEventIdRef.current;
-      let event: AdminEventDTO;
-      try {
-        event = JSON.parse(raw.data as string) as AdminEventDTO;
-      } catch {
-        return;
-      }
+    const handle = (event: AdminEventDTO) => {
       const meta = metaFor(event.type);
       if (meta.alert === "takeover") {
         setQueue((prev) =>
@@ -288,53 +288,69 @@ export function AdminLiveEvents() {
           action: { label: meta.actionLabel, onClick: () => router.push(meta.href) },
         });
       }
-      // Refresh server components so badges + queues update live — but ONCE
-      // per burst. Every refresh re-renders the whole admin page on the
-      // server (every admin route is force-dynamic), so a busy minute used to
-      // bill one full render per event. Coalescing costs at most 400ms of
-      // freshness and cuts a burst of ten events to a single render.
-      if (refreshTimer.current) clearTimeout(refreshTimer.current);
-      refreshTimer.current = setTimeout(() => {
-        refreshTimer.current = null;
-        router.refresh();
-      }, 400);
     };
 
-    const open = () => {
-      if (source) return;
-      const cursor = lastEventIdRef.current;
-      source = new EventSource(
-        cursor
-          ? `/api/admin/events?lastEventId=${encodeURIComponent(cursor)}`
-          : "/api/admin/events",
-      );
-      source.addEventListener(ADMIN_EVENT_NAME, onEvent);
-      // EventSource reconnects automatically on error — nothing to do.
+    const tick = async () => {
+      if (inflight || stopped || document.hidden) return;
+      inflight = true;
+      try {
+        const cursor = cursorRef.current;
+        const res = await fetch(
+          cursor
+            ? `/api/admin/events?since=${encodeURIComponent(cursor)}`
+            : "/api/admin/events",
+          { credentials: "same-origin", cache: "no-store" },
+        );
+        if (!res.ok) return;
+        const page = (await res.json()) as AdminEventsPage;
+        if (typeof page.cursor === "string") cursorRef.current = page.cursor;
+        const events = Array.isArray(page.events) ? page.events : [];
+        for (const event of events) handle(event);
+        // Refresh server components so badges + queues update live — but
+        // ONCE per batch. Every refresh re-renders the whole admin page on
+        // the server (every admin route is force-dynamic), so a busy minute
+        // used to bill one full render per event.
+        if (events.length > 0) {
+          if (refreshTimer.current) clearTimeout(refreshTimer.current);
+          refreshTimer.current = setTimeout(() => {
+            refreshTimer.current = null;
+            router.refresh();
+          }, 400);
+        }
+      } catch {
+        // Network blip — the next tick simply asks again from the same cursor.
+      } finally {
+        inflight = false;
+      }
     };
 
-    const close = () => {
-      if (!source) return;
-      source.removeEventListener(ADMIN_EVENT_NAME, onEvent);
-      source.close();
-      source = null;
+    const schedule = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        void tick().finally(schedule);
+      }, ADMIN_EVENTS_CLIENT_POLL_MS);
     };
 
-    // A backgrounded admin tab used to hold a serverless function open all
-    // day, reconnecting every 60s and pinning a Mongo connection each time,
-    // while nobody was looking at it. Now the stream lives only while the tab
-    // is on screen and resumes from its cursor on return — no missed events.
+    // A backgrounded admin tab asks for nothing; on return it polls at once
+    // (from its cursor) and resumes the cadence — no missed events, no
+    // function time spent while nobody is looking.
     const onVisibility = () => {
-      if (document.hidden) close();
-      else open();
+      if (document.hidden) {
+        if (timer) clearTimeout(timer);
+        timer = null;
+      } else {
+        void tick().finally(schedule);
+      }
     };
 
-    if (!document.hidden) open();
+    void tick().finally(schedule);
     document.addEventListener("visibilitychange", onVisibility);
 
     return () => {
+      stopped = true;
       document.removeEventListener("visibilitychange", onVisibility);
+      if (timer) clearTimeout(timer);
       if (refreshTimer.current) clearTimeout(refreshTimer.current);
-      close();
     };
   }, [router]);
 

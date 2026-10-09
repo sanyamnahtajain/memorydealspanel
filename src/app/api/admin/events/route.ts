@@ -1,160 +1,72 @@
+import { NextResponse, type NextRequest } from "next/server";
+
 import { prisma } from "@/server/db";
 import { resolveViewer } from "@/server/auth/viewer";
 import { isAdmin } from "@/server/types/viewer";
 import {
   ADMIN_FEED_TYPES,
-  ADMIN_EVENT_NAME,
-  ADMIN_EVENTS_HEARTBEAT_MS,
-  ADMIN_EVENTS_POLL_MS,
   resolveResumeCursor,
   type AdminEventDTO,
+  type AdminEventsPage,
 } from "@/lib/admin-events";
 
 /**
- * GET /api/admin/events — a Server-Sent Events stream of admin notifications
- * (the "socket" for the open admin panel). ADMIN-ONLY.
+ * GET /api/admin/events?since=<cursor> — the admin panel's live feed.
+ * ADMIN-ONLY. Answers in milliseconds with every staff-facing notification
+ * created after `since`, plus the cursor to ask from next time.
  *
- * Design: SSE over a short-interval tail of the existing `Notification`
- * collection. Deliberately NOT a WebSocket/socket.io dependency — SSE is
- * plain HTTP (works through nginx and any Node host unchanged), reconnects
- * natively in the browser, and the collection is already written by every
- * event source (orders, access requests), so new event types stream with
- * zero changes here. Background delivery stays with Web Push; this stream is
- * for the live toast + ring while the panel is open.
+ * WHY A POLL, NOT A STREAM: this used to be a Server-Sent Events stream that
+ * held a serverless function open for its full 60 s cap, every minute, for
+ * every open admin tab — and the host killed it at the cap, so each of those
+ * was logged as a timed-out invocation. On the usage page that was the bulk
+ * of "provisioned memory" (function-seconds) and the entire timeout rate. The
+ * stream itself only ever tailed this same collection on a timer, so a
+ * client-side poll on the same cadence delivers the same events with the
+ * function alive for a few milliseconds per tick instead of a minute.
+ *
+ * The cursor is the newest `createdAt` returned, bounded by
+ * `resolveResumeCursor` so a stale tab resumes from at most ten minutes back
+ * and a forged future value cannot skip real events.
  */
 
 export const dynamic = "force-dynamic";
 
-/**
- * Keep each stream alive longer than the default so reconnects stay rare.
- *
- * Deliberately 60, not higher: Vercel caps this PER PLAN and a value above the
- * cap fails the deployment outright. 60s is accepted on every plan, so this
- * cannot break a deploy. A shorter-lived stream only means more reconnects,
- * and the Last-Event-ID resume below now makes those lossless anyway.
- */
-export const maxDuration = 60;
-/** Close cleanly before the host's maxDuration kill (see the timer below). */
-const GRACEFUL_CLOSE_MS = (maxDuration - 5) * 1000;
+const PAGE_SIZE = 50;
 
-const encoder = new TextEncoder();
-
-export async function GET(request: Request): Promise<Response> {
+export async function GET(request: NextRequest): Promise<NextResponse> {
   const viewer = await resolveViewer();
   if (!isAdmin(viewer)) {
-    return new Response("Admin access required.", { status: 403 });
+    return NextResponse.json({ error: "Admin access required." }, { status: 403 });
   }
 
-  /**
-   * RESUME WHERE WE LEFT OFF — do not "simplify" this back to `new Date()`.
-   *
-   * This stream does not live forever: a serverless host kills it at the
-   * function's max duration, and any network blip drops it too. The browser
-   * then reconnects (see the `retry:` hint below), which used to restart the
-   * cursor at the moment of reconnect — so every notification created during
-   * the gap was skipped for good. No toast, no ring, and no `router.refresh()`,
-   * so a new access request simply did not appear until an admin reloaded the
-   * page by hand. That is the "requests take time to show up" complaint.
-   *
-   * EventSource replays the last `id:` we sent as the `Last-Event-ID` header on
-   * reconnect, so we resume from exactly there and the gap closes.
-   */
-  // The browser sends `last-event-id` only on its OWN automatic reconnects.
-  // The client also closes this stream while the tab is hidden (it is the
-  // app's biggest function-hours consumer) and reopens a FRESH EventSource on
-  // return — which sends no header — so the cursor is accepted as a query
-  // param too. Same 10-minute bound either way; nothing is lost on resume.
-  const cursorStart = resolveResumeCursor(
-    request.headers.get("last-event-id") ??
-      new URL(request.url).searchParams.get("lastEventId"),
-  );
-  let cursor = cursorStart;
-  let closed = false;
-
-  const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
-      const send = (chunk: string) => {
-        if (closed) return;
-        try {
-          controller.enqueue(encoder.encode(chunk));
-        } catch {
-          closed = true;
-        }
+  const since = resolveResumeCursor(request.nextUrl.searchParams.get("since"));
+  let cursor = since;
+  let events: AdminEventDTO[] = [];
+  try {
+    const rows = await prisma.notification.findMany({
+      // Staff-facing types only — the same table also holds rows addressed
+      // to buyers and the nudge job's dedupe bookkeeping.
+      where: { createdAt: { gt: since }, type: { in: [...ADMIN_FEED_TYPES] } },
+      orderBy: { createdAt: "asc" },
+      take: PAGE_SIZE,
+      select: { id: true, type: true, payload: true, createdAt: true },
+    });
+    events = rows.map((row) => {
+      if (row.createdAt > cursor) cursor = row.createdAt;
+      return {
+        id: row.id,
+        type: row.type,
+        payload: (row.payload ?? {}) as Record<string, unknown>,
+        createdAt: row.createdAt.toISOString(),
       };
+    });
+  } catch (error) {
+    // A transient DB hiccup answers empty with the SAME cursor, so the next
+    // tick simply asks again — nothing is skipped and nothing is thrown at
+    // the panel.
+    console.error("[admin/events] poll failed:", error);
+  }
 
-      // Reconnect hint for the browser's native EventSource retry.
-      send("retry: 5000\n\n");
-
-      const poll = setInterval(() => {
-        void (async () => {
-          try {
-            const rows = await prisma.notification.findMany({
-              // Staff-facing types only — the same table also holds rows
-              // addressed to buyers and the nudge job's dedupe bookkeeping.
-              where: {
-                createdAt: { gt: cursor },
-                type: { in: [...ADMIN_FEED_TYPES] },
-              },
-              orderBy: { createdAt: "asc" },
-              take: 50,
-              select: { id: true, type: true, payload: true, createdAt: true },
-            });
-            for (const row of rows) {
-              cursor = row.createdAt > cursor ? row.createdAt : cursor;
-              const dto: AdminEventDTO = {
-                id: row.id,
-                type: row.type,
-                payload: (row.payload ?? {}) as Record<string, unknown>,
-                createdAt: row.createdAt.toISOString(),
-              };
-              // The id IS the cursor: `createdAt`, which is what we resume
-              // from. EventSource echoes the most recent one back to us as
-              // Last-Event-ID after a drop.
-              send(
-                `id: ${dto.createdAt}\n` +
-                  `event: ${ADMIN_EVENT_NAME}\n` +
-                  `data: ${JSON.stringify(dto)}\n\n`,
-              );
-            }
-          } catch {
-            // Transient DB hiccup — the next tick retries; never kill the stream.
-          }
-        })();
-      }, ADMIN_EVENTS_POLL_MS);
-
-      const heartbeat = setInterval(() => send(": ping\n\n"), ADMIN_EVENTS_HEARTBEAT_MS);
-
-      const cleanup = () => {
-        closed = true;
-        clearInterval(poll);
-        clearInterval(heartbeat);
-        clearTimeout(graceful);
-        try {
-          controller.close();
-        } catch {
-          /* already closed */
-        }
-      };
-      // End the stream OURSELVES a few seconds before the platform would.
-      // A stream killed at maxDuration is logged as a timed-out invocation
-      // (every open admin tab produced one per minute — the whole "2% timeout
-      // rate" on the dashboard), while a stream we close is a clean 200; the
-      // browser reconnects either way and resumes from Last-Event-ID.
-      const graceful = setTimeout(cleanup, GRACEFUL_CLOSE_MS);
-
-      request.signal.addEventListener("abort", cleanup, { once: true });
-    },
-    cancel() {
-      closed = true;
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-      "X-Accel-Buffering": "no", // nginx: never buffer the stream
-    },
-  });
+  const body: AdminEventsPage = { events, cursor: cursor.toISOString() };
+  return NextResponse.json(body, { headers: { "Cache-Control": "private, no-store" } });
 }

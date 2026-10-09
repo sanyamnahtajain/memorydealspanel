@@ -24,6 +24,21 @@ export const ADMIN_EVENT_NAME = "notification";
 /** How often the stream tails the collection (ms). */
 export const ADMIN_EVENTS_POLL_MS = 4_000;
 
+/**
+ * How often an OPEN, VISIBLE admin tab asks /api/admin/events for news.
+ * Each ask is a millisecond-scale function call; a hidden tab asks nothing.
+ * 15 s keeps an order ringing within a quarter minute of being placed while
+ * costing a few hundred tiny calls an hour instead of a function held open
+ * all day.
+ */
+export const ADMIN_EVENTS_CLIENT_POLL_MS = 15_000;
+
+/** The poll response: what arrived since the cursor, and the next cursor. */
+export interface AdminEventsPage {
+  events: AdminEventDTO[];
+  cursor: string;
+}
+
 /** Keep-alive comment interval (ms) so proxies never cut the stream. */
 export const ADMIN_EVENTS_HEARTBEAT_MS = 20_000;
 
