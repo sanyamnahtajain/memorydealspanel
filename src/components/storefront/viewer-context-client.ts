@@ -49,6 +49,9 @@ const EMPTY: ViewerContextPayload = {
   priceLabels: {},
 };
 
+/** Exactly what the server answers for a visitor with no session. */
+const ANON_ACCESS: AccessStatusSnapshot = { signedIn: false };
+
 let payload: ViewerContextPayload = EMPTY;
 /** Slices already requested (or in flight) — never asked for twice. */
 let fetchedSlices = new Set<ContextSlice>();
@@ -86,10 +89,36 @@ function schedule(): void {
   });
 }
 
+/**
+ * Does this page belong to a visitor with NO session cookie at all? The
+ * storefront layout stamps `data-viewer-hint="anon"` on its wrapper when the
+ * request carried no session cookie. For such a visitor every slice resolves
+ * to its empty value on the server anyway, so the request is pure cost — one
+ * function invocation per page view, for nothing. Absent attribute (or an
+ * unknown value) means "ask", never "assume".
+ */
+function pageSaysAnonymous(): boolean {
+  if (typeof document === "undefined") return false;
+  return document.querySelector("[data-viewer-hint]")?.getAttribute("data-viewer-hint") === "anon";
+}
+
 async function run(): Promise<void> {
   const slices = [...pendingSlices];
   const ids = [...pendingIds];
   if (slices.length === 0 && ids.length === 0) return;
+
+  if (pageSaysAnonymous()) {
+    // Nothing to fetch: the server would answer with the empty payload.
+    // Mark the work done so nothing re-schedules it, and tell consumers the
+    // (empty) truth so anything waiting on `access` can settle.
+    pendingSlices = new Set();
+    pendingIds = new Set();
+    for (const slice of slices) fetchedSlices.add(slice);
+    for (const id of ids) fetchedIds.add(id);
+    payload = { ...EMPTY, access: ANON_ACCESS };
+    notify();
+    return;
+  }
 
   pendingSlices = new Set();
   pendingIds = new Set();
