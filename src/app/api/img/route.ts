@@ -1,7 +1,8 @@
+import { createHash } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { IMAGE_WIDTHS, snapImageWidth } from "@/lib/image-loader";
-import { publicBaseOrEmpty } from "@/server/storage/r2";
+import { isR2Configured, publicBaseOrEmpty, putDerivedObject } from "@/server/storage/r2";
 
 /**
  * GET /api/img?u=<storage url>&w=<width>&q=<quality>
@@ -12,6 +13,16 @@ import { publicBaseOrEmpty } from "@/server/storage/r2";
  * CDN caches each (image, width) for a year and the function is never asked
  * for that pair again. Originals are content-addressed (UUID keys), so
  * immutability is safe.
+ *
+ * PERSISTED VARIANTS: the CDN cache is per region and evicts, so without
+ * more the same (image, width) was resized again on every cold edge — on a
+ * busy day that was most of the project's function CPU and origin transfer,
+ * and the 30 s cap turned the slowest of them into timeouts. Now the first
+ * resize is written back to R2 under a content-addressed key, and every later
+ * request for that pair answers with an immutable 302 to R2 after one cheap
+ * HEAD: no download, no decode, a few milliseconds of function time, and R2
+ * egress is free. The master (1920) is persisted the same way, so a 15 MB
+ * original is downloaded exactly once in the life of the catalogue.
  *
  * FAILS OPEN: if the original cannot be fetched, decoded or resized — a
  * corrupt file, sharp unavailable on the host, an upstream hiccup — the
@@ -43,6 +54,33 @@ const FALLBACK_CACHE_HEADER = "public, max-age=60, s-maxage=300";
 /** Refuse to decode anything larger than this — a guard for the function's memory. */
 const MAX_SOURCE_BYTES = 40 * 1024 * 1024;
 const UPSTREAM_TIMEOUT_MS = 15_000;
+/** The existence check against R2 must never be what makes a request slow. */
+const HEAD_TIMEOUT_MS = 2_500;
+/** Bump to invalidate every persisted variant (e.g. after a quality change). */
+const DERIVED_VERSION = "v1";
+
+/**
+ * Where a (source, width, quality) variant lives in R2. Content-addressed on
+ * the source URL — originals never change under a key — so it is safe to
+ * answer this path forever once it exists.
+ */
+function derivedKey(upstream: URL, width: number, quality: number): string {
+  const digest = createHash("sha1").update(upstream.toString()).digest("hex");
+  return `derived/${DERIVED_VERSION}/${digest.slice(0, 2)}/${digest}/w${width}-q${quality}.webp`;
+}
+
+/** The persisted variant's public URL when it already exists, else null. */
+async function findPersisted(key: string): Promise<URL | null> {
+  const base = publicBaseOrEmpty();
+  if (!base) return null;
+  const url = new URL(`${base}/${key}`);
+  try {
+    const res = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(HEAD_TIMEOUT_MS) });
+    return res.ok ? url : null;
+  } catch {
+    return null;
+  }
+}
 
 function allowedUpstream(url: URL): boolean {
   if (url.protocol !== "https:") return false;
@@ -79,6 +117,20 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const width = Number.isFinite(requestedWidth) && requestedWidth > 0 ? snapImageWidth(requestedWidth) : IMAGE_WIDTHS[8];
   const requestedQuality = Number(params.get("q"));
   const quality = Number.isFinite(requestedQuality) ? Math.min(100, Math.max(1, Math.round(requestedQuality))) : 75;
+
+  // Already resized once, anywhere, ever? Then this is a redirect, cached
+  // immutably by the CDN and the browser alike — the function does no work.
+  const persist = isR2Configured();
+  const key = derivedKey(upstream, width, quality);
+  if (persist) {
+    const existing = await findPersisted(key);
+    if (existing) {
+      return NextResponse.redirect(existing, {
+        status: 302,
+        headers: { "Cache-Control": CACHE_HEADER, "X-Image-Via": "r2" },
+      });
+    }
+  }
 
   // Anything smaller than the master is cut FROM the master (see MASTER_WIDTH):
   // a request to this same route at the master width, which the CDN answers
@@ -118,6 +170,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       .resize({ width, withoutEnlargement: true, fit: "inside" })
       .webp({ quality, effort: 4 })
       .toBuffer();
+    // Write-behind for every edge that comes after this one. Awaited (a
+    // few tens of ms) so the object exists before the response is cached;
+    // a failed write only means the next cold edge resizes once more.
+    const persisted = persist ? await putDerivedObject(key, new Uint8Array(body), "image/webp") : false;
     return new NextResponse(new Uint8Array(body), {
       status: 200,
       headers: {
@@ -128,6 +184,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         "X-Image-Source-Bytes": String(source.byteLength),
         "X-Image-Source-Width": String(meta.width ?? 0),
         "X-Image-Via": viaMaster ? "master" : "original",
+        "X-Image-Persisted": persisted ? "1" : "0",
       },
     });
   } catch (error) {

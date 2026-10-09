@@ -116,6 +116,36 @@ export function publicUrl(key: string): string {
   return `${base}/${sanitizeKey(key)}`;
 }
 
+/**
+ * Server-side write of a small derived object (a resized image variant).
+ * Immutable cache headers travel with the object so R2's public domain and
+ * every CDN in front of it keep it for a year. Returns false (never throws)
+ * when R2 is not configured or the write fails — callers treat persistence
+ * as an optimisation, not a requirement.
+ */
+export async function putDerivedObject(
+  key: string,
+  body: Uint8Array,
+  contentType: string,
+): Promise<boolean> {
+  if (!isR2Configured()) return false;
+  try {
+    await getR2Client().send(
+      new PutObjectCommand({
+        Bucket: process.env.R2_BUCKET!,
+        Key: sanitizeKey(key),
+        Body: body,
+        ContentType: contentType,
+        CacheControl: "public, max-age=31536000, immutable",
+      }),
+    );
+    return true;
+  } catch (error) {
+    console.error("[r2] derived object write failed:", error);
+    return false;
+  }
+}
+
 /** Presigned PUT URL for direct browser upload to R2. */
 export async function getPresignedUploadUrl(
   key: string,
