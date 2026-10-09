@@ -143,7 +143,7 @@ export function BannerCarousel({
                   <span
                     key={`${banner.id}-${selected}-${running ? "run" : "hold"}`}
                     aria-hidden
-                    className={cn("absolute inset-0 rounded-full bg-foreground", running ? "md-progress" : "")}
+                    className={cn("absolute inset-0 rounded-full bg-primary", running ? "md-progress" : "")}
                     style={running ? ({ "--md-progress-ms": `${AUTOPLAY_MS}ms` } as React.CSSProperties) : { transform: "scaleX(1)" }}
                   />
                 ) : null}

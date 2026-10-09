@@ -575,7 +575,6 @@ export default async function ProductDetailPage({ params }: PageParams) {
                   display-only. */}
               <SectionHeading
                 id="related-heading"
-                eyebrow="Often bought together"
                 title="Shops also ordered"
                 subtitle={
                   category

@@ -1,5 +1,4 @@
 import * as React from "react";
-import { Flame } from "lucide-react";
 
 import { trendingProductIds } from "@/server/services/recommendations";
 import { listByIdsForViewer } from "@/server/dal/products";
@@ -75,16 +74,11 @@ export async function TrendingRail() {
 
   return (
     <section aria-labelledby="home-trending">
-      {/* The shared house header; the flame rides in the eyebrow. */}
+      {/* The shared house header; the flame rides in the subtitle. */}
       <SectionHeading
         id="home-trending"
-        eyebrow={
-          <>
-            <Flame aria-hidden className="size-3.5 shrink-0 text-warning" />
-            This week
-          </>
-        }
         title="Trending now"
+        subtitle="What shops are opening most this week."
       />
 
       {/* Rail adds the laptop affordances (arrows, edge fade); the list itself

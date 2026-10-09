@@ -132,9 +132,9 @@ export function ProductCard({
         if (secondary && e.pointerType === "mouse") setHoverArmed(true);
       }}
       className={cn(
-        "group md-reveal flex h-full flex-col overflow-hidden rounded-2xl bg-card shadow-sm ring-1 ring-foreground/5 outline-none",
-        "transition-[box-shadow,transform] duration-200 ease-out",
-        "hover:-translate-y-0.5 hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.98]",
+        "group md-reveal flex h-full flex-col overflow-hidden rounded-2xl border border-border bg-card outline-none",
+        "transition-[box-shadow,transform,border-color] duration-200 ease-out",
+        "hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.98]",
         className,
       )}
     >

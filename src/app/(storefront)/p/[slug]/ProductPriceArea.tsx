@@ -216,25 +216,23 @@ export function ProductPriceArea({
   }
 
   // Anon (or a viewer who can still request) → open the request sheet inline.
-  // A dark feature panel: the one high-contrast block on the page, so the
-  // gate reads as the page's main action rather than a disabled state.
+  // A tinted accent panel in the brand blue: the page's main action, in the
+  // same colour as every other call to action on the site.
   return (
-    <div className="rounded-2xl bg-foreground p-4 text-background sm:p-5">
+    <div className="rounded-xl border border-primary/15 bg-primary/5 p-4 sm:p-5">
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1.5">
-          <p className="text-[11px] font-medium tracking-[0.18em] text-background/60 uppercase">
+          <p className="text-[11px] font-semibold tracking-[0.14em] text-primary uppercase">
             Wholesale price
           </p>
-          {/* The locked pill keeps its light shimmer surface — a light chip on
-              the dark panel is the whole point of the contrast. */}
           <PricePill variant="locked" size="lg" />
         </div>
         <LockKeyhole
           aria-hidden
-          className="mt-1 size-5 shrink-0 text-background/60"
+          className="mt-1 size-5 shrink-0 text-primary/60"
         />
       </div>
-      <p className="mt-3 text-sm leading-relaxed text-background/75">
+      <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
         Pricing is visible to approved wholesale buyers. Request access to
         unlock prices across the catalog.
       </p>
@@ -244,12 +242,12 @@ export function ProductPriceArea({
           hapticTap();
           setOpen(true);
         }}
-        className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-full bg-background px-6 text-sm font-semibold text-foreground shadow-sm outline-none transition-[transform,background-color] hover:bg-background/90 focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.98] sm:w-auto"
+        className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-primary px-6 text-sm font-semibold text-primary-foreground shadow-sm outline-none transition-[transform,background-color] hover:bg-primary/90 focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.98] sm:w-auto"
       >
         Request access
       </button>
       {/* Label only — a gated viewer sees the GST treatment, never an amount. */}
-      <div className="[&_p]:text-background/60">
+      <div className="[&_p]:text-muted-foreground">
         <TaxTreatmentLine
           gstRateBps={tax.gstRateBps}
           taxInclusive={tax.taxInclusive}

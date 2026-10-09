@@ -258,7 +258,7 @@ export function ListingFilters({ contextFacet, stockCounts }: ListingFiltersProp
                 className={cn(
                   "inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full px-4 text-sm font-medium ring-1 outline-none transition-[background-color,color,transform] focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97] disabled:opacity-60",
                   active
-                    ? "bg-foreground text-background ring-foreground"
+                    ? "bg-primary text-primary-foreground ring-primary"
                     : "bg-card text-foreground shadow-sm ring-foreground/10 hover:bg-muted",
                 )}
               >

@@ -53,7 +53,7 @@ export function SearchLauncher({
           className,
         )}
       >
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-foreground text-background transition-transform duration-200 group-hover:scale-105">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-transform duration-200 group-hover:scale-105">
           <SearchIcon className="size-4.5" aria-hidden />
         </span>
         <span

@@ -76,7 +76,7 @@ export function CollapsibleSection({
   return (
     <section
       className={cn(
-        "overflow-hidden rounded-2xl bg-card shadow-sm ring-1 ring-foreground/5",
+        "overflow-hidden rounded-2xl border border-border bg-card",
         className,
       )}
     >

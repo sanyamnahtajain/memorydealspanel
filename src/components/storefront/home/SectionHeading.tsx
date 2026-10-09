@@ -43,7 +43,7 @@ export function SectionHeading({
   return (
     <div
       className={cn(
-        "mb-5 flex items-end justify-between gap-4 md:mb-6",
+        "mb-4 flex items-end justify-between gap-4 md:mb-5",
         className,
       )}
     >
@@ -53,12 +53,12 @@ export function SectionHeading({
         ) : null}
         <h2
           id={id}
-          className="font-heading text-2xl font-bold tracking-tight text-balance text-foreground md:text-3xl"
+          className="font-heading text-xl font-bold tracking-tight text-balance text-foreground md:text-2xl"
         >
           {title}
         </h2>
         {subtitle ? (
-          <p className="mt-1.5 line-clamp-2 text-sm text-pretty text-muted-foreground md:text-[15px]">
+          <p className="mt-1 line-clamp-2 text-sm text-pretty text-muted-foreground">
             {subtitle}
           </p>
         ) : null}
@@ -66,7 +66,7 @@ export function SectionHeading({
       {seeAllHref ? (
         <Link
           href={seeAllHref}
-          className="group/see inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full bg-muted/70 px-4 text-sm font-medium text-foreground outline-none ring-1 ring-foreground/5 transition-[background-color,transform] duration-200 hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97]"
+          className="group/see inline-flex min-h-9 shrink-0 items-center gap-1 rounded-md px-1.5 text-sm font-medium text-primary outline-none transition-colors hover:text-primary/80 focus-visible:ring-3 focus-visible:ring-ring/50"
           prefetch={false}
         >
           {seeAllLabel}

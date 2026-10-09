@@ -380,7 +380,7 @@ export function SearchOverlay({
                   <button
                     type="button"
                     onClick={() => submit(query)}
-                    className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-full bg-foreground px-5 text-sm font-semibold text-background outline-none transition-colors hover:bg-foreground/90 focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.98]"
+                    className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground outline-none transition-colors hover:bg-primary/90 focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.98]"
                   >
                     Search the full catalogue
                     <ArrowRight className="size-4" aria-hidden />
@@ -459,7 +459,7 @@ export function SearchOverlay({
                   <button
                     type="button"
                     onClick={() => submit(query)}
-                    className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-sm font-semibold text-background outline-none transition-colors hover:bg-foreground/90 focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.98]"
+                    className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground outline-none transition-colors hover:bg-primary/90 focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.98]"
                   >
                     See all results for “{trimmed}”
                     <ArrowRight className="size-4" aria-hidden />
@@ -555,14 +555,14 @@ function EmptyQueryPanel({
                 className={cn(
                   "inline-flex min-h-11 max-w-full items-center gap-1.5 rounded-full px-3.5 text-sm font-medium outline-none ring-1 md:min-h-10 transition-[background-color,color,box-shadow,transform] duration-150 focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97]",
                   active === i
-                    ? "bg-foreground text-background ring-foreground"
+                    ? "bg-primary text-primary-foreground ring-primary"
                     : "bg-card text-foreground ring-foreground/10 hover:bg-muted",
                 )}
               >
                 <Clock
                   className={cn(
                     "size-3.5 shrink-0",
-                    active === i ? "text-background/70" : "text-muted-foreground",
+                    active === i ? "text-primary-foreground/80" : "text-muted-foreground",
                   )}
                   aria-hidden
                 />

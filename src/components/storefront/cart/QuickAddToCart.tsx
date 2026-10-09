@@ -135,7 +135,7 @@ export function QuickAddToCart({
           "disabled:opacity-70",
           justAdded
             ? "bg-success text-success-foreground"
-            : "bg-foreground text-background hover:bg-foreground/90 hover:shadow-md",
+            : "bg-primary text-primary-foreground hover:bg-primary/90 hover:shadow-md",
           className,
         )}
       >

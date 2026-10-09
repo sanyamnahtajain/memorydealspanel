@@ -5,7 +5,6 @@ import { listHomeReels } from "@/server/services/reels";
 import { INSTAGRAM_HANDLE, INSTAGRAM_PROFILE_URL, type StorefrontReel } from "@/lib/reels";
 import { catalogImageUrl } from "@/lib/image-loader";
 import { Rail } from "@/components/storefront/Rail";
-import { cn } from "@/lib/utils";
 
 /**
  * ReelsRail — the home page's "Reels" shelf: the page's one DARK feature
@@ -23,38 +22,33 @@ export async function ReelsRail({ className }: { className?: string }) {
   if (reels.length === 0) return null;
 
   return (
-    <section
-      aria-labelledby="home-reels"
-      className={cn(
-        "rounded-3xl bg-foreground p-4 text-background shadow-md ring-1 ring-foreground/10 md:p-6",
-        className,
-      )}
-    >
-      <div className="mb-4 flex items-end justify-between gap-3">
+    <section aria-labelledby="home-reels" className={className}>
+      <div className="mb-4 flex items-end justify-between gap-4 md:mb-5">
         <div className="min-w-0">
-          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-background/60">
-            From our Instagram
-          </p>
-          <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <h2 id="home-reels" className="font-heading text-2xl font-bold tracking-tight md:text-3xl">
-              Reels
-            </h2>
+          <h2
+            id="home-reels"
+            className="font-heading text-xl font-bold tracking-tight text-foreground md:text-2xl"
+          >
+            Reels
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Short clips from{" "}
             <a
               href={INSTAGRAM_PROFILE_URL}
               target="_blank"
               rel="noopener noreferrer"
-              className="rounded-full text-sm font-medium text-background/60 outline-none transition-colors hover:text-background focus-visible:ring-3 focus-visible:ring-background/40"
+              className="font-medium text-primary outline-none hover:text-primary/80 focus-visible:ring-3 focus-visible:ring-ring/50"
             >
               @{INSTAGRAM_HANDLE}
             </a>
-          </div>
+          </p>
         </div>
         <Link
           href="/reels"
-          className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-full bg-background/10 px-4 text-sm font-semibold text-background outline-none ring-1 ring-background/15 transition-[background-color,transform] duration-150 hover:bg-background/20 focus-visible:ring-3 focus-visible:ring-background/40 active:scale-[0.98]"
+          className="group/see inline-flex min-h-9 shrink-0 items-center gap-1 rounded-md px-1.5 text-sm font-medium text-primary outline-none transition-colors hover:text-primary/80 focus-visible:ring-3 focus-visible:ring-ring/50"
         >
           See all
-          <ArrowRight className="size-4" aria-hidden />
+          <ArrowRight className="size-4 transition-transform duration-200 group-hover/see:translate-x-0.5" aria-hidden />
         </Link>
       </div>
 
@@ -70,9 +64,9 @@ export async function ReelsRail({ className }: { className?: string }) {
         <li className="shrink-0 snap-start">
           <Link
             href="/reels"
-            className="flex aspect-[9/16] w-32 flex-col items-center justify-center gap-3 rounded-2xl bg-background/5 text-background outline-none ring-1 ring-background/15 transition-[background-color,transform] duration-200 hover:-translate-y-0.5 hover:bg-background/10 focus-visible:ring-3 focus-visible:ring-background/40 active:scale-[0.98] md:w-40"
+            className="flex aspect-[9/16] w-32 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-muted/40 text-foreground outline-none transition-[background-color,transform] duration-200 hover:-translate-y-0.5 hover:bg-muted/70 focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.98] md:w-40"
           >
-            <span className="flex size-11 items-center justify-center rounded-full bg-background text-foreground">
+            <span className="flex size-11 items-center justify-center rounded-full bg-primary text-primary-foreground">
               <ArrowRight className="size-5" aria-hidden />
             </span>
             <span className="text-sm font-semibold">See all</span>
@@ -89,7 +83,7 @@ function ReelTile({ reel, priority }: { reel: StorefrontReel; priority: boolean 
     <Link
       href={`/reels?r=${encodeURIComponent(reel.id)}`}
       aria-label={`Play reel: ${reel.caption}`}
-      className="group relative block aspect-[9/16] w-32 overflow-hidden rounded-2xl bg-neutral-900 text-white outline-none ring-1 ring-white/10 transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-lg focus-visible:ring-3 focus-visible:ring-background/40 active:scale-[0.98] md:w-40"
+      className="group relative block aspect-[9/16] w-32 overflow-hidden rounded-xl bg-neutral-900 text-white outline-none transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-lg focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.98] md:w-40"
     >
       {poster ? (
         // eslint-disable-next-line @next/next/no-img-element

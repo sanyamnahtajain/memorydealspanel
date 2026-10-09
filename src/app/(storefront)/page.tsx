@@ -133,7 +133,6 @@ export default async function HomePage() {
         <section aria-labelledby="home-categories">
           <SectionHeading
             id="home-categories"
-            eyebrow="Browse"
             title="Shop by category"
             subtitle="Jump straight to the shelf you restock most."
             seeAllHref="/categories"
@@ -158,7 +157,6 @@ export default async function HomePage() {
           <section aria-labelledby="home-brands">
             <SectionHeading
               id="home-brands"
-              eyebrow="Brands we carry"
               title="Shop by brand"
               seeAllHref="/brands"
               seeAllLabel="All brands"
@@ -174,7 +172,6 @@ export default async function HomePage() {
           <section aria-labelledby="home-best-sellers">
             <SectionHeading
               id="home-best-sellers"
-              eyebrow="Moving fast"
               title="Best sellers"
               subtitle="What retailers reorder most."
             />
@@ -209,7 +206,6 @@ export default async function HomePage() {
           <section aria-labelledby="home-featured">
             <SectionHeading
               id="home-featured"
-              eyebrow="Just in"
               title="New & featured"
               seeAllHref="/search"
             />

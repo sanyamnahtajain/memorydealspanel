@@ -47,10 +47,12 @@
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  /* Deliberately tight: a classic storefront theme reads as 8–14px corners,
+     not pill-shaped cards. rounded-2xl is the card radius (12px). */
+  --radius-xl: calc(var(--radius) * 1.1);
+  --radius-2xl: calc(var(--radius) * 1.2);
+  --radius-3xl: calc(var(--radius) * 1.4);
+  --radius-4xl: calc(var(--radius) * 1.6);
 }
 
 /*
@@ -443,21 +445,6 @@
 /* One dark, high-contrast feature panel per page. A near-black surface with a
    soft electric-blue bloom in the top-right corner, so it reads as a designed
    object rather than a flat inverted box. Local to the panel — NOT a theme. */
-@utility md-panel-dark {
-  background-color: var(--foreground);
-  background-image:
-    radial-gradient(
-      110% 120% at 100% 0%,
-      oklch(0.36 0.11 262.9 / 0.55) 0%,
-      transparent 55%
-    ),
-    radial-gradient(
-      80% 90% at 0% 100%,
-      oklch(0.3 0.03 262 / 0.6) 0%,
-      transparent 60%
-    );
-  color: var(--background);
-}
 
 /* Soft warm-to-paper gradient for quiet supporting surfaces (footer, strips). */
 @utility md-surface-soft {

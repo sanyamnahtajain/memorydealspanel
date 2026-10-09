@@ -258,7 +258,7 @@ export function VariantSelector({
                         "inline-flex min-h-10 items-center gap-1.5 rounded-full border px-4 py-1.5 text-sm font-medium transition-[background-color,border-color,color,transform] active:scale-[0.96]",
                         "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
                         isSelected
-                          ? "border-foreground bg-foreground text-background shadow-sm"
+                          ? "border-primary bg-primary/10 text-primary shadow-sm"
                           : "border-foreground/10 bg-card text-foreground shadow-sm hover:border-foreground/30 hover:bg-muted/60",
                         !available &&
                           "cursor-not-allowed border-dashed text-muted-foreground/60 line-through hover:border-border hover:bg-card active:scale-100",
