@@ -17,7 +17,6 @@ import {
   BrandShowcase,
   FeaturedRail,
   SectionHeading,
-  TrustStrip,
 } from "@/components/storefront/home";
 import { TrendingRail } from "@/components/storefront/home/TrendingRail";
 import { ReelsRail } from "@/components/storefront/reels/ReelsRail";
@@ -120,19 +119,16 @@ export default async function HomePage() {
       <BuyAgainRail />
 
       <HomePriceReveal>
-      {/* Section rhythm (HomeSections): trust strip → category → brand →
+      {/* Section rhythm (HomeSections): category → brand →
           best sellers → reels → trending → new & featured → the dark
           "how it works" panel. Every rail here is rendered for the ANONYMOUS
           viewer — see the module comment. */}
       <HomeSections
-        // Without a live banner the trust strip is the first thing under the
+        // Without a live banner the category section is the first thing under the
         // header, so the wrapper's banner-clearing top margin would read as an
         // empty band. Tighten it in that case only.
         className={heroBanners.length > 0 ? undefined : "mt-4 md:mt-6"}
       >
-        {/* Four facts true of this shop, same for every visitor. */}
-        <TrustStrip />
-
         {/* Shop by category — the retailer's #1 jump-off point, first. */}
         <section aria-labelledby="home-categories">
           <SectionHeading

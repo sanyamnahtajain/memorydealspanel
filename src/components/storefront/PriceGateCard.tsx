@@ -140,7 +140,10 @@ export function PriceGateCard({
           aria-label="See price — request access"
         >
           <LockedChip size={size} />
-          <span className="text-sm font-medium text-primary group-hover:underline">
+          {/* nowrap: in a 42vw rail card the row otherwise breaks into
+              "See / price" on two lines. The chip above it hides its
+              placeholder digits on the narrowest cards instead. */}
+          <span className="text-sm font-medium whitespace-nowrap text-primary group-hover:underline">
             See price
           </span>
         </button>
@@ -175,7 +178,9 @@ function LockedChip({
       <LockIcon aria-hidden className="shrink-0" />
       <span aria-hidden className="blur-[5px]">
         {"₹"}
-        {"•,•••"}
+        <span className={size === "sm" ? "hidden min-[400px]:inline" : undefined}>
+          {"•,•••"}
+        </span>
       </span>
     </span>
   );

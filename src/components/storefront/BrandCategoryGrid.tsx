@@ -3,6 +3,7 @@ import Image from "next/image";
 import { LayoutGrid } from "lucide-react";
 
 import type { BrandCategory } from "@/server/dal/brands";
+import { titleCase } from "@/lib/display-case";
 
 /**
  * Category tiles for a brand landing page — each links into the
@@ -39,9 +40,9 @@ export function BrandCategoryGrid({
               </div>
             )}
           </div>
-          <div className="flex items-center justify-between gap-2 px-3 py-2.5">
-            <span className="truncate text-sm font-medium text-foreground">
-              {category.name}
+          <div className="flex items-start justify-between gap-2 px-3 py-2.5">
+            <span className="line-clamp-2 min-w-0 text-[13px] leading-snug font-medium text-foreground sm:text-sm">
+              {titleCase(category.name)}
             </span>
             <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs font-medium tabular-nums text-muted-foreground">
               {category.count}

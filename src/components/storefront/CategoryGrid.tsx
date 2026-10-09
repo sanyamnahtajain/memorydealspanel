@@ -76,13 +76,16 @@ function CategoryCard({ category }: { category: CategoryDTO }) {
           className="absolute inset-0 bg-linear-to-t from-foreground/60 via-foreground/10 to-transparent"
         />
       </div>
+      {/* Names like "Computer Peripherals" do not fit one line in a 2-column
+          phone tile, so the label wraps to two lines (never an ellipsis) and
+          the arrow glyph only appears from sm: where there is room for it. */}
       <span className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 px-3 pb-2.5 pt-6">
-        <span className="min-w-0 truncate text-sm font-semibold text-background md:text-[15px]">
+        <span className="line-clamp-2 min-w-0 text-[13px] leading-snug font-semibold text-background text-balance sm:text-sm md:text-[15px]">
           {name}
         </span>
         <span
           aria-hidden
-          className="md-tile-arrow inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-background/90 text-foreground shadow-sm"
+          className="md-tile-arrow hidden size-6 shrink-0 items-center justify-center rounded-full bg-background/90 text-foreground shadow-sm sm:inline-flex"
         >
           <ArrowUpRight className="size-3.5" />
         </span>
