@@ -49,36 +49,53 @@ export function ProductFilters({ categories }: ProductFiltersProps) {
   const currentSort = (searchParams.get("sort") as ProductSort) ?? "newest";
 
   const [searchDraft, setSearchDraft] = React.useState(currentSearch);
+  // The last value THIS component committed to the URL. When that commit
+  // lands (the server round-trips and `q` changes), the draft must be left
+  // alone: the admin has usually typed more by then, and snapping the input
+  // back to the older committed value ate their keystrokes — "it rewrites
+  // what I was typing".
+  const [lastCommitted, setLastCommitted] = React.useState(currentSearch);
 
-  // Keep the input in sync when the URL changes from outside (e.g. Clear) —
-  // the React-recommended "adjust state during render" pattern instead of a
-  // setState-in-effect. When the committed URL value changes we snap the draft
-  // to it and remember what we synced from.
+  // Keep the input in sync ONLY when the URL changes from outside (Clear,
+  // back/forward, a shared link) — the React "adjust state during render"
+  // pattern instead of a setState-in-effect. Our own commits are recognised
+  // by `lastCommitted` and never touch the draft.
   const [syncedSearch, setSyncedSearch] = React.useState(currentSearch);
   if (currentSearch !== syncedSearch) {
     setSyncedSearch(currentSearch);
-    setSearchDraft(currentSearch);
+    if (currentSearch !== lastCommitted) {
+      setSearchDraft(currentSearch);
+      setLastCommitted(currentSearch);
+    }
   }
 
   const pushParams = React.useCallback(
-    (mutate: (params: URLSearchParams) => void) => {
+    (mutate: (params: URLSearchParams) => void, mode: "push" | "replace" = "push") => {
       const params = new URLSearchParams(searchParams.toString());
       mutate(params);
       params.delete("page"); // any filter change returns to page 1
       const query = params.toString();
-      router.push(query ? `${pathname}?${query}` : pathname);
+      const href = query ? `${pathname}?${query}` : pathname;
+      // Typing must not pile up history entries (Back would walk through
+      // every debounced keystroke); selects are deliberate and may push.
+      if (mode === "replace") router.replace(href, { scroll: false });
+      else router.push(href, { scroll: false });
     },
     [pathname, router, searchParams],
   );
 
-  // Debounce search commits so we don't navigate on every keystroke.
+  // Debounce search commits so we don't navigate on every keystroke. The
+  // committed value is the TRIMMED draft, so compare against that — a draft
+  // with a trailing space is already committed, not a pending change.
   React.useEffect(() => {
-    if (searchDraft === currentSearch) return;
+    const committed = searchDraft.trim();
+    if (committed === currentSearch) return;
     const timer = setTimeout(() => {
+      setLastCommitted(committed);
       pushParams((params) => {
-        if (searchDraft.trim()) params.set("q", searchDraft.trim());
+        if (committed) params.set("q", committed);
         else params.delete("q");
-      });
+      }, "replace");
     }, 300);
     return () => clearTimeout(timer);
   }, [searchDraft, currentSearch, pushParams]);
