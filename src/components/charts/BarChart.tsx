@@ -12,6 +12,12 @@ interface BarChartProps {
   data: BarDatum[];
   /** "horizontal" (labels on the left) or "vertical" (labels on the bottom). */
   orientation?: "horizontal" | "vertical";
+  /**
+   * Vertical only: draw an axis label on every Nth bar (1 = all). Keeps 24
+   * hour-of-day bars legible on a phone while tooltips and the data table
+   * still name every bar.
+   */
+  labelEvery?: number;
   ariaLabel: string;
   /** Default bar tone when a datum has none. @default "primary" */
   tone?: BarDatum["tone"];
@@ -32,6 +38,7 @@ export function BarChart({
   ariaLabel,
   tone = "primary",
   height,
+  labelEvery = 1,
   className,
 }: BarChartProps) {
   if (orientation === "vertical") {
@@ -41,6 +48,7 @@ export function BarChart({
         ariaLabel={ariaLabel}
         tone={tone}
         height={height ?? 200}
+        labelEvery={Math.max(1, Math.floor(labelEvery))}
         className={className}
       />
     );
@@ -142,12 +150,14 @@ function VerticalBars({
   ariaLabel,
   tone,
   height,
+  labelEvery,
   className,
 }: {
   data: BarDatum[];
   ariaLabel: string;
   tone: BarDatum["tone"];
   height: number;
+  labelEvery: number;
   className?: string;
 }) {
   const reduced = useReducedMotion();
@@ -246,15 +256,17 @@ function VerticalBars({
                 height={plot.height}
                 fill="transparent"
               />
-              <text
-                x={round(cx)}
-                y={VB_H - 10}
-                textAnchor="middle"
-                className="fill-muted-foreground"
-                style={{ fontSize: 10 }}
-              >
-                {truncate(d.label, 10)}
-              </text>
+              {i % labelEvery === 0 ? (
+                <text
+                  x={round(cx)}
+                  y={VB_H - 10}
+                  textAnchor="middle"
+                  className="fill-muted-foreground"
+                  style={{ fontSize: 10 }}
+                >
+                  {truncate(d.label, 10)}
+                </text>
+              ) : null}
             </g>
           );
         })}

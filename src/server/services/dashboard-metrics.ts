@@ -373,6 +373,8 @@ export async function topOrderedProducts(
 /* ------------------------------------------------------------------ */
 
 export interface DashboardCharts {
+  /** The window every "last N days" dataset here was built over. */
+  days: number;
   accessRequests: TimeBucket[];
   decisions: DualTimeBucket[];
   customers: StatusSlice[];
@@ -389,7 +391,7 @@ export interface DashboardCharts {
  * re-asserts admin (defence in depth) but shares the single request-scoped
  * viewer lookup via React cache upstream.
  */
-export async function getDashboardCharts(): Promise<DashboardCharts> {
+export async function getDashboardCharts(days = 30): Promise<DashboardCharts> {
   const viewer = await getViewer();
   assertAdmin(viewer);
 
@@ -404,18 +406,19 @@ export async function getDashboardCharts(): Promise<DashboardCharts> {
     orderStatuses,
     topOrdered,
   ] = await Promise.all([
-    accessRequestsOverTime(30),
-    approvalsVsRejections(30),
+    accessRequestsOverTime(days),
+    approvalsVsRejections(days),
     customersByStatus(),
-    mostViewedProducts(8, 30),
+    mostViewedProducts(8, days),
     accessesExpiringSoon(),
-    catalogGrowth(30),
-    ordersOverTime(30),
+    catalogGrowth(days),
+    ordersOverTime(days),
     orderStatusBreakdown(),
-    topOrderedProducts(8, 30),
+    topOrderedProducts(8, days),
   ]);
 
   return {
+    days,
     accessRequests,
     decisions,
     customers,

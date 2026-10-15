@@ -64,6 +64,7 @@ function hasCounts(buckets: { count: number }[]): boolean {
  * self-handles its empty state.
  */
 export function DashboardCharts({ data }: { data: DashboardChartsData }) {
+  const win = `last ${data.days} days`;
   const orderSeries: ChartSeries[] = [
     {
       name: "Orders",
@@ -168,7 +169,7 @@ export function DashboardCharts({ data }: { data: DashboardChartsData }) {
       >
         <ChartCard
           title="Orders"
-          subtitle="Orders placed per day, last 30 days (cancelled excluded)"
+          subtitle={`Orders placed per day, ${win} (cancelled excluded)`}
           empty={!hasCounts(data.orders)}
           emptyTitle="No orders yet"
           emptyDescription="Daily order volume will chart here."
@@ -176,13 +177,13 @@ export function DashboardCharts({ data }: { data: DashboardChartsData }) {
           <LineChart
             series={orderSeries}
             area
-            ariaLabel="Orders placed per day over the last 30 days"
+            ariaLabel={`Orders placed per day over the ${win}`}
           />
         </ChartCard>
 
         <ChartCard
           title="Order value"
-          subtitle="₹ ordered per day, last 30 days (cancelled excluded)"
+          subtitle={`₹ ordered per day, ${win} (cancelled excluded)`}
           empty={!data.orders.some((b) => b.valuePaise > 0)}
           emptyTitle="No order value yet"
           emptyDescription="Daily ordered value will chart here."
@@ -190,13 +191,13 @@ export function DashboardCharts({ data }: { data: DashboardChartsData }) {
           <LineChart
             series={orderValueSeries}
             area
-            ariaLabel="Rupee value of orders placed per day over the last 30 days"
+            ariaLabel={`Rupee value of orders placed per day over the ${win}`}
           />
         </ChartCard>
 
         <ChartCard
           title="Top ordered products"
-          subtitle="Top 8 by units ordered, last 30 days"
+          subtitle={`Top 8 by units ordered, ${win}`}
           empty={topOrderedBars.length === 0}
           emptyTitle="No units ordered yet"
           emptyDescription="Products will rank here by units ordered."
@@ -204,7 +205,7 @@ export function DashboardCharts({ data }: { data: DashboardChartsData }) {
           <BarChart
             data={topOrderedBars}
             orientation="horizontal"
-            ariaLabel="Top products by units ordered over the last 30 days"
+            ariaLabel={`Top products by units ordered over the ${win}`}
           />
         </ChartCard>
 
@@ -224,7 +225,7 @@ export function DashboardCharts({ data }: { data: DashboardChartsData }) {
 
         <ChartCard
           title="Access requests"
-          subtitle="New requests per day, last 30 days"
+          subtitle={`New requests per day, ${win}`}
           empty={!hasCounts(data.accessRequests)}
           emptyTitle="No requests yet"
           emptyDescription="Daily access-request volume will chart here."
@@ -232,13 +233,13 @@ export function DashboardCharts({ data }: { data: DashboardChartsData }) {
           <LineChart
             series={requestSeries}
             area
-            ariaLabel="New access requests per day over the last 30 days"
+            ariaLabel={`New access requests per day over the ${win}`}
           />
         </ChartCard>
 
         <ChartCard
           title="Approvals vs rejections"
-          subtitle="Decided requests per day, last 30 days"
+          subtitle={`Decided requests per day, ${win}`}
           empty={!data.decisions.some((b) => b.count > 0 || b.countB > 0)}
           emptyTitle="No decisions yet"
           emptyDescription="Approved and rejected requests will chart here."
@@ -246,7 +247,7 @@ export function DashboardCharts({ data }: { data: DashboardChartsData }) {
         >
           <LineChart
             series={decisionSeries}
-            ariaLabel="Approved versus rejected access requests per day over the last 30 days"
+            ariaLabel={`Approved versus rejected access requests per day over the ${win}`}
           />
         </ChartCard>
 
@@ -266,7 +267,7 @@ export function DashboardCharts({ data }: { data: DashboardChartsData }) {
 
         <ChartCard
           title="Most viewed products"
-          subtitle="Top 8 by storefront views, last 30 days"
+          subtitle={`Top 8 by storefront views, ${win}`}
           empty={viewedBars.length === 0}
           emptyTitle="No views yet"
           emptyDescription="Product views from the storefront will rank here."
@@ -274,13 +275,13 @@ export function DashboardCharts({ data }: { data: DashboardChartsData }) {
           <BarChart
             data={viewedBars}
             orientation="horizontal"
-            ariaLabel="Most viewed products by view count over the last 30 days"
+            ariaLabel={`Most viewed products by view count over the ${win}`}
           />
         </ChartCard>
 
         <ChartCard
           title="Catalog growth"
-          subtitle="Products added per day, last 30 days"
+          subtitle={`Products added per day, ${win}`}
           empty={!hasCounts(data.catalog)}
           emptyTitle="No new products"
           emptyDescription="Products added over time will chart here."
@@ -288,7 +289,7 @@ export function DashboardCharts({ data }: { data: DashboardChartsData }) {
           <LineChart
             series={catalogSeries}
             area
-            ariaLabel="Products added per day over the last 30 days"
+            ariaLabel={`Products added per day over the ${win}`}
           />
         </ChartCard>
 

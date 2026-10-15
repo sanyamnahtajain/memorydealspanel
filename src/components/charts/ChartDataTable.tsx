@@ -6,6 +6,11 @@ import { formatFull } from "./chart-utils";
  * keyboard users get the exact numbers even though the SVG is decorative
  * (`role="img"` + `aria-label`). Kept in the accessibility tree only — hidden
  * from sighted users via `sr-only`.
+ *
+ * The `sr-only` box WRAPS the table rather than being the table: a table
+ * treats `width: 1px` as a minimum and grows to its content, so a hidden
+ * table of 24 hourly rows was 460px wide and, being absolutely positioned,
+ * stretched the admin shell's scroll area sideways on phones.
  */
 export function ChartDataTable({
   caption,
@@ -18,7 +23,8 @@ export function ChartDataTable({
   rows: { label: string; values: number[] }[];
 }) {
   return (
-    <table className="sr-only">
+    <div className="sr-only">
+      <table>
       <caption>{caption}</caption>
       <thead>
         <tr>
@@ -30,8 +36,8 @@ export function ChartDataTable({
         </tr>
       </thead>
       <tbody>
-        {rows.map((row) => (
-          <tr key={row.label}>
+        {rows.map((row, i) => (
+          <tr key={`${row.label}-${i}`}>
             <th scope="row">{row.label}</th>
             {row.values.map((v, i) => (
               <td key={i}>{formatFull(v)}</td>
@@ -39,6 +45,7 @@ export function ChartDataTable({
           </tr>
         ))}
       </tbody>
-    </table>
+      </table>
+    </div>
   );
 }

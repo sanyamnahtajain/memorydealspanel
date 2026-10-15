@@ -7,6 +7,8 @@ import {
   ClipboardList,
   FolderTree,
   Inbox,
+  PackageX,
+  ShoppingBag,
   UserCheck,
   Users,
 } from "lucide-react";
@@ -20,20 +22,27 @@ import { FadeUp } from "@/components/motion/primitives";
 import { PushToggle } from "@/components/admin/PushToggle";
 import {
   ActivityFeed,
+  AttentionStrip,
   DashboardCharts,
   DashboardChartsSkeleton,
+  DashboardInsights,
   DashboardPanel,
   ExpiringList,
   MiniList,
   PanelSkeleton,
-  QuickActionCard,
+  PeriodHero,
+  RangeSwitch,
   StatGrid,
   StatGridSkeleton,
   humanizeAudit,
+  parseDashboardRange,
+  type AttentionItem,
+  type DashboardRange,
   type ExpiringGrantItem,
   type StatItem,
 } from "@/components/admin/dashboard";
 import { getDashboardCharts } from "@/server/services/dashboard-metrics";
+import { getDashboardInsights } from "@/server/services/dashboard-insights";
 
 export const metadata: Metadata = {
   title: "Dashboard — MemoryDeals Admin",
@@ -60,16 +69,71 @@ const MOST_VIEWED_WINDOW_DAYS = 30;
  * activity and most-viewed sections, each of which streams in under its own
  * Suspense boundary with a matching skeleton.
  */
-export default async function AdminDashboardPage() {
+export default async function AdminDashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const viewer = await resolveViewer();
   if (!isAdmin(viewer)) {
     redirect("/admin/login");
   }
 
-  // Cheap, unstreamed: powers the Requests nav badge in the shell.
-  const pendingRequestCount = await prisma.accessRequest.count({
-    where: { status: "PENDING" },
-  });
+  const range = parseDashboardRange((await searchParams).range);
+
+  // Cheap, unstreamed: the counts that mean work today. They power the
+  // Requests nav badge and the "needs attention" strip, so they are read
+  // before anything streams.
+  const now = new Date();
+  const [pendingRequestCount, toConfirmCount, outOfStockCount, expiringCount] =
+    await Promise.all([
+      prisma.accessRequest.count({ where: { status: "PENDING" } }),
+      prisma.order.count({ where: { status: "PLACED" } }),
+      prisma.product.count({
+        where: { deletedAt: null, status: "ACTIVE", stockStatus: "OUT_OF_STOCK" },
+      }),
+      prisma.accessGrant.count({
+        where: {
+          revokedAt: null,
+          expiresAt: { gt: now, lte: new Date(now.getTime() + EXPIRING_WINDOW_DAYS * DAY_MS) },
+        },
+      }),
+    ]);
+
+  const attention: AttentionItem[] = [
+    {
+      key: "requests",
+      label: pendingRequestCount === 1 ? "request to review" : "requests to review",
+      value: fmt(pendingRequestCount),
+      href: "/admin/requests",
+      icon: <Inbox aria-hidden />,
+      urgent: pendingRequestCount > 0,
+    },
+    {
+      key: "orders",
+      label: toConfirmCount === 1 ? "order to confirm" : "orders to confirm",
+      value: fmt(toConfirmCount),
+      href: "/admin/orders?status=PLACED",
+      icon: <ShoppingBag aria-hidden />,
+      urgent: toConfirmCount > 0,
+    },
+    {
+      key: "stock",
+      label: "out of stock",
+      value: fmt(outOfStockCount),
+      href: "/admin/products?stock=OUT_OF_STOCK",
+      icon: <PackageX aria-hidden />,
+      urgent: outOfStockCount > 0,
+    },
+    {
+      key: "expiring",
+      label: `access expiring in ${EXPIRING_WINDOW_DAYS}d`,
+      value: fmt(expiringCount),
+      href: "/admin/customers",
+      icon: <AlarmClock aria-hidden />,
+      urgent: false,
+    },
+  ];
 
   return (
     <AdminShell
@@ -79,38 +143,33 @@ export default async function AdminDashboardPage() {
       <div className="space-y-6">
         <PageHeader
           title="Dashboard"
-          description="Catalog, customers and activity at a glance."
-          actions={<PushToggle />}
+          description="Trade, customers, stock and activity at a glance."
+          actions={
+            <div className="flex flex-wrap items-center gap-2">
+              <RangeSwitch value={range} />
+              <PushToggle />
+            </div>
+          }
         />
 
-        {/* Quick action: pending requests — rendered from the count we already
-            fetched for the nav badge, so it's instant (no extra Suspense). */}
+        {/* Needs attention — instant (counts read above), one row of tappable
+            chips that scrolls sideways on a phone. */}
         <FadeUp>
-          <QuickActionCard
-            label={
-              pendingRequestCount === 1
-                ? "access request"
-                : "access requests"
-            }
-            value={fmt(pendingRequestCount)}
-            caption={
-              pendingRequestCount > 0
-                ? "waiting for your review"
-                : "you're all caught up"
-            }
-            href="/admin/requests"
-            icon={<Inbox aria-hidden />}
-            actionLabel={pendingRequestCount > 0 ? "Review" : "Open"}
-            urgent={pendingRequestCount > 0}
-          />
+          <AttentionStrip items={attention} />
         </FadeUp>
+
+        {/* Today / this week / this month, then the windowed trade insights.
+            One streamed section: both come from the same order read. */}
+        <Suspense fallback={<InsightsSkeleton />}>
+          <InsightsSection days={range} />
+        </Suspense>
 
         <Suspense fallback={<StatGridSkeleton count={6} columns={3} />}>
           <KpiSection />
         </Suspense>
 
         <Suspense fallback={<DashboardChartsSkeleton count={6} />}>
-          <ChartsSection />
+          <ChartsSection days={range} />
         </Suspense>
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -203,17 +262,41 @@ async function KpiSection() {
     },
   ];
 
-  return <StatGrid items={items} columns={3} />;
+  return <StatGrid items={items} columns={3} dense />;
 }
 
 /* ------------------------------------------------------------------ */
 /* Insights charts (streamed, admin-guarded aggregations)              */
 /* ------------------------------------------------------------------ */
 
-async function ChartsSection() {
+async function ChartsSection({ days }: { days: DashboardRange }) {
   // Admin-guarded aggregation loader; every dataset resolves in parallel.
-  const data = await getDashboardCharts();
+  const data = await getDashboardCharts(days);
   return <DashboardCharts data={data} />;
+}
+
+/* ------------------------------------------------------------------ */
+/* Business insights (streamed, admin-guarded; one order read)         */
+/* ------------------------------------------------------------------ */
+
+async function InsightsSection({ days }: { days: DashboardRange }) {
+  const data = await getDashboardInsights(days);
+  return (
+    <div className="space-y-8">
+      <PeriodHero periods={data.trade.periods} />
+      <DashboardInsights data={data} />
+    </div>
+  );
+}
+
+function InsightsSkeleton() {
+  return (
+    <div className="space-y-8" aria-hidden>
+      <StatGridSkeleton count={3} columns={3} />
+      <StatGridSkeleton count={6} columns={3} />
+      <DashboardChartsSkeleton count={2} />
+    </div>
+  );
 }
 
 /* ------------------------------------------------------------------ */

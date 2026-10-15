@@ -33,6 +33,8 @@ interface StatGridProps {
   columns?: 3 | 4;
   /** Delay before the stagger begins, in seconds. */
   delay?: number;
+  /** Two-up on phones with compact cards — for a row of many small KPIs. */
+  dense?: boolean;
   className?: string;
 }
 
@@ -43,12 +45,12 @@ interface StatGridProps {
  * `Stagger` wraps each direct child in a motion item, so those wrappers become
  * the grid cells: the grid CSS lives on the Stagger container itself.
  */
-export function StatGrid({ items, columns = 4, delay = 0, className }: StatGridProps) {
+export function StatGrid({ items, columns = 4, delay = 0, dense = false, className }: StatGridProps) {
   return (
     <Stagger
       delay={delay}
       className={cn(
-        "grid grid-cols-1 gap-4 sm:grid-cols-2",
+        dense ? "grid grid-cols-2 gap-3 sm:gap-4" : "grid grid-cols-1 gap-4 sm:grid-cols-2",
         columns === 4 ? "lg:grid-cols-4" : "lg:grid-cols-3",
         className,
       )}
@@ -62,6 +64,7 @@ export function StatGrid({ items, columns = 4, delay = 0, className }: StatGridP
           icon={item.icon}
           delta={item.delta}
           deltaLabel={item.deltaLabel}
+          size={dense ? "compact" : "default"}
         />
       ))}
     </Stagger>

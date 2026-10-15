@@ -19,6 +19,8 @@ interface StatCardProps {
   icon?: React.ReactNode;
   /** Renders the shimmering skeleton variant instead of content. */
   skeleton?: boolean;
+  /** "compact" fits two-up on a phone: tighter padding, a smaller figure. */
+  size?: "default" | "compact";
   className?: string;
 }
 
@@ -27,6 +29,7 @@ interface StatCardProps {
  * client JS is needed. Numbers use tabular numerals.
  */
 export function StatCard({
+  size = "default",
   label,
   value,
   delta,
@@ -45,24 +48,25 @@ export function StatCard({
     <div
       data-slot="stat-card"
       className={cn(
-        "rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm",
+        "rounded-xl border border-border bg-card text-card-foreground shadow-sm",
+        size === "compact" ? "p-3 sm:p-4" : "p-4",
         className
       )}
     >
       <div className="flex items-start justify-between gap-3">
-        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+        <p className={cn("font-medium tracking-wide text-muted-foreground uppercase", size === "compact" ? "text-[11px] leading-4" : "text-xs")}>
           {label}
         </p>
         {icon ? (
           <span
             aria-hidden
-            className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground [&_svg]:size-4"
+            className={cn("flex shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground", size === "compact" ? "size-7 [&_svg]:size-3.5" : "size-8 [&_svg]:size-4")}
           >
             {icon}
           </span>
         ) : null}
       </div>
-      <p className="mt-2 font-tabular text-2xl font-semibold tracking-tight text-foreground">
+      <p className={cn("font-tabular font-semibold tracking-tight text-foreground", size === "compact" ? "mt-1.5 text-xl sm:text-2xl" : "mt-2 text-2xl")}>
         {typeof value === "number" ? (
           <AnimatedNumber value={value} />
         ) : (

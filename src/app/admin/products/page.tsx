@@ -18,7 +18,7 @@ import {
   type ListProductsInput,
   type ProductSort,
 } from "@/server/actions/product-list-schema";
-import { entityStatusSchema } from "@/lib/schemas/shared";
+import { entityStatusSchema, stockStatusSchema } from "@/lib/schemas/shared";
 import { PAGE_SIZES } from "@/lib/constants";
 import { AdminShell } from "@/components/shell/AdminShell";
 import { PageHeader, PricePill, StatusChip, EmptyState, Pager } from "@/components/common";
@@ -87,6 +87,8 @@ export default async function AdminProductsPage({
   const pageParam = Number(first(params.page) ?? "1");
 
   const statusParsed = entityStatusSchema.safeParse(statusParam);
+  // `?stock=OUT_OF_STOCK` — the dashboard's "out of stock" chip lands here.
+  const stockParsed = stockStatusSchema.safeParse(first(params.stock));
   const sortParsed = productSortSchema.safeParse(sortParam);
 
   const listInput: ListProductsInput = {
@@ -94,6 +96,7 @@ export default async function AdminProductsPage({
     categoryId:
       categoryParam && categoryParam !== "all" ? categoryParam : undefined,
     status: statusParsed.success ? statusParsed.data : undefined,
+    stockStatus: stockParsed.success ? stockParsed.data : undefined,
     sort: sortParsed.success ? (sortParsed.data as ProductSort) : "newest",
     page: Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1,
   };

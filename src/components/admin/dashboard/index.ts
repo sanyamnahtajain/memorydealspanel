@@ -14,3 +14,8 @@ export {
 } from "./DashboardSkeletons";
 export { QuickActionCard, type QuickActionCardProps } from "./QuickActionCard";
 export { ExpiringList, type ExpiringGrantItem } from "./ExpiringList";
+export { DashboardInsights } from "./DashboardInsights";
+export { PeriodHero } from "./PeriodHero";
+export { AttentionStrip, type AttentionItem } from "./AttentionStrip";
+export { RangeSwitch, parseDashboardRange, type DashboardRange } from "./RangeSwitch";
+export { FunnelSteps } from "./FunnelSteps";
