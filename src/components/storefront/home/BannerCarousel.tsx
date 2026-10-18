@@ -7,6 +7,7 @@ import { useReducedMotion } from "motion/react";
 
 import type { StorefrontBanner } from "@/lib/banners";
 import { cn } from "@/lib/utils";
+import { ArrowRight } from "lucide-react";
 import { catalogImageUrl } from "@/lib/image-loader";
 
 /**
@@ -233,15 +234,45 @@ function BannerSlide({
         fetchPriority={priority ? "high" : "auto"}
         decoding={priority ? "sync" : "async"}
         onError={() => setFailed(true)}
-        className="h-full w-full object-contain"
+        // A hero (with copy over it) fills the frame like a photograph; an
+        // image-only banner keeps its whole artwork visible (see AMBIENT FILL).
+        className={cn("h-full w-full", banner.title ? "object-cover" : "object-contain")}
       />
     </picture>
     </>
   );
 
+  // HERO COPY (owner-authored headline/line/button): drawn over the artwork
+  // behind a left-to-right scrim so the words read on any picture. A banner
+  // without copy renders exactly as before. The button is decorative here —
+  // the whole slide is already the link — so it is a span, not a nested <a>.
+  const hero = banner.title ? (
+    <>
+      <div
+        aria-hidden
+        className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/35 to-black/5 sm:from-black/65 sm:via-black/25"
+      />
+      <div className="absolute inset-y-0 left-0 flex w-full max-w-[34rem] flex-col justify-center gap-2 px-5 text-white sm:px-8 md:gap-3">
+        <h2 className="text-balance font-heading text-xl leading-tight font-bold tracking-tight drop-shadow-sm sm:text-3xl md:text-4xl">
+          {banner.title}
+        </h2>
+        {banner.subtitle ? (
+          <p className="line-clamp-2 max-w-md text-sm text-white/85 sm:text-base">{banner.subtitle}</p>
+        ) : null}
+        {banner.href && banner.ctaLabel ? (
+          <span className="mt-1 inline-flex w-fit items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm">
+            {banner.ctaLabel}
+            <ArrowRight aria-hidden className="size-4" />
+          </span>
+        ) : null}
+      </div>
+    </>
+  ) : null;
+
   const frame = (
     <div className="relative aspect-[2/1] w-full overflow-hidden bg-muted sm:aspect-[3/1]">
       {art}
+      {hero}
     </div>
   );
 

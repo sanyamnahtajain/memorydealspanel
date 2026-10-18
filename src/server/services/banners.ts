@@ -22,6 +22,9 @@ export interface AdminBanner {
   mobileImageUrl: string | null;
   alt: string;
   href: string | null;
+  title: string | null;
+  subtitle: string | null;
+  ctaLabel: string | null;
   sortOrder: number;
   active: boolean;
   startsAt: Date | null;
@@ -35,6 +38,9 @@ const ADMIN_SELECT = {
   mobileImageUrl: true,
   alt: true,
   href: true,
+  title: true,
+  subtitle: true,
+  ctaLabel: true,
   sortOrder: true,
   active: true,
   startsAt: true,
@@ -66,6 +72,9 @@ export async function listLiveBanners(
         mobileImageUrl: true,
         alt: true,
         href: true,
+        title: true,
+        subtitle: true,
+        ctaLabel: true,
         startsAt: true,
         endsAt: true,
         active: true,
@@ -80,6 +89,9 @@ export async function listLiveBanners(
         mobileImageUrl: row.mobileImageUrl ?? null,
         alt: row.alt,
         href: row.href ?? null,
+        title: row.title || null,
+        subtitle: row.subtitle || null,
+        ctaLabel: row.ctaLabel || null,
       }));
   } catch (error) {
     console.error("[banners] live read failed:", error);
@@ -100,6 +112,9 @@ export async function listBannersForAdmin(
     ...row,
     mobileImageUrl: row.mobileImageUrl ?? null,
     href: row.href ?? null,
+    title: row.title ?? null,
+    subtitle: row.subtitle ?? null,
+    ctaLabel: row.ctaLabel ?? null,
     startsAt: row.startsAt ?? null,
     endsAt: row.endsAt ?? null,
   }));
@@ -119,6 +134,9 @@ export async function createBanner(input: BannerInput): Promise<AdminBanner> {
       mobileImageUrl: input.mobileImageUrl ?? null,
       alt: input.alt,
       href: input.href ?? null,
+      title: input.title || null,
+      subtitle: input.subtitle || null,
+      ctaLabel: input.ctaLabel || null,
       sortOrder: input.sortOrder,
       active: input.active,
       startsAt: input.startsAt ? new Date(input.startsAt) : null,
@@ -130,7 +148,23 @@ export async function createBanner(input: BannerInput): Promise<AdminBanner> {
     },
     select: ADMIN_SELECT,
   });
-  return { ...row, mobileImageUrl: row.mobileImageUrl ?? null, href: row.href ?? null };
+  return adminRow(row);
+}
+
+/** Normalise Mongo's optional fields to explicit nulls for the admin shape. */
+function adminRow(row: {
+  id: string; placement: string; imageUrl: string; mobileImageUrl: string | null; alt: string;
+  href: string | null; title: string | null; subtitle: string | null; ctaLabel: string | null;
+  sortOrder: number; active: boolean; startsAt: Date | null; endsAt: Date | null;
+}): AdminBanner {
+  return {
+    ...row,
+    mobileImageUrl: row.mobileImageUrl ?? null,
+    href: row.href ?? null,
+    title: row.title ?? null,
+    subtitle: row.subtitle ?? null,
+    ctaLabel: row.ctaLabel ?? null,
+  };
 }
 
 export async function updateBanner(
@@ -151,6 +185,9 @@ export async function updateBanner(
       mobileImageUrl: input.mobileImageUrl ?? null,
       alt: input.alt,
       href: input.href ?? null,
+      title: input.title || null,
+      subtitle: input.subtitle || null,
+      ctaLabel: input.ctaLabel || null,
       sortOrder: input.sortOrder,
       active: input.active,
       startsAt: input.startsAt ? new Date(input.startsAt) : null,
@@ -158,7 +195,7 @@ export async function updateBanner(
     },
     select: ADMIN_SELECT,
   });
-  return { ...row, mobileImageUrl: row.mobileImageUrl ?? null, href: row.href ?? null };
+  return adminRow(row);
 }
 
 /**

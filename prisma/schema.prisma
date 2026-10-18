@@ -498,6 +498,11 @@ model Banner {
   alt       String
   /// Where a tap goes. Null = the banner is not clickable.
   href      String?
+  /// Optional hero copy drawn OVER the artwork (headline, one line under it,
+  /// the button's label). All null = a pure image banner, exactly as before.
+  title     String?
+  subtitle  String?
+  ctaLabel  String?
   sortOrder Int       @default(0)
   active    Boolean   @default(true)
   /// Optional schedule. Null start = live now; null end = never expires.

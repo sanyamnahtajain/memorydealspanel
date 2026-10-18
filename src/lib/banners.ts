@@ -38,6 +38,10 @@ export function isBannerPlacement(value: string): value is BannerPlacement {
 
 /** Longest alt text worth storing — it is read aloud, not displayed. */
 export const MAX_BANNER_ALT = 160;
+/** Hero copy limits — a headline must fit two lines on a phone. */
+export const MAX_BANNER_TITLE = 60;
+export const MAX_BANNER_SUBTITLE = 120;
+export const MAX_BANNER_CTA = 24;
 
 /**
  * Where a banner may point.
@@ -59,6 +63,9 @@ export const bannerInputSchema = z.object({
     .nullish(),
   alt: z.string().trim().min(1, "Describe the banner.").max(MAX_BANNER_ALT),
   href: bannerHrefSchema.nullish(),
+  title: z.string().trim().max(MAX_BANNER_TITLE, `Keep the headline under ${MAX_BANNER_TITLE} characters.`).nullish(),
+  subtitle: z.string().trim().max(MAX_BANNER_SUBTITLE, `Keep the line under ${MAX_BANNER_SUBTITLE} characters.`).nullish(),
+  ctaLabel: z.string().trim().max(MAX_BANNER_CTA, `Keep the button label under ${MAX_BANNER_CTA} characters.`).nullish(),
   sortOrder: z.number().int().min(0).max(9999).default(0),
   active: z.boolean().default(true),
   startsAt: z.string().datetime({ offset: true }).nullish(),
@@ -74,6 +81,10 @@ export interface StorefrontBanner {
   mobileImageUrl: string | null;
   alt: string;
   href: string | null;
+  /** Hero copy over the artwork; all null = image-only banner. */
+  title: string | null;
+  subtitle: string | null;
+  ctaLabel: string | null;
 }
 
 export interface BannerSchedule {

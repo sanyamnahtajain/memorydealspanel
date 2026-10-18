@@ -58,6 +58,9 @@ const banner: StorefrontBanner = {
   mobileImageUrl: null,
   alt: "Diwali sale — 20% off all chargers",
   href: "/c/chargers",
+  title: null,
+  subtitle: null,
+  ctaLabel: null,
 };
 
 /** Pretend an <img> has finished loading and produced nothing — a failure. */
@@ -153,5 +156,25 @@ describe("BannerCarousel", () => {
     const link = screen.getByAltText(banner.alt).closest("a");
     expect(link).toHaveAttribute("target", "_blank");
     expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  });
+});
+
+describe("BannerCarousel hero copy", () => {
+  it("draws the headline, line and button over a banner that has copy, and nothing over one that has not", () => {
+    const { container, unmount } = render(
+      <BannerCarousel
+        banners={[{ ...banner, title: "Trending gadgets, delivered", subtitle: "Trade rates on chargers.", ctaLabel: "Shop now" }]}
+      />,
+    );
+    expect(screen.getByRole("heading", { name: "Trending gadgets, delivered" })).toBeInTheDocument();
+    expect(screen.getByText("Trade rates on chargers.")).toBeInTheDocument();
+    expect(screen.getByText("Shop now")).toBeInTheDocument();
+    // Hero art fills the frame; the words need a backdrop.
+    expect(container.querySelector("picture img")?.className).toContain("object-cover");
+    unmount();
+
+    const plain = render(<BannerCarousel banners={[banner]} />);
+    expect(plain.container.querySelector("h2")).toBeNull();
+    expect(plain.container.querySelector("picture img")?.className).toContain("object-contain");
   });
 });

@@ -28,6 +28,9 @@ import { ImageError, compressBannerArtwork } from "@/lib/image";
 import {
   BANNER_PLACEMENTS,
   MAX_BANNER_ALT,
+  MAX_BANNER_CTA,
+  MAX_BANNER_SUBTITLE,
+  MAX_BANNER_TITLE,
   bannerStatusReason,
   type BannerPlacement,
 } from "@/lib/banners";
@@ -258,6 +261,9 @@ function BannerDialog({
   );
   const [alt, setAlt] = React.useState(banner?.alt ?? "");
   const [href, setHref] = React.useState(banner?.href ?? "");
+  const [title, setTitle] = React.useState(banner?.title ?? "");
+  const [subtitle, setSubtitle] = React.useState(banner?.subtitle ?? "");
+  const [ctaLabel, setCtaLabel] = React.useState(banner?.ctaLabel ?? "");
   const [active, setActive] = React.useState(banner?.active ?? true);
   const [startsAt, setStartsAt] = React.useState(
     toLocalInput(banner?.startsAt ?? null),
@@ -331,6 +337,9 @@ function BannerDialog({
         mobileImageUrl: mobileImageUrl.trim() === "" ? null : mobileImageUrl.trim(),
         alt: alt.trim(),
         href: href.trim() === "" ? null : href.trim(),
+        title: title.trim() === "" ? null : title.trim(),
+        subtitle: subtitle.trim() === "" ? null : subtitle.trim(),
+        ctaLabel: ctaLabel.trim() === "" ? null : ctaLabel.trim(),
         sortOrder: banner?.sortOrder ?? 0,
         active,
         // datetime-local is local time; the server stores the instant.
@@ -387,6 +396,50 @@ function BannerDialog({
               Read aloud by screen readers, and shown if the image fails to
               load.
             </p>
+          </div>
+
+          <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-3">
+            <div>
+              <p className="text-sm font-medium text-foreground">Text over the artwork (optional)</p>
+              <p className="text-xs text-muted-foreground">
+                Turns the banner into a hero: a headline, one line under it and a
+                button, drawn over the image. Leave all three empty for a plain
+                picture banner.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="banner-title">Headline</Label>
+              <Input
+                id="banner-title"
+                value={title}
+                maxLength={MAX_BANNER_TITLE}
+                placeholder="Trending gadgets, delivered"
+                onChange={(e) => setTitle(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="banner-subtitle">One line under it</Label>
+              <Input
+                id="banner-subtitle"
+                value={subtitle}
+                maxLength={MAX_BANNER_SUBTITLE}
+                placeholder="Chargers, earbuds and cables at trade rates."
+                onChange={(e) => setSubtitle(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="banner-cta">Button label</Label>
+              <Input
+                id="banner-cta"
+                value={ctaLabel}
+                maxLength={MAX_BANNER_CTA}
+                placeholder="Shop now"
+                onChange={(e) => setCtaLabel(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Shown only when the banner has a link below.
+              </p>
+            </div>
           </div>
 
           <div className="space-y-1.5">
