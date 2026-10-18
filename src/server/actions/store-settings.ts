@@ -260,6 +260,7 @@ export async function saveSlabyBrandingAction(
 
     const settings = await updateSlabyBranding(parsed.data);
 
+    resetSwrCache("slaby-branding");
     await writeAudit({
       actorType: "admin",
       actorId: viewer.adminId,

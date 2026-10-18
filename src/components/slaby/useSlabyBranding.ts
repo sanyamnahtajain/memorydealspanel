@@ -7,6 +7,7 @@ import {
   SLABY_BRANDING_OFF,
   type SlabyBrandingConfig,
 } from "@/lib/slaby/branding";
+import { SlabyBrandingContext } from "./SlabyBrandingProvider";
 
 /**
  * Client-side access to the Slaby branding config for components that are
@@ -39,10 +40,14 @@ function load(): Promise<SlabyBrandingConfig> {
 }
 
 export function useSlabyBranding(): SlabyBrandingConfig {
+  // Storefront pages get the config from the layout (server-resolved, so the
+  // badge is in the first paint and costs no request). Elsewhere, fetch once.
+  const provided = React.useContext(SlabyBrandingContext);
   const [config, setConfig] = React.useState<SlabyBrandingConfig>(
-    cached ?? SLABY_BRANDING_OFF,
+    provided ?? cached ?? SLABY_BRANDING_OFF,
   );
   React.useEffect(() => {
+    if (provided) return;
     let alive = true;
     void load().then((c) => {
       if (alive) setConfig(c);
@@ -50,6 +55,6 @@ export function useSlabyBranding(): SlabyBrandingConfig {
     return () => {
       alive = false;
     };
-  }, []);
-  return config;
+  }, [provided]);
+  return provided ?? config;
 }

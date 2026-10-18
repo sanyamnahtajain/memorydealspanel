@@ -52,6 +52,17 @@ export default function AboutPage() {
         Have a question, or want to become a stockist? Head to our{" "}
         <a href="/contact">contact page</a> — we&rsquo;d love to hear from you.
       </p>
+
+      <h2>Built on Slaby</h2>
+      <p>
+        This shop runs on{" "}
+        <a href="https://slaby.in/?utm_source=memorydeals&utm_medium=about" target="_blank" rel="noopener noreferrer">
+          Slaby
+        </a>
+        , a storefront platform made for Indian wholesalers and retailers:
+        price access on approval, GST invoicing, WhatsApp-first ordering and an
+        installable app for your buyers.
+      </p>
     </ContentPage>
   );
 }

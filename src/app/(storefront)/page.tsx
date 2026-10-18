@@ -28,6 +28,9 @@ import { BannerCarousel } from "@/components/storefront/home/BannerCarousel";
 import { listLiveBanners } from "@/server/services/banners";
 import { swrCached } from "@/server/cache/swr";
 import { BuyAgainRail } from "@/components/storefront/home/BuyAgainRail";
+import { CatalogCta } from "@/components/storefront/home/CatalogCta";
+import { RecentlyViewedRail } from "@/components/storefront/recently-viewed/RecentlyViewedRail";
+import { SlabyPoweredBy } from "@/components/slaby/SlabyPoweredBy";
 import { LastOrderCard } from "@/components/storefront/home/LastOrderCard";
 import { APP_NAME } from "@/lib/constants";
 
@@ -235,6 +238,11 @@ export default async function HomePage() {
           <TrendingRail />
         </Suspense>
 
+        {/* Recently viewed — this device's own trail, read from the browser
+            after mount (never server-rendered, never per-viewer on the
+            server). Price-free cards; renders nothing under two items. */}
+        <RecentlyViewedRail />
+
         {/* New & featured products (gated pills). Far below the fold now, so
             no eager/priority images — Best sellers owns the LCP slot. */}
         {featuredItems.length > 0 ? (
@@ -247,6 +255,9 @@ export default async function HomePage() {
             <FeaturedRail items={featuredItems} priorityImageCount={0} />
           </section>
         ) : null}
+        {/* The shelves above are a sample; the whole catalogue is one tap away. */}
+        <CatalogCta />
+
 
         {/* How it works — last: the page's one dark feature panel, the
             explainer kept for visitors who are not approved yet. The panel
@@ -256,6 +267,10 @@ export default async function HomePage() {
         </section>
       </HomeSections>
       </HomePriceReveal>
+
+      {/* Phones have no footer (owner request), so the platform mark lives
+          here at the end of the page; laptops get it in the footer. */}
+      <SlabyPoweredBy phoneOnly className="mt-6" />
     </StorefrontShell>
   );
 }

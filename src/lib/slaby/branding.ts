@@ -30,7 +30,10 @@ export const SLABY_PLACEMENT_LABELS: Record<SlabyPlacement, { label: string; hin
     label: "Order-placed celebration",
     hint: "“Powered by Slaby” on the animated order-success screen.",
   },
-  footer: { label: "Storefront footer", hint: "A “Built with Slaby” line in the footer." },
+  footer: {
+    label: "Storefront footer & page ends",
+    hint: "A “Powered by Slaby” mark in the footer, and at the end of the home, account and search screens on phones (where there is no footer).",
+  },
   promo: {
     label: "Occasional promo card",
     hint: "A small dismissible card, shown at most once per the frequency below.",

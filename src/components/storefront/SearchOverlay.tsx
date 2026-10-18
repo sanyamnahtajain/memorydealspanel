@@ -41,6 +41,7 @@ import { searchSuggestions } from "@/app/(storefront)/search/actions";
 import { cn } from "@/lib/utils";
 import { titleCase } from "@/lib/display-case";
 import { hapticTap } from "@/lib/haptics";
+import { SlabyPoweredBy } from "@/components/slaby/SlabyPoweredBy";
 import { useEntranceInitial } from "@/components/motion/useEntrance";
 import {
   clearRecents as clearStoredRecents,
@@ -596,6 +597,7 @@ function EmptyQueryPanel({
           </div>
         </section>
       ) : null}
+      <SlabyPoweredBy className="py-2" />
     </div>
   );
 }

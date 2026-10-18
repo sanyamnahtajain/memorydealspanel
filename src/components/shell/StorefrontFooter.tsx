@@ -67,6 +67,11 @@ export function StorefrontFooter() {
             <p className="mt-2 text-sm text-pretty text-muted-foreground">
               {APP_TAGLINE}
             </p>
+            {slaby ? (
+              <div className="mt-5">
+                <SlabyBadge placement="footer" prefix="Powered by" />
+              </div>
+            ) : null}
           </div>
 
           {/* Link columns */}
@@ -132,7 +137,6 @@ export function StorefrontFooter() {
           </p>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
             <p>Wholesale prices are visible to approved buyers only.</p>
-            {slaby ? <SlabyBadge placement="footer" className="-mx-2.5" /> : null}
           </div>
         </div>
       </div>
