@@ -58,6 +58,8 @@ import {
 } from "@/server/contact";
 import { ProductPriceArea } from "./ProductPriceArea";
 import { RequirementPrompt } from "@/components/storefront/requirements/RequirementPrompt";
+import { RecentlyViewedRecorder } from "@/components/storefront/recently-viewed/RecentlyViewedRecorder";
+import { RecentlyViewedRail } from "@/components/storefront/recently-viewed/RecentlyViewedRail";
 import { effectivePerModelPack } from "@/lib/allocation";
 import { prisma } from "@/server/db";
 import { publicBaseOrEmpty } from "@/server/storage/r2";
@@ -566,6 +568,16 @@ export default async function ProductDetailPage({ params }: PageParams) {
             </div>
           </div>
         )}
+        {/* Remembers this product on THIS device for the "Recently viewed"
+            shelves (price-free card: name, brand, picture). */}
+        <RecentlyViewedRecorder
+          id={product.id}
+          slug={product.slug}
+          name={product.name}
+          brand={product.brandRef?.name ?? product.brand ?? null}
+          imageUrl={primaryImage ? (primaryImage.thumbUrl ?? primaryImage.url) : null}
+        />
+
 
         {related.length > 0 ? (
           <FadeUp delay={0.1}>
@@ -587,6 +599,8 @@ export default async function ProductDetailPage({ params }: PageParams) {
             </section>
           </FadeUp>
         ) : null}
+
+        <RecentlyViewedRail excludeId={product.id} className="mt-10 md:mt-16" />
       </div>
 
       <StickyMobileBar

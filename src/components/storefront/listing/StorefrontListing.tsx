@@ -36,6 +36,7 @@ import {
 } from "@/components/preferences/PreferencesProvider";
 import { ListingControls } from "./ListingControls";
 import { LoadMoreButton } from "./LoadMoreButton";
+import { BackToTop } from "@/components/storefront/BackToTop";
 import { ProductGridView } from "./ProductGridView";
 import { ProductCompactView } from "./ProductCompactView";
 import { ProductTableView } from "./ProductTableView";
@@ -316,6 +317,7 @@ export function StorefrontListing({
           skeletonCount={viewMode === "grid" ? 4 : 0}
         />
       ) : null}
+      <BackToTop />
     </div>
   );
 }
