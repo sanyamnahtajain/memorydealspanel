@@ -23,6 +23,7 @@ import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { ConfirmSheet } from "@/components/common";
 import { BroadcastCustomerPicker } from "./BroadcastCustomerPicker";
+import { ReelProductPicker, type PickedProduct } from "@/components/admin/reels/ReelProductPicker";
 import { NotificationPreviewCard } from "./NotificationPreviewCard";
 
 /**
@@ -59,10 +60,16 @@ const AUDIENCES: { key: Audience; label: string; hint: string; icon: React.React
   },
 ];
 
-export function BroadcastComposer() {
+export function BroadcastComposer({
+  initialProduct = null,
+}: {
+  /** Arriving from a product's Buyers panel: start on "Bought a product" with it picked. */
+  initialProduct?: PickedProduct | null;
+} = {}) {
   const [audience, setAudience] = React.useState<Audience>("customer");
-  const [segment, setSegment] = React.useState<BroadcastSegment>("all");
+  const [segment, setSegment] = React.useState<BroadcastSegment>(initialProduct ? "bought" : "all");
   const [customer, setCustomer] = React.useState<CustomerRow | null>(null);
+  const [product, setProduct] = React.useState<PickedProduct | null>(initialProduct);
   const [title, setTitle] = React.useState("");
   const [body, setBody] = React.useState("");
   const [url, setUrl] = React.useState("");
@@ -76,8 +83,10 @@ export function BroadcastComposer() {
   const [confirmOpen, setConfirmOpen] = React.useState(false);
 
   const customerId = customer?.id ?? null;
+  const productId = product?.id ?? null;
   const needsCustomer = audience === "customer" && segment === "one";
-  const audienceReady = !needsCustomer || customerId !== null;
+  const needsProduct = audience === "customer" && segment === "bought";
+  const audienceReady = (!needsCustomer || customerId !== null) && (!needsProduct || productId !== null);
 
   const trimmedTitle = title.trim();
   const trimmedBody = body.trim();
@@ -110,6 +119,7 @@ export function BroadcastComposer() {
             audience,
             segment: audience === "admin" ? "all" : segment,
             customerId,
+            productId,
           });
           if (cancelled) return;
           if (res.ok) {
@@ -134,7 +144,7 @@ export function BroadcastComposer() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [audience, segment, customerId, audienceReady, countAttempt]);
+  }, [audience, segment, customerId, productId, audienceReady, countAttempt]);
 
   const noun = audience === "admin" ? "staff device" : "customer";
   const recipientLine =
@@ -157,6 +167,7 @@ export function BroadcastComposer() {
         audience,
         segment: audience === "admin" ? "all" : segment,
         customerId,
+        productId,
         title: trimmedTitle,
         body: trimmedBody,
         url: trimmedUrl === "" ? null : trimmedUrl,
@@ -223,6 +234,7 @@ export function BroadcastComposer() {
                     onClick={() => {
                       setSegment(option.key);
                       if (option.key !== "one") setCustomer(null);
+                      if (option.key !== "bought") setProduct(null);
                     }}
                     label={option.label}
                     hint={option.hint}
@@ -237,6 +249,15 @@ export function BroadcastComposer() {
                   disabled={sending}
                 />
               ) : null}
+
+              {needsProduct ? (
+                <div className="space-y-1.5">
+                  <p className="text-xs text-muted-foreground">
+                    Every shop that ordered this product (cancelled orders and blocked shops left out).
+                  </p>
+                  <ReelProductPicker value={product} onChange={setProduct} disabled={sending} label="Product" hint={null} />
+                </div>
+              ) : null}
             </div>
           ) : null}
 
@@ -247,7 +268,7 @@ export function BroadcastComposer() {
           >
             {!audienceReady ? (
               <span className="text-muted-foreground">
-                Pick a customer to see how many people this reaches.
+                {needsProduct ? "Pick a product" : "Pick a customer"} to see how many people this reaches.
               </span>
             ) : countLoading ? (
               <>

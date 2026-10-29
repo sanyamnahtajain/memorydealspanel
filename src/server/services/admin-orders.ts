@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import type { OrderStatus } from "@prisma/client";
 
 import { prisma } from "@/server/db";
+import { orderIdsContainingProduct } from "@/server/services/product-buyers";
 import { canTransition } from "@/components/storefront/orders/order-status";
 import {
   toOrderTaxSnapshot,
@@ -377,6 +378,8 @@ export interface ListOrdersFilter {
   status?: OrderStatus;
   /** Case-insensitive match on business/contact name, phone, or orderNumber. */
   customer?: string;
+  /** Only orders whose frozen lines include this product (follow-up view). */
+  productId?: string;
   /** Max rows to return. */
   take?: number;
   /** Rows to skip (offset pagination). */
@@ -386,10 +389,15 @@ export interface ListOrdersFilter {
 /** Build the admin WHERE clause shared by list + count so they stay in sync. */
 function buildAdminWhere(
   filter: Pick<ListOrdersFilter, "status" | "customer">,
+  /** Pre-resolved ids when filtering by product (JSON lines are not filterable in Prisma on Mongo). */
+  orderIds?: string[],
 ): Prisma.OrderWhereInput {
   const where: Prisma.OrderWhereInput = {};
   if (filter.status) {
     where.status = filter.status;
+  }
+  if (orderIds) {
+    where.id = { in: orderIds };
   }
   const q = filter.customer?.trim();
   if (q) {
@@ -415,8 +423,9 @@ function buildAdminWhere(
 export async function listOrders(
   filter: ListOrdersFilter = {},
 ): Promise<OrderListItem[]> {
+  const orderIds = filter.productId ? await orderIdsContainingProduct(filter.productId) : undefined;
   const rows = await prisma.order.findMany({
-    where: buildAdminWhere(filter),
+    where: buildAdminWhere(filter, orderIds),
     select: ADMIN_LIST_SELECT,
     orderBy: { placedAt: "desc" },
     take: filter.take,
@@ -427,9 +436,10 @@ export async function listOrders(
 
 /** Count orders matching the same filter (for pagination). */
 export async function countOrders(
-  filter: Pick<ListOrdersFilter, "status" | "customer"> = {},
+  filter: Pick<ListOrdersFilter, "status" | "customer" | "productId"> = {},
 ): Promise<number> {
-  return prisma.order.count({ where: buildAdminWhere(filter) });
+  const orderIds = filter.productId ? await orderIdsContainingProduct(filter.productId) : undefined;
+  return prisma.order.count({ where: buildAdminWhere(filter, orderIds) });
 }
 
 /** Aggregate order counts per status (for the queue header + new-badge). */

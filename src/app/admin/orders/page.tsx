@@ -4,6 +4,8 @@ import { requireAdminPage } from "@/server/auth/require-admin-page";
 import { assertPermission } from "@/server/auth/require-permission";
 import { PERMISSIONS } from "@/lib/permissions";
 import { PAGE_SIZES } from "@/lib/constants";
+import { objectIdSchema } from "@/lib/schemas/shared";
+import { prisma } from "@/server/db";
 import {
   countOrders,
   listOrders,
@@ -39,7 +41,7 @@ const PAGE_SIZE = PAGE_SIZES.admin;
 export default async function AdminOrdersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; q?: string; page?: string }>;
+  searchParams: Promise<{ status?: string; q?: string; page?: string; product?: string }>;
 }) {
   const viewer = await requireAdminPage();
   // Reads are gated on the customers-view capability (orders are a customer
@@ -49,6 +51,16 @@ export default async function AdminOrdersPage({
   const params = await searchParams;
   const status = parseStatus(params.status);
   const search = params.q?.trim() || undefined;
+  // Follow-up view: only orders whose lines include one product. The chip
+  // needs the product's name, so resolve it (and drop a bad/unknown id).
+  const productParam = objectIdSchema.safeParse(params.product);
+  const productRow = productParam.success
+    ? await prisma.product.findFirst({
+        where: { id: productParam.data },
+        select: { id: true, name: true, sku: true },
+      })
+    : null;
+  const productId = productRow?.id;
   const parsedPage = Number(params.page ?? "1");
   const page =
     Number.isFinite(parsedPage) && parsedPage > 0 ? Math.trunc(parsedPage) : 1;
@@ -57,10 +69,11 @@ export default async function AdminOrdersPage({
     listOrders({
       status,
       customer: search,
+      productId,
       take: PAGE_SIZE,
       skip: (page - 1) * PAGE_SIZE,
     }),
-    countOrders({ status, customer: search }),
+    countOrders({ status, customer: search, productId }),
     orderStatusCounts(),
   ]);
 
@@ -103,6 +116,7 @@ export default async function AdminOrdersPage({
           counts={counts}
           activeStatus={status ?? null}
           search={search ?? ""}
+          product={productRow}
           page={page}
           pageCount={pageCount}
           total={filteredTotal}

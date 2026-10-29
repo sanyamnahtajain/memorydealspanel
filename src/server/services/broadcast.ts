@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 
 import { prisma } from "@/server/db";
+import { buyerCustomerIds } from "@/server/services/product-buyers";
 
 import { EXPIRY_WARN_DAYS } from "@/lib/access-status";
 import type { BroadcastSegment } from "@/lib/broadcast";
@@ -51,6 +52,8 @@ export interface BroadcastTarget {
   segment?: BroadcastSegment;
   /** Required when `segment === "one"`. */
   customerId?: string | null;
+  /** Required when `segment === "bought"`. */
+  productId?: string | null;
 }
 
 export interface BroadcastInput extends BroadcastTarget {
@@ -158,6 +161,15 @@ export async function resolveBroadcastRecipients(
 
   if (segment === "all") {
     return customerIds({ status: { not: "BLOCKED" } });
+  }
+
+  if (segment === "bought") {
+    // Every shop with a non-cancelled order containing the product, minus
+    // blocked accounts — the restock / new-rate follow-up audience.
+    if (!target.productId) return [];
+    const bought = await buyerCustomerIds(target.productId);
+    if (bought.length === 0) return [];
+    return customerIds({ id: { in: bought }, status: { not: "BLOCKED" } });
   }
 
   if (segment === "expired") {

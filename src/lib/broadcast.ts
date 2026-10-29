@@ -16,6 +16,7 @@ export const BROADCAST_SEGMENTS = [
   "approved",
   "expiring",
   "expired",
+  "bought",
   "one",
 ] as const;
 
@@ -55,6 +56,11 @@ export const BROADCAST_SEGMENT_INFO: readonly BroadcastSegmentInfo[] = [
     key: "expired",
     label: "Access ended",
     hint: "Their price access has already stopped.",
+  },
+  {
+    key: "bought",
+    label: "Bought a product",
+    hint: "Every shop that ordered one product — restock, new rate, follow-up.",
   },
   {
     key: "one",

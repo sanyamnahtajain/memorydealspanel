@@ -13,7 +13,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { SearchIcon } from "lucide-react";
+import { PackageSearch, SearchIcon, XIcon } from "lucide-react";
 import type { OrderStatus } from "@prisma/client";
 
 import { cn } from "@/lib/utils";
@@ -29,6 +29,8 @@ import {
   orderStatusVariant,
 } from "@/components/storefront/orders/order-status";
 import type { OrderRowDTO } from "@/server/actions/admin-orders";
+import { ReelProductPicker, type PickedProduct } from "@/components/admin/reels/ReelProductPicker";
+import { Button } from "@/components/ui/button";
 
 const FILTERS: { key: OrderStatus | "ALL"; label: string }[] = [
   { key: "ALL", label: "All" },
@@ -53,6 +55,7 @@ export function OrderQueueTable({
   counts,
   activeStatus,
   search,
+  product = null,
   page,
   pageCount,
   total,
@@ -62,6 +65,8 @@ export function OrderQueueTable({
   counts: Record<OrderStatus, number>;
   activeStatus: OrderStatus | null;
   search: string;
+  /** Active "orders containing this product" filter, resolved by the page. */
+  product?: { id: string; name: string; sku: string } | null;
   page: number;
   pageCount: number;
   total: number;
@@ -71,26 +76,43 @@ export function OrderQueueTable({
   const pathname = usePathname();
   const isMobile = useIsMobile();
   const [query, setQuery] = React.useState(search);
+  const [pickingProduct, setPickingProduct] = React.useState(false);
+
+  /** Every filter change rebuilds the URL from the three filters, page reset. */
+  const navigate = React.useCallback(
+    (next: { status?: OrderStatus | null; q?: string; productId?: string | null }) => {
+      const params = new URLSearchParams();
+      const status = next.status === undefined ? activeStatus : next.status;
+      const q = next.q === undefined ? query : next.q;
+      const productId = next.productId === undefined ? (product?.id ?? null) : next.productId;
+      if (status) params.set("status", status);
+      if (q) params.set("q", q);
+      if (productId) params.set("product", productId);
+      const qs = params.toString();
+      router.push(qs ? `${pathname}?${qs}` : pathname);
+    },
+    [activeStatus, pathname, product, query, router],
+  );
 
   const applyFilter = React.useCallback(
-    (key: OrderStatus | "ALL") => {
-      const params = new URLSearchParams();
-      if (key !== "ALL") params.set("status", key);
-      if (query) params.set("q", query);
-      router.push(`${pathname}?${params.toString()}`);
-    },
-    [pathname, query, router],
+    (key: OrderStatus | "ALL") => navigate({ status: key === "ALL" ? null : key }),
+    [navigate],
   );
 
   const submitSearch = React.useCallback(
     (e: React.FormEvent) => {
       e.preventDefault();
-      const params = new URLSearchParams();
-      if (activeStatus) params.set("status", activeStatus);
-      if (query) params.set("q", query);
-      router.push(`${pathname}?${params.toString()}`);
+      navigate({ q: query });
     },
-    [activeStatus, pathname, query, router],
+    [navigate, query],
+  );
+
+  const pickProduct = React.useCallback(
+    (picked: PickedProduct | null) => {
+      setPickingProduct(false);
+      if (picked) navigate({ productId: picked.id });
+    },
+    [navigate],
   );
 
   return (
@@ -122,22 +144,65 @@ export function OrderQueueTable({
             );
           })}
         </div>
-        <form onSubmit={submitSearch} className="relative">
-          <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search business / phone / #order"
-            className="pl-8 sm:w-72"
-          />
-        </form>
+        <div className="flex flex-wrap items-center gap-2">
+          <form onSubmit={submitSearch} className="relative">
+            <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search business / phone / #order"
+              className="pl-8 sm:w-72"
+            />
+          </form>
+          {!product ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-expanded={pickingProduct}
+              onClick={() => setPickingProduct((v) => !v)}
+            >
+              <PackageSearch aria-hidden />
+              By product
+            </Button>
+          ) : null}
+        </div>
       </div>
+
+      {/* "Orders containing this product" — the follow-up view. The chip
+          names the product; clearing it keeps the status and search. */}
+      {product ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-primary/25 bg-primary/5 px-3 py-2 text-sm">
+          <PackageSearch aria-hidden className="size-4 text-primary" />
+          <span className="text-muted-foreground">Containing</span>
+          <span className="font-medium text-foreground">{product.name}</span>
+          <span className="font-tabular text-xs text-muted-foreground">{product.sku}</span>
+          <Link
+            href={`/admin/products/${product.id}`}
+            className="text-xs font-medium text-primary underline-offset-4 hover:underline"
+          >
+            Buyers
+          </Link>
+          <button
+            type="button"
+            onClick={() => navigate({ productId: null })}
+            aria-label="Clear product filter"
+            className="ml-auto inline-flex size-8 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            <XIcon aria-hidden className="size-4" />
+          </button>
+        </div>
+      ) : pickingProduct ? (
+        <div className="rounded-lg border border-border bg-card p-3">
+          <ReelProductPicker value={null} onChange={pickProduct} label="Show orders containing" hint={null} />
+        </div>
+      ) : null}
 
       {rows.length === 0 ? (
         <EmptyState
           illustration="no-results"
           title="No orders"
-          description="No orders match this filter yet."
+          description={product ? `No orders contain ${product.name} yet.` : "No orders match this filter yet."}
         />
       ) : isMobile ? (
         <ul className="space-y-2">

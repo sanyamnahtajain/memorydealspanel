@@ -7,6 +7,8 @@ import { requirePermissionPage } from "@/server/auth/permissions";
 import { AdminShell } from "@/components/shell/AdminShell";
 import { PageHeader } from "@/components/common";
 import { BroadcastComposer } from "@/components/admin/notifications/BroadcastComposer";
+import { prisma } from "@/server/db";
+import { objectIdSchema } from "@/lib/schemas/shared";
 
 export const metadata: Metadata = {
   title: "Send a message — MemoryDeals Admin",
@@ -26,8 +28,30 @@ export const dynamic = "force-dynamic";
  * The page itself is a thin server shell — the composer is a client component
  * because every part of it (audience, live count, preview) reacts to typing.
  */
-export default async function AdminSendNotificationPage() {
+export default async function AdminSendNotificationPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ product?: string }>;
+}) {
   await requirePermissionPage(PERMISSIONS.SETTINGS_MANAGE);
+
+  // Arriving from a product's Buyers panel ("Notify buyers"): start the
+  // composer on that product's audience. Unknown or malformed id → plain composer.
+  const productParam = objectIdSchema.safeParse((await searchParams).product);
+  const picked = productParam.success
+    ? await prisma.product.findFirst({
+        where: { id: productParam.data, deletedAt: null },
+        select: { id: true, name: true, sku: true, images: true },
+      })
+    : null;
+  const initialProduct = picked
+    ? {
+        id: picked.id,
+        name: picked.name,
+        sku: picked.sku,
+        imageUrl: (picked.images.find((i) => i.isPrimary) ?? picked.images[0])?.thumbUrl ?? (picked.images[0]?.url ?? null),
+      }
+    : null;
 
   return (
     <AdminShell title="Send a message">
@@ -47,7 +71,7 @@ export default async function AdminSendNotificationPage() {
           }
         />
 
-        <BroadcastComposer />
+        <BroadcastComposer initialProduct={initialProduct} />
       </div>
     </AdminShell>
   );

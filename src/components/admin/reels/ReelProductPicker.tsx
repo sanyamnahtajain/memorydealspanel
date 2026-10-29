@@ -28,10 +28,16 @@ export function ReelProductPicker({
   value,
   onChange,
   disabled,
+  label = "Product it sells (optional)",
+  hint = "Shoppers get a \u201cShop this\u201d button that opens the product page.",
 }: {
   value: PickedProduct | null;
   onChange: (product: PickedProduct | null) => void;
   disabled?: boolean;
+  /** Field label — the picker is reused by the orders queue and the composer. */
+  label?: string;
+  /** Helper line under a picked product; `null` hides it. Defaults to the reels copy. */
+  hint?: string | null;
 }) {
   const [query, setQuery] = React.useState("");
   const [results, setResults] = React.useState<ReelProductPick[]>([]);
@@ -81,7 +87,7 @@ export function ReelProductPicker({
   if (value) {
     return (
       <div className="space-y-1.5">
-        <Label>Product it sells</Label>
+        <Label>{label}</Label>
         <div className="flex items-center gap-3 rounded-lg border border-input bg-muted/30 p-2 pr-2.5">
           <Thumb src={value.imageUrl} />
           <div className="min-w-0 flex-1">
@@ -104,10 +110,7 @@ export function ReelProductPicker({
             <X className="size-4" aria-hidden />
           </button>
         </div>
-        <p className="text-xs text-muted-foreground">
-          Shoppers get a &ldquo;Shop this&rdquo; button that opens the product
-          page.
-        </p>
+        {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
       </div>
     );
   }
@@ -117,7 +120,7 @@ export function ReelProductPicker({
 
   return (
     <div className="space-y-1.5">
-      <Label htmlFor="reel-product-search">Product it sells (optional)</Label>
+      <Label htmlFor="reel-product-search">{label}</Label>
       <div className="relative">
         <Search
           className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"

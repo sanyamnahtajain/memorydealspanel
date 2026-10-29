@@ -74,6 +74,7 @@ export async function previewBroadcastAudienceAction(
       audience: target.audience,
       segment: target.segment,
       customerId: target.customerId ?? null,
+      productId: target.productId ?? null,
     });
 
     return { ok: true, recipients };
@@ -95,6 +96,7 @@ export async function sendBroadcastAction(
       audience: data.audience,
       segment: data.segment,
       customerId: data.customerId ?? null,
+      productId: data.productId ?? null,
       title: data.title,
       body: data.body,
       url: data.url ?? null,

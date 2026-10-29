@@ -38,6 +38,8 @@ const targetShape = {
   audience: broadcastAudienceSchema,
   segment: broadcastSegmentSchema.default("all"),
   customerId: objectIdSchema.nullish(),
+  /** Required when `segment === "bought"`. */
+  productId: objectIdSchema.nullish(),
 };
 
 /** A single customer must actually be named when the segment says so. */
@@ -46,6 +48,7 @@ function requireCustomerForOne(
     audience: "customer" | "admin";
     segment: string;
     customerId?: string | null;
+    productId?: string | null;
   },
   ctx: z.RefinementCtx,
 ): void {
@@ -58,6 +61,13 @@ function requireCustomerForOne(
       code: "custom",
       path: ["customerId"],
       message: "Pick the customer you want to message.",
+    });
+  }
+  if (value.audience === "customer" && value.segment === "bought" && !value.productId) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["productId"],
+      message: "Pick the product whose buyers you want to message.",
     });
   }
 }

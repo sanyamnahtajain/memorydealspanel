@@ -121,3 +121,24 @@ export function enquiryMessageLines({ appName, productName, sku = null }: Enquir
     "Could you share the wholesale price and availability?",
   ].filter((line): line is string => line !== null);
 }
+
+export interface FollowUpLines {
+  appName: string;
+  contactName: string;
+  productName: string;
+  sku?: string | null;
+}
+
+/**
+ * The pre-filled message a staff member sends a PAST BUYER of a product —
+ * restock, new rate, a better variant. Deliberately generic and short: the
+ * admin edits the details in WhatsApp itself. Never carries a price.
+ */
+export function followUpMessageLines({ appName, contactName, productName, sku = null }: FollowUpLines): string[] {
+  const product = sku ? `${productName} (${sku})` : productName;
+  return [
+    `Namaste ${contactName}, ${appName} here.`,
+    `You ordered ${product} from us earlier — we have an update on it. Reply here and we'll share the details.`,
+    `— ${appName}`,
+  ];
+}

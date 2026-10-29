@@ -15,6 +15,10 @@ import { objectIdSchema } from "@/lib/schemas/shared";
 import { AdminShell } from "@/components/shell/AdminShell";
 import { PageHeader } from "@/components/common";
 import {
+  ProductBuyersPanel,
+  ProductBuyersPanelSkeleton,
+} from "@/components/admin/products/ProductBuyersPanel";
+import {
   ProductEditorForm,
   type EditorProduct,
 } from "@/components/admin/products/ProductEditorForm";
@@ -207,6 +211,13 @@ export default async function EditProductPage({
             parentId: c.parentId,
           }))}
         />
+
+        {/* Who bought this — the follow-up panel (orders filtered to this
+            product, notify buyers, WhatsApp each shop). Streams in behind a
+            skeleton so it never delays the editor. */}
+        <Suspense fallback={<ProductBuyersPanelSkeleton />}>
+          <ProductBuyersPanel productId={priced.id} productName={priced.name} sku={priced.sku} />
+        </Suspense>
 
         {/* Change history for this product. Self-loads (admin-only) and streams
             in behind a skeleton so it never blocks the editor. */}
