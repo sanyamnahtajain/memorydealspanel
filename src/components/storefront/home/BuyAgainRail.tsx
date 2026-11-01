@@ -43,7 +43,7 @@ interface BuyAgainItem {
 }
 
 
-export function BuyAgainRail() {
+export function BuyAgainRail({ className = "mt-8" }: { className?: string } = {}) {
   const [items, setItems] = React.useState<BuyAgainItem[]>([]);
 
   React.useEffect(() => {
@@ -62,7 +62,7 @@ export function BuyAgainRail() {
   if (items.length === 0) return null;
 
   return (
-    <section aria-labelledby="home-buy-again" className="mt-8">
+    <section aria-labelledby="home-buy-again" className={className}>
       <SectionHeading
         id="home-buy-again"
         title="Buy again"

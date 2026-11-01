@@ -153,7 +153,6 @@ export default async function HomePage() {
           which would shift the page for logged-out visitors even when they are
           empty. */}
       <LastOrderCard />
-      <BuyAgainRail />
 
       <HomePriceReveal>
       {/* Section rhythm (HomeSections): brand → category →
@@ -191,9 +190,9 @@ export default async function HomePage() {
             seeAllLabel="View all"
           />
           {categories.length > 0 ? (
-            // Home teaser — 12 tiles: three rows of four on a phone, two
-            // rows of six on a laptop. The full list lives at /categories.
-            <CategoryGrid categories={categories.slice(0, 12)} animated />
+            // Home teaser: full rows that end in an "All categories" tile
+            // (3x4 on a phone, 2x6 tablet, 2x8 laptop).
+            <CategoryGrid categories={categories} animated allHref="/categories" />
           ) : (
             <EmptyState
               illustration="empty-box"
@@ -202,6 +201,11 @@ export default async function HomePage() {
             />
           )}
         </section>
+
+        {/* Buy again — right after brands and categories (owner request).
+            Renders nothing for logged-out visitors or a first order; the
+            wrapper collapses an empty slot, so no gap is left behind. */}
+        <BuyAgainRail className="" />
 
         {/* Best sellers — global, price-free (ANON locked pills), identical
             for every visitor: see the comment above bestSellers. Young shop

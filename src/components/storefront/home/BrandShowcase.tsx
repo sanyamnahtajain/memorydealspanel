@@ -14,8 +14,8 @@ import { cn } from "@/lib/utils";
  * peeking past the gutter), so the strip is one thumb-swipe tall and
  * "Shop by category" is never pushed a screen down.
  *
- * FROM md: the classic 6-column logo grid capped at `limit` tiles; when the
- * master holds more, the last cell is an "All brands" tile.
+ * FROM md: the classic 6-column logo grid capped at `limit` cells; the last
+ * cell is an "All brands" tile, so the rows are always full.
  */
 export function BrandShowcase({
   brands,
@@ -31,7 +31,9 @@ export function BrandShowcase({
   className?: string;
 }) {
   if (brands.length === 0) return null;
-  const shown = brands.slice(0, limit);
+  // The last cell is always "All brands", so the grid stays full rows
+  // (2x6 on a laptop) instead of a lone 13th tile on a third row.
+  const shown = brands.slice(0, limit - 1);
   const overflow = brands.length - shown.length;
 
   const tile =
@@ -71,26 +73,25 @@ export function BrandShowcase({
         </li>
       ))}
 
-      {overflow > 0 ? (
-        <li className="snap-start md:min-w-0">
-          <Link
-            href={allHref}
-            prefetch={false}
-            className={cn(tile, "border-dashed bg-muted/40 hover:bg-muted/70")}
-          >
-            <span className="text-sm font-semibold text-foreground">
-              +{overflow} more
-            </span>
-            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-primary">
-              All brands
-              <ArrowRight
-                className="size-3 transition-transform duration-200 group-hover:translate-x-0.5"
-                aria-hidden
-              />
-            </span>
-          </Link>
-        </li>
-      ) : null}
+      {/* Always the last cell — owner request: the row ends in "All brands". */}
+      <li className="snap-start md:min-w-0">
+        <Link
+          href={allHref}
+          prefetch={false}
+          className={cn(tile, "border-dashed bg-muted/40 hover:bg-muted/70")}
+        >
+          <span className="text-sm font-semibold text-foreground">
+            {overflow > 0 ? `+${overflow} more` : "See all"}
+          </span>
+          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-primary">
+            All brands
+            <ArrowRight
+              className="size-3 transition-transform duration-200 group-hover:translate-x-0.5"
+              aria-hidden
+            />
+          </span>
+        </Link>
+      </li>
     </ul>
   );
 }
