@@ -2,6 +2,7 @@ import Link from "next/link";
 import { LayoutGrid } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { catalogLabel } from "@/lib/display-case";
 import { catalogImageUrl } from "@/lib/image-loader";
 import type { BrandCategory } from "@/server/dal/brands";
 
@@ -31,7 +32,7 @@ export function BrandCategoryRail({
   return (
     <nav
       aria-label="Categories in this brand"
-      className="no-scrollbar sticky top-[6.75rem] max-h-[calc(100dvh-6.75rem-var(--md-tab-h,3.5rem)-1rem)] self-start overflow-y-auto border-r border-border/70 pr-0.5 md:top-20 md:max-h-[calc(100dvh-6rem)] md:pr-3"
+      className="no-scrollbar sticky top-[calc(6.875rem+env(safe-area-inset-top))] max-h-[calc(100dvh-6.875rem-env(safe-area-inset-top)-var(--md-tab-h,3.5rem)-env(safe-area-inset-bottom)-0.5rem)] self-start overflow-y-auto border-r border-border/70 pr-0.5 md:top-20 md:max-h-[calc(100dvh-6rem)] md:pr-3"
     >
       <ul className="flex flex-col gap-1">
         <li>
@@ -42,7 +43,7 @@ export function BrandCategoryRail({
             <RailItem
               href={`/b/${brandSlug}?cat=${c.id}`}
               active={activeId === c.id}
-              label={c.name}
+              label={catalogLabel(c.name)}
               image={c.image}
             />
           </li>

@@ -53,15 +53,15 @@ const SNAPPY_SPRING: Transition = {
  *                 safe-area inset. Anything that must sit above the bar on a
  *                 phone uses `bottom: calc(var(--md-tab-h) + env(safe-area-inset-bottom))`.
  *                 The bar is `md:hidden`, so treat it as 0 on md+ yourself.
- *  --md-header-h  Height of the sticky header in its CONDENSED state (the
- *                 state it is in whenever the page has scrolled), EXCLUDING
- *                 the safe-area-top inset and the optional notice marquee.
+ *  --md-header-h  Height of the sticky header's top row on a phone (it never
+ *                 changes height on scroll), EXCLUDING the safe-area-top inset,
+ *                 the optional notice marquee and the phone search row.
  *
- * Keep these in step with the `h-12` / `min-h-14` classes below.
+ * Keep these in step with the `h-14` / `min-h-14` classes below.
  */
 export const SHELL_METRICS = {
   tabBarHeight: "3.5rem",
-  condensedHeaderHeight: "3rem",
+  condensedHeaderHeight: "3.5rem",
 } as const
 
 const SHELL_STYLE = {
@@ -208,8 +208,10 @@ export function StorefrontShell({
       >
         <div
           className={cn(
-            "mx-auto flex w-full max-w-6xl items-center gap-1 px-4 transition-[height] duration-200 ease-out md:px-6",
-            condensed ? "h-12" : "h-16"
+            // ONE height, always: a header that shrinks on scroll moves the page
+            // under the finger, and the browser's scroll anchoring pushes back —
+            // the jitter at the top of every page. Scrolling only adds a shadow.
+            "mx-auto flex h-14 w-full max-w-6xl items-center gap-1 px-4 md:h-16 md:px-6"
           )}
         >
           <Link
@@ -218,23 +220,15 @@ export function StorefrontShell({
             aria-label="The Memory Deals home"
           >
             <Logo
-              size={condensed ? 28 : 34}
+              size={32}
               withWordmark
-              wordmarkClassName={cn(
-                "hidden text-foreground transition-[font-size] duration-200 sm:inline",
-                condensed ? "text-sm" : "text-base",
-              )}
+              wordmarkClassName="hidden text-base text-foreground sm:inline"
             />
             {/* Phones: Blinkit's two-line title beside the mark — the shop's
                 name in bold, what it is underneath. */}
             <span className="ml-2 flex min-w-0 flex-col leading-tight sm:hidden">
               <span className="truncate text-[15px] font-bold tracking-tight text-foreground">The Memory Deals</span>
-              <span
-                className={cn(
-                  "truncate text-[11px] text-muted-foreground transition-[opacity,max-height] duration-200",
-                  condensed ? "max-h-0 opacity-0" : "max-h-4 opacity-100",
-                )}
-              >
+              <span className="truncate text-[11px] text-muted-foreground">
                 Wholesale mobile accessories
               </span>
             </span>

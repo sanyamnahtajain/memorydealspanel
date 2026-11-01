@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { brandName, titleCase } from "./display-case";
+import { brandName, catalogLabel, titleCase } from "./display-case";
 
 describe("titleCase", () => {
   it("normalises ALL CAPS, lower case and Title Case to one treatment", () => {
@@ -84,5 +84,13 @@ describe("brandName", () => {
     expect(brandName("AMBRANE")).toBe("Ambrane");
     expect(brandName("boAt")).toBe("boAt");
     expect(brandName("  ")).toBe("");
+  });
+});
+
+describe("catalogLabel", () => {
+  it("title-cases only shouted labels", () => {
+    expect(catalogLabel("WIRELESS CHARGERS")).toBe("Wireless Chargers");
+    expect(catalogLabel("Top pick shelf")).toBe("Top pick shelf");
+    expect(catalogLabel("CAR MOBILE  HOLDER")).toBe("Car Mobile Holder");
   });
 });

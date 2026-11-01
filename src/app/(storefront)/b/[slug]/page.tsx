@@ -25,6 +25,7 @@ import {
 } from "@/components/storefront/listing/filter-params";
 import { BrandCategoryRail } from "@/components/storefront/brand/BrandCategoryRail";
 import { BrandHero } from "@/components/storefront/brand/BrandHero";
+import { brandName, catalogLabel } from "@/lib/display-case";
 import {
   selectionToDiscoverParams,
   toDiscoverSort,
@@ -152,7 +153,9 @@ export default async function BrandPage({
   const activeCategory =
     categoryIds.length === 1 ? (categories.find((c) => c.id === categoryIds[0]) ?? null) : null;
   const showRail = categories.length > 1;
-  const listingTitle = activeCategory ? activeCategory.name : `All ${brand.name}`;
+  const displayName = brandName(brand.name);
+  const listingTitle = activeCategory ? catalogLabel(activeCategory.name) : `All ${displayName}`;
+  const productCount = categories.reduce((sum, c) => sum + c.count, 0);
 
   const listing = (
     <StorefrontListing
@@ -175,7 +178,8 @@ export default async function BrandPage({
     <StorefrontShell wishlistCount={wishlistState.count} cartCount={cartCount}>
       <FadeUp>
         <BrandHero
-          name={brand.name}
+          name={displayName}
+          productCount={productCount}
           logo={brand.logo}
           coverImage={brand.coverImage}
           tagline={brand.tagline}
@@ -190,12 +194,18 @@ export default async function BrandPage({
             brandSlug={slug}
             categories={categories}
             activeId={activeCategory?.id ?? null}
-            totalLabel={`All ${brand.name}`}
+            totalLabel={`All ${displayName}`}
           />
           <section aria-labelledby="brand-listing" className="min-w-0">
             <h2
               id="brand-listing"
-              className="mb-3 font-heading text-base font-bold tracking-tight text-foreground md:text-xl"
+              // "All" repeats the header right above it — keep it for screen
+              // readers only; a picked category gets a visible title.
+              className={
+                activeCategory
+                  ? "mb-2 font-heading text-base font-bold tracking-tight text-foreground md:text-xl"
+                  : "sr-only"
+              }
             >
               {listingTitle}
             </h2>
@@ -205,7 +215,7 @@ export default async function BrandPage({
       ) : (
         <section aria-labelledby="brand-listing">
           <h2 id="brand-listing" className="mb-3 font-heading text-lg font-bold tracking-tight text-foreground md:text-xl">
-            All {brand.name} products
+            All {displayName} products
           </h2>
           {listing}
         </section>

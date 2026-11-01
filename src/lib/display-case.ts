@@ -140,3 +140,13 @@ export function brandName(input: string | null | undefined): string {
   if (/^[A-Z]{1,3}$/.test(collapsed)) return collapsed;
   return titleCase(collapsed);
 }
+
+/**
+ * A catalogue label as the owner typed it, unless it was typed in ALL CAPS
+ * ("WIRELESS CHARGERS"), which reads as shouting in a narrow rail — that is
+ * title-cased. Any lowercase letter means the casing was deliberate.
+ */
+export function catalogLabel(input: string | null | undefined): string {
+  if (!input) return "";
+  return /[a-z]/.test(input) ? input.replace(/\s+/g, " ").trim() : titleCase(input);
+}
