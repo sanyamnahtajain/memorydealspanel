@@ -110,21 +110,21 @@ export function CategoryRow({
       <div className="flex shrink-0 flex-col">
         <button
           type="button"
-          aria-label="Move up"
+          aria-label={`Move ${category.name} up`}
           disabled={!canMoveUp}
           onClick={() => onMove(-1)}
-          className="inline-flex size-5 items-center justify-center rounded text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-30 active:scale-90"
+          className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-30 active:scale-90 md:size-6"
         >
-          <ChevronUpIcon className="size-4" aria-hidden />
+          <ChevronUpIcon className="size-5 md:size-4" aria-hidden />
         </button>
         <button
           type="button"
-          aria-label="Move down"
+          aria-label={`Move ${category.name} down`}
           disabled={!canMoveDown}
           onClick={() => onMove(1)}
-          className="inline-flex size-5 items-center justify-center rounded text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-30 active:scale-90"
+          className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-30 active:scale-90 md:size-6"
         >
-          <ChevronDownIcon className="size-4" aria-hidden />
+          <ChevronDownIcon className="size-5 md:size-4" aria-hidden />
         </button>
       </div>
 

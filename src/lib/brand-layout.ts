@@ -50,6 +50,8 @@ export const brandPageInputSchema = z.object({
     .max(MAX_BRAND_TAGLINE, `Keep the line under ${MAX_BRAND_TAGLINE} characters.`)
     .nullish(),
   layout: brandLayoutSchema,
+  /** The owner arranged the order (moved a row) — keep it over the catalogue's. */
+  orderCustom: z.boolean().optional(),
 });
 
 export type BrandPageInput = z.infer<typeof brandPageInputSchema>;
@@ -102,7 +104,20 @@ export interface RailCategory {
 export function applyBrandLayout(
   categories: RailCategory[],
   layout: BrandCategoryEntry[],
+  /** The owner arranged this brand's order; otherwise catalogue order wins. */
+  ordered = true,
 ): RailCategory[] {
+  if (!ordered) {
+    // Catalogue order (as Admin → Categories arranges it); the layout only
+    // supplies this brand's photos, names and hidden flags.
+    const entries = new Map(layout.map((e) => [e.categoryId, e]));
+    return categories.flatMap((cat) => {
+      const e = entries.get(cat.id);
+      if (!e) return [cat];
+      if (e.hidden) return [];
+      return [{ ...cat, name: e.label || cat.name, image: e.image || cat.image }];
+    });
+  }
   const byId = new Map(categories.map((c) => [c.id, c]));
   const placed = new Set<string>();
   const out: RailCategory[] = [];

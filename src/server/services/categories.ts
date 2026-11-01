@@ -1,3 +1,4 @@
+import { completeSiblingOrder } from "@/lib/category-order";
 import { Prisma } from "@prisma/client";
 import type { EntityStatus } from "@/lib/schemas/shared";
 import { makeUniqueSlug } from "@/lib/slug";
@@ -238,25 +239,35 @@ export async function updateCategory(
  * time. Silently ignores ids that don't exist. Runs as a single transaction so
  * the grid never observes a half-applied order.
  */
-export async function reorderCategories(idsInOrder: string[]): Promise<void> {
-  if (idsInOrder.length === 0) return;
+export async function reorderCategories(idsInOrder: string[]): Promise<string[]> {
+  if (idsInOrder.length === 0) return [];
 
-  // Only reorder ids that actually exist, preserving the requested order.
-  const existing = await prisma.category.findMany({
+  // A reorder is always among SIBLINGS (top-level, or one parent's
+  // sub-categories). The group is the first known id's parent; ids from other
+  // groups are ignored, and siblings the client didn't send (created in
+  // another tab) keep their place after the sent ones — so the group is
+  // always renumbered 0..n-1 with no collisions.
+  const first = await prisma.category.findFirst({
     where: { id: { in: idsInOrder } },
-    select: { id: true },
+    select: { parentId: true },
   });
-  const existingIds = new Set(existing.map((row) => row.id));
-  const ordered = idsInOrder.filter((id) => existingIds.has(id));
+  if (!first) return [];
+  const siblings = await prisma.category.findMany({
+    where: siblingsWhere(first.parentId ?? null),
+    select: { id: true, name: true, sortOrder: true, parentId: true },
+  });
+  const ordered = completeSiblingOrder(idsInOrder, siblings);
+  const current = new Map(siblings.map((s) => [s.id, s.sortOrder]));
 
   await prisma.$transaction(
-    ordered.map((id, index) =>
-      prisma.category.update({
-        where: { id },
-        data: { sortOrder: index },
-      }),
-    ),
+    ordered
+      .map((id, index) => ({ id, index }))
+      .filter(({ id, index }) => current.get(id) !== index)
+      .map(({ id, index }) =>
+        prisma.category.update({ where: { id }, data: { sortOrder: index } }),
+      ),
   );
+  return ordered;
 }
 
 /**
@@ -308,9 +319,20 @@ export class CategoryInUseError extends Error {
 }
 
 /** Next free sortOrder within a sibling group (max + 1, or 0 when empty). */
+/**
+ * The sibling group of `parentId`. On MongoDB a category created before
+ * sub-categories existed has NO parentId field at all, and `parentId: null`
+ * does not match a missing field — so top-level siblings need both.
+ */
+function siblingsWhere(parentId: string | null): Prisma.CategoryWhereInput {
+  return parentId
+    ? { parentId }
+    : { OR: [{ parentId: null }, { parentId: { isSet: false } }] };
+}
+
 async function nextSortOrder(parentId: string | null): Promise<number> {
   const last = await prisma.category.findFirst({
-    where: { parentId },
+    where: siblingsWhere(parentId),
     orderBy: { sortOrder: "desc" },
     select: { sortOrder: true },
   });

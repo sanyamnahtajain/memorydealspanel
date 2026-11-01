@@ -481,6 +481,10 @@ model Brand {
   /// collection: it is read with the brand in ONE query, saved in one write,
   /// and a brand spans a handful of categories.
   categoryLayout Json?
+  /// True once the owner has ARRANGED this brand's categories in the editor.
+  /// Unset/false = the rail follows the catalogue order (Admin → Categories),
+  /// with the layout's photos, names and hidden flags still applied.
+  categoryOrderCustom Boolean?
   status    EntityStatus @default(ACTIVE)
   sortOrder Int          @default(0)
   products  Product[]

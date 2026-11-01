@@ -12,6 +12,7 @@ import { isAdmin } from "@/server/types/viewer";
 import { can } from "@/server/auth/require-permission";
 import { PERMISSIONS, type Permission } from "@/lib/permissions";
 import { writeAudit } from "@/server/security/audit";
+import { resetSwrCache, resetSwrCachePrefix } from "@/server/cache/swr";
 import { createUploadTarget, type UploadTarget } from "@/server/storage/r2";
 import {
   createCategory,
@@ -36,6 +37,20 @@ import {
  */
 
 const CATEGORIES_PATH = "/admin/categories";
+
+/**
+ * After ANY category change, the shop must show it: the home bundle and every
+ * brand's category rail are swr-cached in memory, and /categories is ISR.
+ * (The in-memory caches are per server instance; other instances catch up
+ * within their two-minute expiry.)
+ */
+function refreshStorefrontCategories(): void {
+  revalidatePath(CATEGORIES_PATH);
+  resetSwrCache("home-data");
+  resetSwrCachePrefix("brand-cats:");
+  revalidatePath("/");
+  revalidatePath("/categories");
+}
 
 export type ActionResult<T = void> = [T] extends [void]
   ? { ok: true } | { ok: false; error: string }
@@ -121,7 +136,7 @@ export async function createCategoryAction(
       },
     });
 
-    revalidatePath(CATEGORIES_PATH);
+    refreshStorefrontCategories();
     return { ok: true, data: category };
   } catch (error) {
     return fail(
@@ -163,7 +178,7 @@ export async function updateCategoryAction(
       diff: { changed: Object.keys(patch), name: category.name },
     });
 
-    revalidatePath(CATEGORIES_PATH);
+    refreshStorefrontCategories();
     return { ok: true, data: category };
   } catch (error) {
     return fail(
@@ -203,7 +218,7 @@ export async function reorderCategoriesAction(
       diff: { order: parsed.data.ids },
     });
 
-    revalidatePath(CATEGORIES_PATH);
+    refreshStorefrontCategories();
     return { ok: true };
   } catch (error) {
     return fail(
@@ -244,7 +259,7 @@ export async function setCategoryStatusAction(
       diff: { status: category.status },
     });
 
-    revalidatePath(CATEGORIES_PATH);
+    refreshStorefrontCategories();
     return { ok: true, data: category };
   } catch (error) {
     return fail(
@@ -283,7 +298,7 @@ export async function deleteCategoryAction(
       entityId: parsed.data.id,
     });
 
-    revalidatePath(CATEGORIES_PATH);
+    refreshStorefrontCategories();
     return { ok: true };
   } catch (error) {
     // CategoryInUseError carries a user-facing reason (products/children exist).

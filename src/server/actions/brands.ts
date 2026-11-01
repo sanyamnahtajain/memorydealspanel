@@ -300,6 +300,7 @@ export async function saveBrandPageAction(
       data: {
         coverImage: data.coverImage || null,
         tagline: data.tagline || null,
+        categoryOrderCustom: data.orderCustom === true,
         categoryLayout: data.layout.map((entry) => ({
           categoryId: entry.categoryId,
           image: entry.image || null,

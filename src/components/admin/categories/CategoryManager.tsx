@@ -4,6 +4,7 @@ import * as React from "react";
 import { FolderPlusIcon, PlusIcon } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { toast } from "sonner";
+import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/common";
@@ -86,7 +87,11 @@ export function CategoryManager({
   // local edits are always followed by a server action that revalidates, so
   // the server copy is authoritative once it arrives.
   const [syncedFrom, setSyncedFrom] = React.useState(initialCategories);
-  if (syncedFrom !== initialCategories) {
+  // While an arrangement is still being saved, a refresh from the server
+  // carries the PREVIOUS order — adopting it would snap the list back. Wait
+  // until the queue is empty; then the latest server copy is adopted.
+  const [orderDirty, setOrderDirty] = React.useState(false);
+  if (syncedFrom !== initialCategories && !orderDirty) {
     setSyncedFrom(initialCategories);
     setCategories(initialCategories);
   }
@@ -95,58 +100,88 @@ export function CategoryManager({
   /* Reorder                                                          */
   /* ---------------------------------------------------------------- */
 
-  const persistOrder = React.useCallback(
-    (ids: string[], previous: CategoryNode[]) => {
-      startTransition(async () => {
+  // Saving the order: moves are instant on screen, and the server is told the
+  // FINAL arrangement of each sibling group — debounced, one request at a
+  // time. (Saving from inside a state updater, as before, could fire twice,
+  // and two quick taps could land out of order, leaving the database on the
+  // older arrangement while the screen showed the newer one.)
+  const router = useRouter();
+  const pendingOrders = React.useRef(new Map<string, string[]>());
+  const saveTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inFlight = React.useRef(false);
+  const [savingOrder, setSavingOrder] = React.useState(false);
+
+  const flushOrders = React.useCallback(async () => {
+    if (inFlight.current) return; // the running loop below will pick it up
+    inFlight.current = true;
+    setSavingOrder(true);
+    // Drain the queue one request at a time; moves made while a request is
+    // in flight are queued and sent by this same loop.
+    while (pendingOrders.current.size > 0) {
+      const [group, ids] = pendingOrders.current.entries().next().value as [string, string[]];
+      pendingOrders.current.delete(group);
+      let error: string | null = null;
+      try {
         const result = await reorderCategoriesAction({ ids });
-        if (!result.ok) {
-          setCategories(previous);
-          toast.error(result.error);
-        }
-      });
+        if (!result.ok) error = result.error;
+      } catch {
+        error = "Couldn't save the new order. Check your connection — the list was reloaded.";
+      }
+      if (error) {
+        pendingOrders.current.clear();
+        toast.error(error);
+        router.refresh(); // back to the order the server really has
+        break;
+      }
+    }
+    inFlight.current = false;
+    setSavingOrder(false);
+    setOrderDirty(false);
+  }, [router]);
+
+  const queueOrder = React.useCallback(
+    (group: string, ids: string[]) => {
+      pendingOrders.current.set(group, ids);
+      setOrderDirty(true);
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(() => void flushOrders(), 450);
+    },
+    [flushOrders],
+  );
+
+  // Leaving the page with a move still queued: send it now.
+  React.useEffect(
+    () => () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      for (const ids of pendingOrders.current.values()) void reorderCategoriesAction({ ids });
     },
     [],
   );
 
   const moveRoot = React.useCallback(
     (index: number, direction: -1 | 1) => {
-      setCategories((prev) => {
-        const target = index + direction;
-        if (target < 0 || target >= prev.length) return prev;
-        const next = [...prev];
-        [next[index], next[target]] = [next[target], next[index]];
-        persistOrder(
-          next.map((c) => c.id),
-          prev,
-        );
-        return next;
-      });
+      const target = index + direction;
+      if (target < 0 || target >= categories.length) return;
+      const next = [...categories];
+      [next[index], next[target]] = [next[target], next[index]];
+      setCategories(next);
+      queueOrder("root", next.map((c) => c.id));
     },
-    [persistOrder],
+    [categories, queueOrder],
   );
 
   const moveChild = React.useCallback(
     (parentId: string, index: number, direction: -1 | 1) => {
-      setCategories((prev) => {
-        const parent = prev.find((c) => c.id === parentId);
-        if (!parent) return prev;
-        const target = index + direction;
-        if (target < 0 || target >= parent.children.length) return prev;
-        const nextChildren = [...parent.children];
-        [nextChildren[index], nextChildren[target]] = [
-          nextChildren[target],
-          nextChildren[index],
-        ];
-        persistOrder(
-          nextChildren.map((c) => c.id),
-          prev,
-        );
-        return prev.map((c) =>
-          c.id === parentId ? { ...c, children: nextChildren } : c,
-        );
-      });
+      const parent = categories.find((c) => c.id === parentId);
+      if (!parent) return;
+      const target = index + direction;
+      if (target < 0 || target >= parent.children.length) return;
+      const nextChildren = [...parent.children];
+      [nextChildren[index], nextChildren[target]] = [nextChildren[target], nextChildren[index]];
+      setCategories(categories.map((c) => (c.id === parentId ? { ...c, children: nextChildren } : c)));
+      queueOrder(`children:${parentId}`, nextChildren.map((c) => c.id));
     },
-    [persistOrder],
+    [categories, queueOrder],
   );
 
   /* ---------------------------------------------------------------- */
@@ -325,7 +360,7 @@ export function CategoryManager({
         <p className="text-sm text-muted-foreground">
           {categories.length}{" "}
           {categories.length === 1 ? "category" : "categories"}
-          {pending ? (
+          {pending || savingOrder || orderDirty ? (
             <span className="ml-2 text-xs text-muted-foreground/70">
               Saving…
             </span>

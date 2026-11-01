@@ -38,6 +38,8 @@ export interface EditorCategory {
   defaultImage: string | null;
   /** Visible products of this brand in the category right now. */
   count: number;
+  /** Position in the catalogue order (Admin → Categories); for "Use catalogue order". */
+  catalogueIndex: number;
   /** Brand-specific photo, or null for the default. */
   image: string | null;
   /** Display-name override ("" = the catalogue name). */
@@ -53,6 +55,8 @@ export interface EditorBrand {
   active: boolean;
   coverImage: string | null;
   tagline: string;
+  /** The owner has arranged the category order (else it follows the catalogue). */
+  orderCustom: boolean;
 }
 
 /**
@@ -145,6 +149,9 @@ export function BrandPageEditor({
   const [coverImage, setCoverImage] = React.useState<string | null>(brand.coverImage);
   const [tagline, setTagline] = React.useState(brand.tagline);
   const [rows, setRows] = React.useState<EditorCategory[]>(initialRows);
+  // Moving a row gives this brand its own order; until then the rail follows
+  // Admin → Categories, so rearranging the catalogue reorders this brand too.
+  const [ordered, setOrdered] = React.useState(brand.orderCustom);
   const [uploading, setUploading] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [dirty, setDirty] = React.useState(false);
@@ -165,6 +172,13 @@ export function BrandPageEditor({
       next.splice(target, 0, row!);
       return next;
     });
+    setOrdered(true);
+    touch();
+  }
+
+  function applyCatalogueOrder() {
+    setRows((prev) => [...prev].sort((a, b) => a.catalogueIndex - b.catalogueIndex));
+    setOrdered(false);
     touch();
   }
 
@@ -190,6 +204,7 @@ export function BrandPageEditor({
     setSaving(true);
     try {
       const res = await saveBrandPageAction({
+        orderCustom: ordered,
         brandId: brand.id,
         coverImage,
         tagline: tagline.trim() === "" ? null : tagline.trim(),
@@ -296,8 +311,24 @@ export function BrandPageEditor({
             <h2 className="text-sm font-semibold text-foreground">Categories on the brand page</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
               The rail down the left of the brand page, top to bottom. Give each one this brand&rsquo;s own
-              photo and name, or hide it. New categories appear at the end automatically.
+              photo and name, or hide it.
             </p>
+            {ordered ? (
+              <p className="mt-1.5 flex flex-wrap items-center gap-x-2 text-xs text-foreground">
+                <span>This brand has its own order.</span>
+                <button
+                  type="button"
+                  onClick={applyCatalogueOrder}
+                  className="font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+                >
+                  Use catalogue order
+                </button>
+              </p>
+            ) : (
+              <p className="mt-1.5 text-xs text-foreground">
+                Following the catalogue order (Admin → Categories). Move a row to give this brand its own.
+              </p>
+            )}
           </div>
           <span className="text-xs text-muted-foreground">
             {visibleCount} of {rows.length} showing

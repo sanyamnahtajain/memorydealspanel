@@ -2,6 +2,7 @@ import { cache } from "react";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { swrCached } from "@/server/cache/swr";
+import { treeOrder } from "@/lib/category-order";
 import { applyBrandLayout, parseBrandLayout, type BrandCategoryEntry } from "@/lib/brand-layout";
 import { PAGE_SIZES } from "@/lib/constants";
 import { canSeePrices, type ViewerContext } from "@/server/types/viewer";
@@ -108,13 +109,21 @@ export interface BrandPageInfo extends PublicBrand {
   tagline: string | null;
   /** Parsed, cleaned category layout (empty = catalogue order). */
   layout: BrandCategoryEntry[];
+  /** The owner arranged this brand's category order (else catalogue order). */
+  orderCustom: boolean;
 }
 
 export const getBrandBySlug = cache(
   async (slug: string): Promise<BrandPageInfo | null> => {
     const row = await prisma.brand.findFirst({
       where: { slug, status: "ACTIVE" },
-      select: { ...BRAND_SELECT, coverImage: true, tagline: true, categoryLayout: true },
+      select: {
+        ...BRAND_SELECT,
+        coverImage: true,
+        tagline: true,
+        categoryLayout: true,
+        categoryOrderCustom: true,
+      },
     });
     if (!row) return null;
     return {
@@ -122,6 +131,7 @@ export const getBrandBySlug = cache(
       coverImage: row.coverImage ?? null,
       tagline: row.tagline ?? null,
       layout: parseBrandLayout(row.categoryLayout),
+      orderCustom: row.categoryOrderCustom === true,
     };
   },
 );
@@ -202,11 +212,14 @@ async function readBrandCategories(brandId: string): Promise<BrandCategory[]> {
   });
   if (grouped.length === 0) return [];
   const counts = new Map(grouped.map((g) => [g.categoryId, g._count._all]));
-  const cats = await prisma.category.findMany({
-    where: { id: { in: grouped.map((g) => g.categoryId) }, status: "ACTIVE" },
-    select: { id: true, name: true, slug: true, image: true },
-    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+  // Rank against ALL active categories so a sub-category sits right after its
+  // parent even when this brand has nothing in the parent itself.
+  const all = await prisma.category.findMany({
+    where: { status: "ACTIVE" },
+    select: { id: true, name: true, slug: true, image: true, sortOrder: true, parentId: true },
   });
+  const wanted = new Set(grouped.map((g) => g.categoryId));
+  const cats = treeOrder(all).filter((c) => wanted.has(c.id));
   return cats.map((c) => ({
     id: c.id,
     name: c.name,
@@ -226,13 +239,14 @@ async function readBrandCategories(brandId: string): Promise<BrandCategory[]> {
 export async function listBrandCategories(
   brandId: string,
   layout: BrandCategoryEntry[] = [],
+  orderCustom = false,
 ): Promise<BrandCategory[]> {
   const raw = await swrCached<BrandCategory[]>(
     `brand-cats:${brandId}`,
     () => readBrandCategories(brandId),
     { ttlMs: 120_000, coldBudgetMs: 2_500, fallback: [], label: "brand categories" },
   );
-  return applyBrandLayout(raw, layout);
+  return applyBrandLayout(raw, layout, orderCustom);
 }
 
 /** Uncached catalogue read for the admin editor (it must see the truth). */

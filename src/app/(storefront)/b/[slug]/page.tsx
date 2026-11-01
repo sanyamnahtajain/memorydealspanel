@@ -101,7 +101,7 @@ export default async function BrandPage({
     await Promise.all([
       // The rail: this brand's categories in the OWNER's order, with the
       // owner's per-brand photos and names (cached catalogue read + layout).
-      listBrandCategories(brand.id, brand.layout),
+      listBrandCategories(brand.id, brand.layout, brand.orderCustom),
       stockFacet({ brandIds }),
       discoverProducts(viewer, {
         ...selectionToDiscoverParams(selection, {

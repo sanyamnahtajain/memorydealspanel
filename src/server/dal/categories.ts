@@ -1,3 +1,4 @@
+import { treeOrder } from "@/lib/category-order";
 import { cache } from "react";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/server/db";
@@ -58,7 +59,8 @@ export async function listActive(): Promise<CategoryDTO[]> {
     select: CATEGORY_SELECT,
     orderBy: CATEGORY_ORDER,
   });
-  return rows.map(toCategoryDTO);
+  // Parents then their sub-categories — the order the owner arranged.
+  return treeOrder(rows.map(toCategoryDTO));
 }
 
 /**
@@ -85,5 +87,5 @@ export async function listAll(viewer: ViewerContext): Promise<CategoryDTO[]> {
     select: CATEGORY_SELECT,
     orderBy: CATEGORY_ORDER,
   });
-  return rows.map(toCategoryDTO);
+  return treeOrder(rows.map(toCategoryDTO));
 }

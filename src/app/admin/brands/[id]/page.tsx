@@ -50,13 +50,17 @@ export default async function AdminBrandPage({ params }: { params: Promise<{ id:
       coverImage: true,
       tagline: true,
       categoryLayout: true,
+      categoryOrderCustom: true,
     },
   });
   if (!brand) notFound();
+  const orderCustom = brand.categoryOrderCustom === true;
 
   const layout = parseBrandLayout(brand.categoryLayout);
   const live = await listBrandCategoriesUncached(brand.id);
   const liveById = new Map(live.map((c) => [c.id, c]));
+  // `live` is already in catalogue (Admin → Categories) order.
+  const catalogueIndex = new Map(live.map((c, i) => [c.id, i]));
 
   // Configured categories that have no live products now: still editable.
   const missingIds = layout.map((e) => e.categoryId).filter((cid) => !liveById.has(cid));
@@ -81,6 +85,7 @@ export default async function AdminBrandPage({ params }: { params: Promise<{ id:
       name: cat.name,
       defaultImage: cat.image ?? null,
       count: liveById.get(cat.id)?.count ?? 0,
+      catalogueIndex: catalogueIndex.get(cat.id) ?? Number.MAX_SAFE_INTEGER,
       image: entry.image ?? null,
       label: entry.label ?? "",
       hidden: entry.hidden,
@@ -93,11 +98,15 @@ export default async function AdminBrandPage({ params }: { params: Promise<{ id:
       name: cat.name,
       defaultImage: cat.image ?? null,
       count: cat.count,
+      catalogueIndex: catalogueIndex.get(cat.id) ?? Number.MAX_SAFE_INTEGER,
       image: null,
       label: "",
       hidden: false,
     });
   }
+
+  // Not arranged by the owner: show the rows in the order shoppers see them.
+  if (!orderCustom) rows.sort((a, b) => a.catalogueIndex - b.catalogueIndex);
 
   return (
     <AdminShell title="Brand page">
@@ -117,6 +126,7 @@ export default async function AdminBrandPage({ params }: { params: Promise<{ id:
             active: brand.status === "ACTIVE",
             coverImage: brand.coverImage ?? null,
             tagline: brand.tagline ?? "",
+            orderCustom,
           }}
           initialRows={rows}
         />

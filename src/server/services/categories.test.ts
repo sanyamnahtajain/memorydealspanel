@@ -210,7 +210,53 @@ describe("reorderCategories", () => {
   });
 
   it("is a no-op for an empty list", async () => {
-    await expect(reorderCategories([])).resolves.toBeUndefined();
+    await expect(reorderCategories([])).resolves.toEqual([]);
+  });
+
+  it("renumbers the whole sibling group — even rows with NO parentId field and ones the client didn't send", async () => {
+    const stamp = Date.now();
+    const a = await track(
+      await createCategory({ name: `Ga ${stamp}`, sortOrder: 0, status: "ACTIVE", parentId: null }),
+    );
+    // A pre-sub-category row: the parentId field is absent, not null.
+    const legacy = await track(
+      await prisma.category.create({
+        data: { name: `Glegacy ${stamp}`, slug: `glegacy-${stamp}`, sortOrder: 0, status: "ACTIVE" },
+        select: { id: true },
+      }),
+    );
+    const b = await track(
+      await createCategory({ name: `Gb ${stamp}`, sortOrder: 0, status: "ACTIVE", parentId: null }),
+    );
+
+    // A stale tab that only knows a and b.
+    const ordered = await reorderCategories([b.id, a.id]);
+    expect(ordered.slice(0, 2)).toEqual([b.id, a.id]);
+    expect(ordered).toContain(legacy.id);
+
+    const roots = await prisma.category.findMany({
+      where: { OR: [{ parentId: null }, { parentId: { isSet: false } }] },
+      select: { sortOrder: true },
+    });
+    const numbers = roots.map((r) => r.sortOrder).sort((x, y) => x - y);
+    // Every top-level category has its own number: no collisions, no gaps.
+    expect(numbers).toEqual(numbers.map((_, i) => i));
+  });
+
+  it("reorders sub-categories within their parent only", async () => {
+    const stamp = Date.now();
+    const parent = await track(
+      await createCategory({ name: `Pp ${stamp}`, sortOrder: 0, status: "ACTIVE", parentId: null }),
+    );
+    const x = await track(await createSubCategory(parent.id, { name: `Px ${stamp}`, sortOrder: 0, status: "ACTIVE" }));
+    const y = await track(await createSubCategory(parent.id, { name: `Py ${stamp}`, sortOrder: 0, status: "ACTIVE" }));
+
+    const ordered = await reorderCategories([y.id, x.id]);
+    expect(ordered).toEqual([y.id, x.id]);
+    const rows = await prisma.category.findMany({ where: { id: { in: [x.id, y.id] } }, select: { id: true, sortOrder: true } });
+    const order = new Map(rows.map((r) => [r.id, r.sortOrder]));
+    expect(order.get(y.id)).toBe(0);
+    expect(order.get(x.id)).toBe(1);
   });
 });
 

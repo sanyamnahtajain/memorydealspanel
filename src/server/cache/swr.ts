@@ -150,6 +150,13 @@ export function swrCached<T>(
 }
 
 /** Test seam: forget everything (or one key). */
+/** Drop every entry whose key starts with `prefix` (e.g. "brand-cats:"). */
+export function resetSwrCachePrefix(prefix: string): void {
+  const map = globalForSwr.__mdSwr;
+  if (!map) return;
+  for (const key of [...map.keys()]) if (key.startsWith(prefix)) map.delete(key);
+}
+
 export function resetSwrCache(key?: string): void {
   if (key === undefined) globalForSwr.__mdSwr = new Map();
   else globalForSwr.__mdSwr?.delete(key);

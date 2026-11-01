@@ -50,3 +50,22 @@ describe("brand layout", () => {
     expect(brandPageInputSchema.safeParse({ brandId: A, layout: [{ categoryId: B }], coverImage: "/brands/cover.webp" }).success).toBe(true);
   });
 });
+
+describe("applyBrandLayout — catalogue order (owner has not arranged this brand)", () => {
+  it("follows the catalogue order but keeps this brand's photo, name and hidden flag", () => {
+    const layout = parseBrandLayout([
+      { categoryId: cats[2].id, image: "/brand/x.webp", label: "Own name" },
+      { categoryId: cats[0].id, hidden: true },
+    ]);
+    const out = applyBrandLayout(cats, layout, false);
+    expect(out.map((c) => c.id)).toEqual(cats.filter((c) => c.id !== cats[0].id).map((c) => c.id));
+    const own = out.find((c) => c.id === cats[2].id)!;
+    expect(own.name).toBe("Own name");
+    expect(own.image).toBe("/brand/x.webp");
+  });
+
+  it("uses the owner's order once they have arranged it", () => {
+    const layout = parseBrandLayout([{ categoryId: cats[2].id }, { categoryId: cats[0].id }]);
+    expect(applyBrandLayout(cats, layout, true).map((c) => c.id).slice(0, 2)).toEqual([cats[2].id, cats[0].id]);
+  });
+});
