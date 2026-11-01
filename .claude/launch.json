@@ -40,6 +40,24 @@
         "3011"
       ],
       "port": 3011
+    },
+    {
+      "name": "memorydeals-local",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd /Users/master/work/personal/code/memorydeals && DATABASE_URL='mongodb://127.0.0.1:27018/memorydeals?replicaSet=rs0local&directConnection=true' R2_ACCESS_KEY_ID= R2_SECRET_ACCESS_KEY= exec /Users/master/.nvm/versions/node/v20.20.2/bin/node node_modules/next/dist/bin/next dev -p 3012"
+      ],
+      "port": 3012
+    },
+    {
+      "name": "memorydeals-prodread",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd /Users/master/work/personal/code/memorydeals && R2_ACCESS_KEY_ID= R2_SECRET_ACCESS_KEY= exec /Users/master/.nvm/versions/node/v20.20.2/bin/node node_modules/next/dist/bin/next dev -p 3013"
+      ],
+      "port": 3013
     }
   ]
 }
