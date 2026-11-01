@@ -50,3 +50,6 @@ scripts/*.progress.log
 
 # Local-disk uploads (dev without R2 — /api/dev/upload)
 /public/uploads/
+
+# Local production backups (category image rollbacks etc.)
+/.backups/
