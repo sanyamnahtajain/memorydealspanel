@@ -1,17 +1,11 @@
 import type { Metadata } from "next";
-import Image from "next/image";
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChevronLeft } from "lucide-react";
 
 import { PAGE_SIZES } from "@/lib/constants";
 import { getBrandBySlug, listBrandCategories } from "@/server/dal/brands";
 import { getViewer } from "@/server/auth/viewer";
 import { canSeePrices } from "@/server/types/viewer";
-import {
-  categoryFacetsForBrand,
-  discoverProducts,
-} from "@/server/storefront/discovery";
+import { discoverProducts } from "@/server/storefront/discovery";
 import { stockFacet } from "@/server/dal/facets";
 import { wishlistStateForViewer } from "@/server/services/wishlist";
 import { cartCountForViewer } from "@/server/services/cart";
@@ -29,8 +23,8 @@ import {
   isObjectId,
   parseListParam,
 } from "@/components/storefront/listing/filter-params";
-import { BrandCategoryGrid } from "@/components/storefront/BrandCategoryGrid";
-import { SectionHeading } from "@/components/storefront/home";
+import { BrandCategoryRail } from "@/components/storefront/brand/BrandCategoryRail";
+import { BrandHero } from "@/components/storefront/brand/BrandHero";
 import {
   selectionToDiscoverParams,
   toDiscoverSort,
@@ -40,13 +34,14 @@ import { parseSelection } from "@/components/storefront/filters/types";
 /**
  * Brand landing — brand → category → products, with CONTEXT-SCOPED filters.
  *
- * Multi-category brands lead with a category drill-down; every brand then gets
- * an "All {brand} products" listing scoped to the brand. THE CORE RULE: a
- * brand page NEVER shows a brand facet (you are already inside one brand) —
- * its chips are the CATEGORIES this brand actually has visible products in
- * (with counts), plus stock, applied server-side via the `cat` URL param. The
- * brand scope is fixed server-side, so filters only ever narrow WITHIN the
- * brand. Price gate intact (gated viewers get locked pills).
+ * Blinkit layout: the brand's header (owner cover + tagline, or logo + name),
+ * then — for a brand spanning more than one category — a sticky rail of its
+ * categories on the left (owner-ordered, with per-brand photos and names; see
+ * src/lib/brand-layout.ts) beside the product grid. A rail tap sets the `cat`
+ * URL param on this same page. THE CORE RULE: a brand page NEVER shows a
+ * brand facet (you are already inside one brand); the brand scope is fixed
+ * server-side, so filters only ever narrow WITHIN the brand. Price gate intact
+ * (gated viewers get locked pills).
  */
 export const dynamic = "force-dynamic";
 
@@ -101,11 +96,11 @@ export default async function BrandPage({
     CONTEXT_FILTER_PARAMS.category,
   ).filter(isObjectId);
 
-  const [categories, categoryFacets, stockCounts, firstPage, wishlistState, cartCount] =
+  const [categories, stockCounts, firstPage, wishlistState, cartCount] =
     await Promise.all([
-      listBrandCategories(brand.id),
-      // CONTEXT SCOPE: only the categories THIS brand has visible products in.
-      categoryFacetsForBrand(brand.id),
+      // The rail: this brand's categories in the OWNER's order, with the
+      // owner's per-brand photos and names (cached catalogue read + layout).
+      listBrandCategories(brand.id, brand.layout),
       stockFacet({ brandIds }),
       discoverProducts(viewer, {
         ...selectionToDiscoverParams(selection, {
@@ -152,77 +147,69 @@ export default async function BrandPage({
     };
   }
 
+  // The rail selection: one category (the `cat` param from a rail tap) or
+  // "All". A multi-select from an old link simply shows "All" highlighted.
+  const activeCategory =
+    categoryIds.length === 1 ? (categories.find((c) => c.id === categoryIds[0]) ?? null) : null;
+  const showRail = categories.length > 1;
+  const listingTitle = activeCategory ? activeCategory.name : `All ${brand.name}`;
+
+  const listing = (
+    <StorefrontListing
+      initialItems={items}
+      loadMore={loadMore}
+      initialNextCursor={firstPage.nextCursor}
+      canSeePrices={approved}
+      total={firstPage.total}
+      emptyTitle={`No ${brand.name} products match`}
+      emptyDescription="Try clearing a filter, or check back as we add stock."
+      savedProductIds={wishlistState.savedProductIds}
+      // The rail IS the category filter here, so the chip bar keeps only
+      // stock (never a brand facet — you are already inside one brand).
+      filterSlot={<ListingFilters contextFacet={null} stockCounts={stockCounts} />}
+      toolbarBleed={!showRail}
+    />
+  );
+
   return (
     <StorefrontShell wishlistCount={wishlistState.count} cartCount={cartCount}>
       <FadeUp>
-        <div className="mt-2 mb-6">
-          <Link
-            href="/brands"
-            className="inline-flex items-center gap-1 rounded-full py-1 text-sm font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
-          >
-            <ChevronLeft className="size-4" aria-hidden />
-            All brands
-          </Link>
-
-          <div className="mt-2 flex items-center gap-3">
-            {brand.logo ? (
-              <span className="relative size-11 shrink-0 overflow-hidden rounded-lg border border-border bg-white">
-                <Image
-                  src={brand.logo}
-                  alt={`${brand.name} logo`}
-                  fill
-                  sizes="44px"
-                  className="object-contain p-1"
-                />
-              </span>
-            ) : null}
-            <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground md:text-3xl">
-              {brand.name}
-            </h1>
-          </div>
-        </div>
+        <BrandHero
+          name={brand.name}
+          logo={brand.logo}
+          coverImage={brand.coverImage}
+          tagline={brand.tagline}
+        />
       </FadeUp>
 
-      {/* Category drill-down — only worth showing when the brand spans >1. */}
-      {categories.length > 1 ? (
-        <section aria-labelledby="brand-categories" className="mb-10">
-          <SectionHeading
-            id="brand-categories"
-            title={`Shop ${brand.name} by category`}
+      {showRail ? (
+        // BLINKIT LAYOUT: the brand's categories down a narrow sticky rail on
+        // the left, the products beside it. One page; a rail tap swaps `cat`.
+        <div className="grid grid-cols-[4.25rem_minmax(0,1fr)] gap-2 md:grid-cols-[13rem_minmax(0,1fr)] md:gap-6">
+          <BrandCategoryRail
+            brandSlug={slug}
+            categories={categories}
+            activeId={activeCategory?.id ?? null}
+            totalLabel={`All ${brand.name}`}
           />
-          <BrandCategoryGrid brandSlug={slug} categories={categories} />
+          <section aria-labelledby="brand-listing" className="min-w-0">
+            <h2
+              id="brand-listing"
+              className="mb-3 font-heading text-base font-bold tracking-tight text-foreground md:text-xl"
+            >
+              {listingTitle}
+            </h2>
+            {listing}
+          </section>
+        </div>
+      ) : (
+        <section aria-labelledby="brand-listing">
+          <h2 id="brand-listing" className="mb-3 font-heading text-lg font-bold tracking-tight text-foreground md:text-xl">
+            All {brand.name} products
+          </h2>
+          {listing}
         </section>
-      ) : null}
-
-      {/* Filterable product listing, scoped to the brand. NEVER a brand facet
-          here — the chips are this brand's own categories, plus stock. */}
-      <section aria-labelledby="brand-all">
-        <SectionHeading id="brand-all" title={`All ${brand.name} products`} />
-        <StorefrontListing
-          initialItems={items}
-          loadMore={loadMore}
-          initialNextCursor={firstPage.nextCursor}
-          canSeePrices={approved}
-          total={firstPage.total}
-          emptyTitle={`No ${brand.name} products match`}
-          emptyDescription="Try clearing a filter, or check back as we add stock."
-          savedProductIds={wishlistState.savedProductIds}
-          filterSlot={
-            <ListingFilters
-              contextFacet={{
-                param: CONTEXT_FILTER_PARAMS.category,
-                title: "Category",
-                buckets: categoryFacets.map((c) => ({
-                  value: c.id,
-                  label: c.name,
-                  count: c.count,
-                })),
-              }}
-              stockCounts={stockCounts}
-            />
-          }
-        />
-      </section>
+      )}
     </StorefrontShell>
   );
 }

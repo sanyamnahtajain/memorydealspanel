@@ -1,14 +1,14 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import {
   CheckIcon,
   ImageIcon,
   Loader2Icon,
   PencilIcon,
   Trash2Icon,
-  XIcon,
-} from "lucide-react";
+  XIcon, LayoutPanelLeft } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -180,6 +180,15 @@ export function BrandRow({
 
       {/* Actions */}
       <div className="flex shrink-0 items-center gap-0.5">
+        <Tooltip content="Brand page — cover, category order & photos">
+          <Link
+            href={`/admin/brands/${brand.id}`}
+            aria-label={`${brand.name} brand page`}
+            className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            <LayoutPanelLeft aria-hidden className="size-4" />
+          </Link>
+        </Tooltip>
         <Tooltip content="Edit brand">
           <Button
             variant="ghost"

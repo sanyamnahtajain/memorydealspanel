@@ -14,6 +14,9 @@ import { isAdmin } from "@/server/types/viewer";
 import { can } from "@/server/auth/require-permission";
 import { PERMISSIONS, type Permission } from "@/lib/permissions";
 import { writeAudit } from "@/server/security/audit";
+import { resetSwrCache } from "@/server/cache/swr";
+import { prisma } from "@/server/db";
+import { brandPageInputSchema } from "@/lib/brand-layout";
 import { createUploadTarget, type UploadTarget } from "@/server/storage/r2";
 import {
   createBrand,
@@ -264,5 +267,73 @@ export async function createBrandLogoUploadTargetAction(
     return fail(
       error instanceof Error ? error.message : "Failed to prepare upload.",
     );
+  }
+}
+
+/* --------------------------------------------------------------------- */
+/* Brand page (cover, tagline, home position, per-brand category rail)   */
+/* --------------------------------------------------------------------- */
+
+/**
+ * Save the owner's brand-page setup in one write: cover artwork, tagline,
+ * position among brands (home + directory), and the category rail — order,
+ * brand-specific photo, display name and hidden flag per category. Validated
+ * by the shared schema in src/lib/brand-layout.ts; the storefront re-parses
+ * defensively on read, so even a bad row could never break the page.
+ */
+export async function saveBrandPageAction(
+  input: unknown,
+): Promise<ActionResult<{ slug: string }>> {
+  const auth = await requireAdmin(PERMISSIONS.BRANDS_MANAGE);
+  if (!auth.ok) return auth;
+
+  const parsed = brandPageInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return fail(firstIssue(parsed.error));
+  }
+  const data = parsed.data;
+
+  try {
+    const brand = await prisma.brand.update({
+      where: { id: data.brandId },
+      data: {
+        coverImage: data.coverImage || null,
+        tagline: data.tagline || null,
+        sortOrder: data.sortOrder,
+        categoryLayout: data.layout.map((entry) => ({
+          categoryId: entry.categoryId,
+          image: entry.image || null,
+          label: entry.label || null,
+          hidden: entry.hidden,
+        })),
+      },
+      select: { id: true, slug: true, name: true },
+    });
+
+    await writeAudit({
+      actorType: "admin",
+      actorId: auth.adminId,
+      action: "brand.page",
+      entity: "Brand",
+      entityId: brand.id,
+      diff: {
+        name: brand.name,
+        categories: data.layout.length,
+        hidden: data.layout.filter((e) => e.hidden).length,
+        cover: Boolean(data.coverImage),
+      },
+    });
+
+    // The home bundle carries the brand order; the brand page reads the
+    // layout per request (applied after its cached category read).
+    resetSwrCache("home-data");
+    resetSwrCache(`brand-cats:${brand.id}`);
+    revalidatePath(BRANDS_PATH);
+    revalidatePath(`/b/${brand.slug}`);
+    revalidatePath("/brands");
+    revalidatePath("/");
+    return { ok: true, data: { slug: brand.slug } };
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : "Failed to save the brand page.");
   }
 }

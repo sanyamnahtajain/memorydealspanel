@@ -471,6 +471,16 @@ model Brand {
   name      String       @unique
   slug      String       @unique
   logo      String?
+  /// Wide artwork across the top of the brand page (optional).
+  coverImage String?
+  /// One line under the brand name on its page (optional).
+  tagline   String?
+  /// The brand page's category rail, configured per brand: order, a
+  /// brand-specific photo, a display name and hidden flag per category.
+  /// JSON (parsed defensively in src/lib/brand-layout.ts) rather than a
+  /// collection: it is read with the brand in ONE query, saved in one write,
+  /// and a brand spans a handful of categories.
+  categoryLayout Json?
   status    EntityStatus @default(ACTIVE)
   sortOrder Int          @default(0)
   products  Product[]

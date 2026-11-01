@@ -1,6 +1,8 @@
 import { cache } from "react";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/server/db";
+import { swrCached } from "@/server/cache/swr";
+import { applyBrandLayout, parseBrandLayout, type BrandCategoryEntry } from "@/lib/brand-layout";
 import { PAGE_SIZES } from "@/lib/constants";
 import { canSeePrices, type ViewerContext } from "@/server/types/viewer";
 import {
@@ -96,13 +98,27 @@ export async function listBrandsWithCounts(): Promise<BrandWithCount[]> {
  * brand views resolve the slug in generateMetadata AND the page body — one
  * query instead of two per request.
  */
+/** A brand as its own page needs it: the public fields plus the page setup. */
+export interface BrandPageInfo extends PublicBrand {
+  coverImage: string | null;
+  tagline: string | null;
+  /** Parsed, cleaned category layout (empty = catalogue order). */
+  layout: BrandCategoryEntry[];
+}
+
 export const getBrandBySlug = cache(
-  async (slug: string): Promise<PublicBrand | null> => {
+  async (slug: string): Promise<BrandPageInfo | null> => {
     const row = await prisma.brand.findFirst({
       where: { slug, status: "ACTIVE" },
-      select: BRAND_SELECT,
+      select: { ...BRAND_SELECT, coverImage: true, tagline: true, categoryLayout: true },
     });
-    return row ? toPublicBrand(row) : null;
+    if (!row) return null;
+    return {
+      ...toPublicBrand(row),
+      coverImage: row.coverImage ?? null,
+      tagline: row.tagline ?? null,
+      layout: parseBrandLayout(row.categoryLayout),
+    };
   },
 );
 
@@ -170,13 +186,11 @@ export interface BrandCategory {
 
 /**
  * Categories that have ≥1 visible (ACTIVE, non-deleted) product for this brand,
- * each with the product count. Carries NO pricing — counts and category
- * metadata are public — so it is safe on any surface. Ordered by the category's
- * own sortOrder then name.
+ * each with the product count, in the catalogue's own order (category
+ * sortOrder, then name). Carries NO pricing — counts and category metadata are
+ * public — so it is safe on any surface.
  */
-export async function listBrandCategories(
-  brandId: string,
-): Promise<BrandCategory[]> {
+async function readBrandCategories(brandId: string): Promise<BrandCategory[]> {
   const grouped = await prisma.product.groupBy({
     by: ["categoryId"],
     where: { ...VISIBLE_WHERE, brandId },
@@ -196,6 +210,30 @@ export async function listBrandCategories(
     image: c.image,
     count: counts.get(c.id) ?? 0,
   }));
+}
+
+/**
+ * The brand page's category rail: the brand's categories with the owner's
+ * per-brand layout applied (order, photo, name, hidden — see
+ * src/lib/brand-layout.ts). The catalogue read is memoised per brand for two
+ * minutes (stale-while-revalidate, fails soft to an empty rail); the layout is
+ * applied AFTER the cache, so an owner's edit shows on the next request.
+ */
+export async function listBrandCategories(
+  brandId: string,
+  layout: BrandCategoryEntry[] = [],
+): Promise<BrandCategory[]> {
+  const raw = await swrCached<BrandCategory[]>(
+    `brand-cats:${brandId}`,
+    () => readBrandCategories(brandId),
+    { ttlMs: 120_000, coldBudgetMs: 2_500, fallback: [], label: "brand categories" },
+  );
+  return applyBrandLayout(raw, layout);
+}
+
+/** Uncached catalogue read for the admin editor (it must see the truth). */
+export function listBrandCategoriesUncached(brandId: string): Promise<BrandCategory[]> {
+  return readBrandCategories(brandId);
 }
 
 function resolvePaging(options: ListByBrandOptions | undefined): {
