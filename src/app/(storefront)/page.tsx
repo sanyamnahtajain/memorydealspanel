@@ -28,9 +28,9 @@ import { BannerCarousel } from "@/components/storefront/home/BannerCarousel";
 import { listLiveBanners } from "@/server/services/banners";
 import { swrCached } from "@/server/cache/swr";
 import { BuyAgainRail } from "@/components/storefront/home/BuyAgainRail";
+import { UnapprovedOnly } from "@/components/storefront/home/UnapprovedOnly";
 import { CatalogCta } from "@/components/storefront/home/CatalogCta";
 import { RecentlyViewedRail } from "@/components/storefront/recently-viewed/RecentlyViewedRail";
-import { LastOrderCard } from "@/components/storefront/home/LastOrderCard";
 import { APP_NAME } from "@/lib/constants";
 
 export const metadata: Metadata = {
@@ -48,7 +48,7 @@ export const metadata: Metadata = {
  * real price, and locked pills are correct for every visitor sharing a cache
  * entry. Live pricing is unlocked on category/product/search surfaces, which
  * branch on the real viewer. Personalisation on THIS page happens only in
- * client components (LastOrderCard, BuyAgainRail) that fetch gated APIs in
+ * client components (BuyAgainRail) that fetch gated APIs in
  * the browser and render nothing for anon.
  */
 export const revalidate = 300;
@@ -152,7 +152,6 @@ export default async function HomePage() {
           because that wrapper gives every child a stagger slot + space-y gap,
           which would shift the page for logged-out visitors even when they are
           empty. */}
-      <LastOrderCard />
 
       <HomePriceReveal>
       {/* Section rhythm (HomeSections): brand → category →
@@ -264,11 +263,13 @@ export default async function HomePage() {
 
 
         {/* How it works — last: the page's one dark feature panel, the
-            explainer kept for visitors who are not approved yet. The panel
-            owns its heading (id "home-how"). */}
-        <section aria-labelledby="home-how">
-          <HowItWorks />
-        </section>
+            explainer kept for visitors who are not approved yet (hidden for a
+            buyer whose prices are open). The panel owns its heading. */}
+        <UnapprovedOnly>
+          <section aria-labelledby="home-how">
+            <HowItWorks />
+          </section>
+        </UnapprovedOnly>
       </HomeSections>
       </HomePriceReveal>
 

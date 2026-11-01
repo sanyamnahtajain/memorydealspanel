@@ -10,6 +10,7 @@ import { formatPaise } from "@/lib/money";
 import { ORDER_STATUS_LABEL } from "@/components/storefront/orders/order-status";
 import { parsePriceLabelIds } from "@/lib/price-labels";
 import { buildAccessSnapshot } from "@/server/services/access-snapshot";
+import { cartCountForViewer } from "@/server/services/cart";
 import { CONTEXT_SLICES, parseSlices } from "@/lib/viewer-context";
 import type { OrderStatus } from "@prisma/client";
 import type { PricedProduct, PublicProduct } from "@/server/dto/product";
@@ -82,7 +83,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   // every customer-shaped slice resolves exactly as it does for anon: empty.
   // The storefront then renders its public shell for them, unchanged.
 
-  const [access, lastOrder, buyAgain, priceLabels] = await Promise.all([
+  const [access, lastOrder, buyAgain, priceLabels, cartCount] = await Promise.all([
     want.has(CONTEXT_SLICES.access)
       ? buildAccessSnapshot(viewer).catch((error) => {
           console.error("[me/context] access slice failed:", error);
@@ -101,10 +102,15 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     want.has(CONTEXT_SLICES.priceLabels)
       ? loadPriceLabels(viewer, params.get("ids"), seePrices)
       : Promise.resolve({}),
+
+    // null = not a customer who can order (no cart UI at all).
+    want.has(CONTEXT_SLICES.cartCount)
+      ? cartCountForViewer(viewer).then((n) => n ?? null).catch(() => null)
+      : Promise.resolve(null),
   ]);
 
   return NextResponse.json(
-    { access, lastOrder, buyAgain, priceLabels },
+    { access, lastOrder, buyAgain, priceLabels, cartCount },
     { headers: NO_STORE_HEADERS },
   );
 }

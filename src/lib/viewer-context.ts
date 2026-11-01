@@ -11,6 +11,8 @@ export const CONTEXT_SLICES = {
   lastOrder: "lastOrder",
   buyAgain: "buyAgain",
   priceLabels: "priceLabels",
+  /** Units in the cart — for cached pages (home) whose shell has no count. */
+  cartCount: "cartCount",
 } as const;
 
 export type ContextSlice = (typeof CONTEXT_SLICES)[keyof typeof CONTEXT_SLICES];

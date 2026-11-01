@@ -42,7 +42,7 @@ export function BackToTop() {
         window.scrollTo({ top: 0, behavior: "smooth" });
       }}
       className={cn(
-        "fixed left-4 bottom-[calc(var(--md-tab-h,3.5rem)+4.5rem+env(safe-area-inset-bottom))] z-30 inline-flex size-11 items-center justify-center rounded-full border border-border bg-background/95 text-foreground shadow-md backdrop-blur outline-none transition-[opacity,transform] duration-200 hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-90 motion-reduce:transition-none md:bottom-6",
+        "fixed left-4 bottom-[calc(var(--md-tab-h,3.5rem)+4.5rem+env(safe-area-inset-bottom))] z-30 hidden md:inline-flex size-11 items-center justify-center rounded-full border border-border bg-background/95 text-foreground shadow-md backdrop-blur outline-none transition-[opacity,transform] duration-200 hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-90 motion-reduce:transition-none md:bottom-6",
         visible ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-3 opacity-0",
       )}
     >

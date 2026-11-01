@@ -24,6 +24,12 @@ const QUIET_PREFIXES = ["/p/", "/account/cart", "/reels", "/account/orders/confi
 export function CartDock({ initialCount }: { initialCount: number | undefined }) {
   const pathname = usePathname()
   const [count, setCount] = React.useState(initialCount ?? 0)
+  // Re-seed when the count arrives later (cached pages fetch it client-side).
+  const [seenInitial, setSeenInitial] = React.useState(initialCount)
+  if (seenInitial !== initialCount) {
+    setSeenInitial(initialCount)
+    setCount(initialCount ?? 0)
+  }
 
   React.useEffect(() => {
     const onCount = (event: Event) => {
@@ -37,12 +43,16 @@ export function CartDock({ initialCount }: { initialCount: number | undefined })
   const quiet = QUIET_PREFIXES.some((p) => pathname === p || pathname.startsWith(p))
   const visible = initialCount !== undefined && count > 0 && !quiet
 
-  // While the bar floats over the page, the page reserves room for it — the
-  // last row of products (and its ADD buttons) must stay reachable.
+  // While the bar is up it is the ONLY thing floating on a phone: the
+  // WhatsApp button steps aside (its in-data-[cart-dock=on] variant). The
+  // page always keeps room at its end for one floating control (StorefrontShell).
   React.useEffect(() => {
     const root = document.documentElement
-    root.style.setProperty("--md-dock-pad", visible ? "4.25rem" : "0px")
-    return () => root.style.setProperty("--md-dock-pad", "0px")
+    if (visible) root.dataset.cartDock = "on"
+    else delete root.dataset.cartDock
+    return () => {
+      delete root.dataset.cartDock
+    }
   }, [visible])
 
   if (initialCount === undefined) return null // not a customer who can order
@@ -51,7 +61,7 @@ export function CartDock({ initialCount }: { initialCount: number | undefined })
     <div
       aria-hidden={!visible}
       className={cn(
-        "fixed right-[4.75rem] left-4 z-40 transition-[transform,opacity] duration-300 ease-out motion-reduce:transition-none md:hidden",
+        "fixed right-4 left-4 z-40 transition-[transform,opacity] duration-300 ease-out motion-reduce:transition-none md:hidden",
         "bottom-[calc(var(--md-tab-h,3.5rem)+0.75rem+env(safe-area-inset-bottom))]",
         visible ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-4 opacity-0",
       )}

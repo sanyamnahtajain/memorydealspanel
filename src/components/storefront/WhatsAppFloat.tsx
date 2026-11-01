@@ -27,7 +27,7 @@ export function WhatsAppFloat({ href }: { href: string }) {
       aria-label="Chat with us on WhatsApp"
       title="Chat with us on WhatsApp"
       onClick={hapticTap}
-      className="fixed right-4 bottom-[calc(var(--md-tab-h,3.5rem)+1rem+env(safe-area-inset-bottom))] z-40 flex size-12 items-center justify-center rounded-full bg-[#25D366] text-white shadow-lg outline-none transition-transform duration-150 hover:scale-105 focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-95 motion-reduce:transition-none md:bottom-6"
+      className="fixed right-4 bottom-[calc(var(--md-tab-h,3.5rem)+1rem+env(safe-area-inset-bottom))] z-40 flex size-12 items-center justify-center rounded-full bg-[#25D366] text-white shadow-lg outline-none transition-transform duration-150 hover:scale-105 focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-95 motion-reduce:transition-none max-md:in-data-[cart-dock=on]:hidden md:bottom-6"
     >
       {/* The recognised WhatsApp mark — buyers scan for its exact shape. */}
       <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden className="size-7" focusable="false">

@@ -40,6 +40,8 @@ export interface ViewerContextPayload {
   lastOrder: ContextLastOrder | null;
   buyAgain: ContextBuyAgainItem[];
   priceLabels: Record<string, string>;
+  /** Units in the cart; null = no cart for this viewer (or not asked yet). */
+  cartCount: number | null;
 }
 
 const EMPTY: ViewerContextPayload = {
@@ -47,6 +49,7 @@ const EMPTY: ViewerContextPayload = {
   lastOrder: null,
   buyAgain: [],
   priceLabels: {},
+  cartCount: null,
 };
 
 /** Exactly what the server answers for a visitor with no session. */
@@ -160,6 +163,7 @@ async function run(): Promise<void> {
           ? json.buyAgain
           : payload.buyAgain,
       priceLabels: { ...payload.priceLabels, ...(json.priceLabels ?? {}) },
+      cartCount: typeof json.cartCount === "number" ? json.cartCount : payload.cartCount,
     };
     notify();
   } catch {

@@ -18,6 +18,12 @@ import { StorefrontFooter } from "@/components/shell/StorefrontFooter"
 import { AccessStatusBanner } from "@/components/access/AccessStatusBanner"
 import { TrustStrip } from "@/components/access/TrustStrip"
 import { SlabyPromoCard } from "@/components/slaby/SlabyPromoCard"
+import {
+  getViewerContext,
+  needSlice,
+  subscribe as subscribeViewerContext,
+} from "@/components/storefront/viewer-context-client"
+import { CONTEXT_SLICES } from "@/lib/viewer-context"
 import { SlabyBand } from "@/components/slaby/SlabyBand"
 import { WishlistBadge } from "@/components/storefront/wishlist/WishlistBadge"
 import { CartBadge } from "@/components/storefront/cart/CartBadge"
@@ -129,13 +135,26 @@ export function StorefrontShell({
   badges,
   wishlistCount,
   showWishlist = true,
-  cartCount,
+  cartCount: serverCartCount,
   topNotice,
 }: StorefrontShellProps) {
   const pathname = usePathname()
   const reducedMotion = useReducedMotion()
   const spring: Transition = reducedMotion ? { duration: 0 } : SNAPPY_SPRING
   const [condensed, setCondensed] = React.useState(false)
+
+  // Cached pages (home) render without a cart count — the shell asks for it
+  // client-side, so the header cart and the "View cart" bar still appear for
+  // a signed-in buyer. Pages that pass a server count skip the request.
+  const contextCartCount = React.useSyncExternalStore(
+    subscribeViewerContext,
+    () => getViewerContext().cartCount,
+    () => null,
+  )
+  React.useEffect(() => {
+    if (serverCartCount === undefined) needSlice(CONTEXT_SLICES.cartCount)
+  }, [serverCartCount])
+  const cartCount = serverCartCount ?? contextCartCount ?? undefined
 
   // Full-screen search overlay, opened from the header search button. Category
   // chips are fetched lazily on first open (they carry no pricing) and cached.
@@ -363,8 +382,10 @@ export function StorefrontShell({
 
       {/* ——— Content ——— */}
       {/* Bottom padding clears the FIXED mobile tab bar (--md-tab-h + safe
-          area + breathing room) — the footer is desktop-only, so main owns it. */}
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-[calc(var(--md-tab-h)+1rem+env(safe-area-inset-bottom)+var(--md-dock-pad,0px))] md:px-6 md:pb-12">
+          area) AND the one floating control above it (the "View cart" bar or
+          the WhatsApp button, ~4.25rem), so the page's last row is never
+          under either — the footer is desktop-only, so main owns it. */}
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-[calc(var(--md-tab-h)+5.25rem+env(safe-area-inset-bottom))] md:px-6 md:pb-12">
         {children}
         {/* "This store runs on Slaby" — the end of every browsing screen
             (owner-toggleable; skips cart, checkout and sign-in). */}
