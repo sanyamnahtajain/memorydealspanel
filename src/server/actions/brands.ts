@@ -21,6 +21,7 @@ import { createUploadTarget, type UploadTarget } from "@/server/storage/r2";
 import {
   createBrand,
   deleteBrand,
+  reorderBrands,
   setBrandStatus,
   updateBrand,
   BrandInUseError,
@@ -299,7 +300,6 @@ export async function saveBrandPageAction(
       data: {
         coverImage: data.coverImage || null,
         tagline: data.tagline || null,
-        sortOrder: data.sortOrder,
         categoryLayout: data.layout.map((entry) => ({
           categoryId: entry.categoryId,
           image: entry.image || null,
@@ -335,5 +335,48 @@ export async function saveBrandPageAction(
     return { ok: true, data: { slug: brand.slug } };
   } catch (error) {
     return fail(error instanceof Error ? error.message : "Failed to save the brand page.");
+  }
+}
+
+/* --------------------------------------------------------------------- */
+/* Arrange (the order brands show on home and the brand directory)       */
+/* --------------------------------------------------------------------- */
+
+const reorderBrandsSchema = z.object({
+  ids: z
+    .array(z.string().regex(/^[a-f0-9]{24}$/i, "Invalid brand."))
+    .min(1, "Nothing to reorder.")
+    .max(500),
+});
+
+export async function reorderBrandsAction(input: unknown): Promise<ActionResult> {
+  const auth = await requireAdmin(PERMISSIONS.BRANDS_MANAGE);
+  if (!auth.ok) return auth;
+
+  const parsed = reorderBrandsSchema.safeParse(input);
+  if (!parsed.success) {
+    return fail(firstIssue(parsed.error));
+  }
+  if (new Set(parsed.data.ids).size !== parsed.data.ids.length) {
+    return fail("A brand appears twice in the order.");
+  }
+
+  try {
+    await reorderBrands(parsed.data.ids);
+    await writeAudit({
+      actorType: "admin",
+      actorId: auth.adminId,
+      action: "brand.reorder",
+      entity: "Brand",
+      entityId: parsed.data.ids[0],
+      diff: { order: parsed.data.ids },
+    });
+    resetSwrCache("home-data");
+    revalidatePath(BRANDS_PATH);
+    revalidatePath("/brands");
+    revalidatePath("/");
+    return { ok: true };
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : "Failed to save the brand order.");
   }
 }

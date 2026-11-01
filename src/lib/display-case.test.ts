@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { titleCase } from "./display-case";
+import { brandName, titleCase } from "./display-case";
 
 describe("titleCase", () => {
   it("normalises ALL CAPS, lower case and Title Case to one treatment", () => {
@@ -74,5 +74,15 @@ describe("titleCase", () => {
     expect(titleCase("SAMSUNG")).toBe("Samsung");
     expect(titleCase("realme")).toBe("Realme");
     expect(titleCase("MI")).toBe("MI");
+  });
+});
+
+describe("brandName", () => {
+  it("keeps short all-caps brand marks and title-cases the rest", () => {
+    expect(brandName("ERD")).toBe("ERD");
+    expect(brandName("KGL")).toBe("KGL");
+    expect(brandName("AMBRANE")).toBe("Ambrane");
+    expect(brandName("boAt")).toBe("boAt");
+    expect(brandName("  ")).toBe("");
   });
 });

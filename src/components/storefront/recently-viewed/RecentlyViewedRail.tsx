@@ -6,7 +6,7 @@ import { ImageOff } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { catalogImageUrl } from "@/lib/image-loader";
-import { titleCase } from "@/lib/display-case";
+import { brandName } from "@/lib/display-case";
 import { Rail } from "@/components/storefront/Rail";
 import { SectionHeading } from "@/components/storefront/home/SectionHeading";
 import { loadRecentlyViewed, type RecentlyViewedItem } from "./store";
@@ -70,7 +70,7 @@ export function RecentlyViewedRail({
               <div className="flex flex-1 flex-col gap-1 p-3">
                 {item.brand ? (
                   <span className={cn("text-[0.7rem] font-medium tracking-wide text-muted-foreground uppercase")}>
-                    {titleCase(item.brand)}
+                    {brandName(item.brand)}
                   </span>
                 ) : null}
                 <h3 className="line-clamp-2 text-[15px] leading-snug font-semibold text-foreground">{item.name}</h3>

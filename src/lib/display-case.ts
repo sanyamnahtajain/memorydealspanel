@@ -127,3 +127,16 @@ export function titleCase(input: string | null | undefined): string {
   }
   return out;
 }
+
+/**
+ * A brand name for display. Brands are proper nouns: a one-word, all-caps
+ * name of up to three letters is the brand's own mark (ERD, KGL, JBL) and
+ * stays as typed. Everything else gets {@link titleCase} ("AMBRANE" →
+ * "Ambrane"; "boAt" stays "boAt").
+ */
+export function brandName(input: string | null | undefined): string {
+  if (!input) return "";
+  const collapsed = input.replace(/\s+/g, " ").trim();
+  if (/^[A-Z]{1,3}$/.test(collapsed)) return collapsed;
+  return titleCase(collapsed);
+}

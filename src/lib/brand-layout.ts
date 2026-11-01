@@ -49,8 +49,6 @@ export const brandPageInputSchema = z.object({
     .trim()
     .max(MAX_BRAND_TAGLINE, `Keep the line under ${MAX_BRAND_TAGLINE} characters.`)
     .nullish(),
-  /** Position among brands on the home page and the brand directory (lower first). */
-  sortOrder: z.number().int().min(0).max(9999),
   layout: brandLayoutSchema,
 });
 

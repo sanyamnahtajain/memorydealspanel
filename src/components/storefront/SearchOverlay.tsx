@@ -39,7 +39,7 @@ import {
 
 import { searchSuggestions } from "@/app/(storefront)/search/actions";
 import { cn } from "@/lib/utils";
-import { titleCase } from "@/lib/display-case";
+import { brandName, titleCase } from "@/lib/display-case";
 import { hapticTap } from "@/lib/haptics";
 import { SlabyPoweredBy } from "@/components/slaby/SlabyPoweredBy";
 import { useEntranceInitial } from "@/components/motion/useEntrance";
@@ -439,7 +439,7 @@ export function SearchOverlay({
                             </span>
                             {r.brand ? (
                               <span className="block truncate text-xs text-muted-foreground">
-                                {highlight(titleCase(r.brand), trimmed)}
+                                {highlight(brandName(r.brand), trimmed)}
                               </span>
                             ) : null}
                           </span>

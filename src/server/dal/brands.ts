@@ -73,12 +73,17 @@ export interface BrandWithCount extends PublicBrand {
 
 /**
  * ACTIVE brands that have ≥1 visible (ACTIVE, non-deleted) product, each with
- * the product count. Ordered by count (desc) then name. Carries NO pricing —
- * counts + brand metadata are public — so it is safe on any surface.
+ * the product count. In the owner's order (Admin → Brands → Arrange), the same
+ * as the home page's "Shop by brand". Carries NO pricing — counts + brand
+ * metadata are public — so it is safe on any surface.
  */
 export async function listBrandsWithCounts(): Promise<BrandWithCount[]> {
   const [rows, grouped] = await Promise.all([
-    prisma.brand.findMany({ where: { status: "ACTIVE" }, select: BRAND_SELECT }),
+    prisma.brand.findMany({
+      where: { status: "ACTIVE" },
+      select: BRAND_SELECT,
+      orderBy: BRAND_ORDER,
+    }),
     prisma.product.groupBy({
       by: ["brandId"],
       where: { status: "ACTIVE", deletedAt: null, brandId: { not: null } },
@@ -88,8 +93,7 @@ export async function listBrandsWithCounts(): Promise<BrandWithCount[]> {
   const counts = new Map(grouped.map((g) => [g.brandId, g._count._all]));
   return rows
     .map((r) => ({ ...toPublicBrand(r), count: counts.get(r.id) ?? 0 }))
-    .filter((b) => b.count > 0)
-    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+    .filter((b) => b.count > 0);
 }
 
 /**

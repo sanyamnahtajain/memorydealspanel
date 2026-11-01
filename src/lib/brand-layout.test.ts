@@ -46,7 +46,7 @@ describe("brand layout", () => {
   });
 
   it("validates the editor's save payload", () => {
-    expect(brandPageInputSchema.safeParse({ brandId: A, sortOrder: 2, layout: [], tagline: "x".repeat(121) }).success).toBe(false);
-    expect(brandPageInputSchema.safeParse({ brandId: A, sortOrder: 2, layout: [{ categoryId: B }], coverImage: "/brands/cover.webp" }).success).toBe(true);
+    expect(brandPageInputSchema.safeParse({ brandId: A, layout: [], tagline: "x".repeat(121) }).success).toBe(false);
+    expect(brandPageInputSchema.safeParse({ brandId: A, layout: [{ categoryId: B }], coverImage: "/brands/cover.webp" }).success).toBe(true);
   });
 });

@@ -47,7 +47,6 @@ export default async function AdminBrandPage({ params }: { params: Promise<{ id:
       slug: true,
       logo: true,
       status: true,
-      sortOrder: true,
       coverImage: true,
       tagline: true,
       categoryLayout: true,
@@ -116,7 +115,6 @@ export default async function AdminBrandPage({ params }: { params: Promise<{ id:
             slug: brand.slug,
             logo: brand.logo ?? null,
             active: brand.status === "ACTIVE",
-            sortOrder: brand.sortOrder,
             coverImage: brand.coverImage ?? null,
             tagline: brand.tagline ?? "",
           }}

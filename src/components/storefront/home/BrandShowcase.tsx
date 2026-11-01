@@ -3,7 +3,7 @@ import { ArrowRight } from "lucide-react";
 
 import type { PublicBrand } from "@/server/dal/brands";
 import { catalogImageUrl } from "@/lib/image-loader";
-import { titleCase } from "@/lib/display-case";
+import { brandName } from "@/lib/display-case";
 import { cn } from "@/lib/utils";
 
 /**
@@ -65,7 +65,7 @@ export function BrandShowcase({
               </span>
             )}
             <span className="w-full truncate text-xs font-medium text-foreground/85 group-hover:text-foreground">
-              {titleCase(brand.name)}
+              {brandName(brand.name)}
             </span>
           </Link>
         </li>

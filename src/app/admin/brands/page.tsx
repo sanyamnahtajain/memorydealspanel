@@ -32,7 +32,11 @@ export const dynamic = "force-dynamic";
  * storefront never enumerates — with live product counts. Rows are handed to
  * the client `BrandManager` for CRUD and status toggling.
  */
-export default async function AdminBrandsPage() {
+export default async function AdminBrandsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ arrange?: string }>;
+}) {
   const viewer = await getViewer();
   if (!isAdmin(viewer)) {
     redirect("/admin/login");
@@ -50,7 +54,7 @@ export default async function AdminBrandsPage() {
           title="Brands"
           description="Your brand master. Products reference a brand from this list, so names stay consistent — no typos. Rename inline and hide brands from the storefront without deleting them."
         />
-        <BrandManager initialBrands={brands} />
+        <BrandManager initialBrands={brands} startArranging={(await searchParams).arrange === "1"} />
 
         {/* Module-level recent activity — subtle, admin-only, streams in. */}
         <div className="max-w-md">

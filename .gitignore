@@ -47,3 +47,6 @@ scripts/*.progress.log
 
 # Customer/product spreadsheets dropped at repo root during imports
 *.xlsx
+
+# Local-disk uploads (dev without R2 — /api/dev/upload)
+/public/uploads/

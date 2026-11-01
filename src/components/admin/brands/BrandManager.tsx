@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { PlusIcon, SearchIcon } from "lucide-react";
+import { ArrowUpDown, PlusIcon, SearchIcon } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { toast } from "sonner";
 
@@ -17,6 +17,7 @@ import {
 } from "@/server/actions/brands";
 import { BrandFormDialog, type BrandFormValues } from "./BrandFormDialog";
 import { BrandRow } from "./BrandRow";
+import { BrandArrangeList } from "./BrandArrangeList";
 
 export interface BrandListItem {
   id: string;
@@ -30,6 +31,8 @@ export interface BrandListItem {
 
 interface BrandManagerProps {
   initialBrands: BrandListItem[];
+  /** Open straight into "Arrange" (linked from the brand page editor). */
+  startArranging?: boolean;
 }
 
 type DialogState =
@@ -44,8 +47,9 @@ type DialogState =
  * sonner toasts; on failure the previous state is restored and the server's
  * authoritative copy arrives via revalidatePath.
  */
-export function BrandManager({ initialBrands }: BrandManagerProps) {
+export function BrandManager({ initialBrands, startArranging = false }: BrandManagerProps) {
   const [brands, setBrands] = React.useState<BrandListItem[]>(initialBrands);
+  const [arranging, setArranging] = React.useState(startArranging && initialBrands.length > 1);
   const [dialog, setDialog] = React.useState<DialogState>(null);
   const [query, setQuery] = React.useState("");
   const [pending, startTransition] = React.useTransition();
@@ -171,6 +175,18 @@ export function BrandManager({ initialBrands }: BrandManagerProps) {
   const isEmpty = brands.length === 0;
   const noMatches = !isEmpty && filtered.length === 0;
 
+  if (arranging) {
+    return (
+      <BrandArrangeList
+        brands={brands}
+        onDone={(saved) => {
+          if (saved) setBrands(saved);
+          setArranging(false);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -200,6 +216,12 @@ export function BrandManager({ initialBrands }: BrandManagerProps) {
                 className="h-9 w-full pl-8 sm:w-56"
               />
             </div>
+          ) : null}
+          {brands.length > 1 ? (
+            <Button variant="outline" onClick={() => setArranging(true)}>
+              <ArrowUpDown aria-hidden />
+              Arrange
+            </Button>
           ) : null}
           <Button onClick={() => setDialog({ mode: "create" })}>
             <PlusIcon aria-hidden />

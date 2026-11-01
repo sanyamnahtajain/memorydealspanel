@@ -26,7 +26,7 @@ afterEach(cleanup);
 describe("SlabyBand", () => {
   it("shows on browsing screens with a band-tagged link", () => {
     renderAt("/b/erd");
-    const link = screen.getByRole("link", { name: /runs on Slaby/i });
+    const link = screen.getByRole("link", { name: /Powered by Slaby/i });
     expect(link.getAttribute("href")).toBe(
       "https://slaby.in/?utm_source=memorydeals&utm_medium=band&utm_campaign=footer",
     );
@@ -37,14 +37,14 @@ describe("SlabyBand", () => {
       expect(isSlabyBandQuietPath(path)).toBe(true);
     }
     renderAt("/account/cart");
-    expect(screen.queryByRole("link", { name: /runs on Slaby/i })).toBeNull();
+    expect(screen.queryByRole("link", { name: /Powered by Slaby/i })).toBeNull();
   });
 
   it("follows the owner's footer toggle and master switch", () => {
     renderAt("/", { ...ON, placements: { ...ON.placements, footer: false } });
-    expect(screen.queryByRole("link", { name: /runs on Slaby/i })).toBeNull();
+    expect(screen.queryByRole("link", { name: /Powered by Slaby/i })).toBeNull();
     cleanup();
     renderAt("/", SLABY_BRANDING_OFF);
-    expect(screen.queryByRole("link", { name: /runs on Slaby/i })).toBeNull();
+    expect(screen.queryByRole("link", { name: /Powered by Slaby/i })).toBeNull();
   });
 });

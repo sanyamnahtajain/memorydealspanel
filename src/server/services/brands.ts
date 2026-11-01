@@ -127,6 +127,26 @@ export function generateBrandSlug(
   return makeUniqueSlug(name, (candidate) => slugTaken(candidate, exceptId));
 }
 
+/**
+ * The owner's brand order (Admin → Brands → Arrange): rewrites sortOrder to
+ * 0..n-1 in the given order. Unknown ids are skipped; brands missing from the
+ * list (e.g. created mid-arrange) keep their value and fall in after.
+ */
+export async function reorderBrands(idsInOrder: string[]): Promise<void> {
+  if (idsInOrder.length === 0) return;
+  const existing = await prisma.brand.findMany({
+    where: { id: { in: idsInOrder } },
+    select: { id: true },
+  });
+  const existingIds = new Set(existing.map((row) => row.id));
+  const ordered = idsInOrder.filter((id) => existingIds.has(id));
+  await prisma.$transaction(
+    ordered.map((id, index) =>
+      prisma.brand.update({ where: { id }, data: { sortOrder: index } }),
+    ),
+  );
+}
+
 /** Next free sortOrder across all brands (max + 1, or 0 when empty). */
 async function nextSortOrder(): Promise<number> {
   const last = await prisma.brand.findFirst({

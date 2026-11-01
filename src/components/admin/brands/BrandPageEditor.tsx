@@ -51,7 +51,6 @@ export interface EditorBrand {
   slug: string;
   logo: string | null;
   active: boolean;
-  sortOrder: number;
   coverImage: string | null;
   tagline: string;
 }
@@ -145,7 +144,6 @@ export function BrandPageEditor({
   const router = useRouter();
   const [coverImage, setCoverImage] = React.useState<string | null>(brand.coverImage);
   const [tagline, setTagline] = React.useState(brand.tagline);
-  const [sortOrder, setSortOrder] = React.useState(String(brand.sortOrder));
   const [rows, setRows] = React.useState<EditorCategory[]>(initialRows);
   const [uploading, setUploading] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
@@ -189,18 +187,12 @@ export function BrandPageEditor({
 
   async function save() {
     if (saving) return;
-    const order = Number(sortOrder);
-    if (!Number.isInteger(order) || order < 0 || order > 9999) {
-      toast.error("Position must be a whole number from 0 to 9999.");
-      return;
-    }
     setSaving(true);
     try {
       const res = await saveBrandPageAction({
         brandId: brand.id,
         coverImage,
         tagline: tagline.trim() === "" ? null : tagline.trim(),
-        sortOrder: order,
         layout: rows.map((r) => ({
           categoryId: r.categoryId,
           image: r.image,
@@ -285,22 +277,16 @@ export function BrandPageEditor({
           />
         </div>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="brand-order">Position among brands</Label>
-          <Input
-            id="brand-order"
-            inputMode="numeric"
-            value={sortOrder}
-            className="w-28"
-            onChange={(e) => {
-              setSortOrder(e.target.value.replace(/[^0-9]/g, ""));
-              touch();
-            }}
-          />
-          <p className="text-xs text-muted-foreground">
-            Lower comes first on the home page and the brands page. Brands with the same number sort by name.
-          </p>
-        </div>
+        <p className="text-xs text-muted-foreground">
+          Where this brand sits among the others on the home page is set on{" "}
+          <Link
+            href="/admin/brands?arrange=1"
+            className="font-medium text-primary underline-offset-4 hover:underline"
+          >
+            Brands → Arrange
+          </Link>
+          .
+        </p>
       </section>
 
       {/* ---- Category rail ---- */}
