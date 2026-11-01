@@ -95,8 +95,44 @@ describe("BannerCarousel", () => {
 
   it("reserves its height before the artwork arrives", () => {
     const { container } = render(<BannerCarousel banners={[banner]} />);
-    // No layout shift: the frame carries an aspect ratio, not an auto height.
-    expect(container.querySelector(".aspect-\\[2\\/1\\]")).not.toBeNull();
+    // No layout shift: the frame's height comes from CSS (.md-banner-frame),
+    // sized from numbers the server sent, not from the loaded image.
+    expect(container.querySelector(".md-banner-frame")).not.toBeNull();
+    expect(container.querySelector(".md-banners")).toHaveStyle({ "--sum-d": "3", "--sum-m": "2" });
+  });
+
+  it("gives each banner a slide of its own shape", () => {
+    const { container } = render(
+      <BannerCarousel
+        banners={[
+          { ...banner, id: "a", aspect: 1.776 },
+          { ...banner, id: "b", aspect: 3, mobileImageUrl: "https://cdn.example.test/banners/m.jpg", mobileAspect: 1.5 },
+        ]}
+      />,
+    );
+    const slides = container.querySelectorAll<HTMLElement>(".md-banner-slide");
+    // Laptop: the desktop art's shape. Phone: the phone art's, else the desktop's.
+    expect(slides[0].style.getPropertyValue("--r-d")).toBe("1.776");
+    expect(slides[0].style.getPropertyValue("--r-m")).toBe("1.776");
+    expect(slides[1].style.getPropertyValue("--r-d")).toBe("3");
+    expect(slides[1].style.getPropertyValue("--r-m")).toBe("1.5");
+    const row = container.querySelector<HTMLElement>(".md-banners")!;
+    expect(row.style.getPropertyValue("--sum-d")).toBe("4.776");
+    expect(row.style.getPropertyValue("--sum-m")).toBe("3.276");
+  });
+
+  it("falls back to the old 3:1 / 2:1 frame when a shape is unknown", () => {
+    const { container } = render(
+      <BannerCarousel banners={[{ ...banner, mobileImageUrl: "https://cdn.example.test/banners/m.jpg" }]} />,
+    );
+    const slide = container.querySelector<HTMLElement>(".md-banner-slide")!;
+    expect(slide.style.getPropertyValue("--r-d")).toBe("3");
+    expect(slide.style.getPropertyValue("--r-m")).toBe("2");
+  });
+
+  it("never zooms owner artwork (it would crop the edges)", () => {
+    const { container } = render(<BannerCarousel banners={[banner]} />);
+    expect(container.querySelector(".md-kenburns")).toBeNull();
   });
 
   it("shows no dots or carousel semantics for a single banner", () => {

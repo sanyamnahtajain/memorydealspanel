@@ -5,6 +5,7 @@ import {
   type BannerPlacement,
   type StorefrontBanner,
 } from "@/lib/banners";
+import { imageAspect } from "@/server/media/image-size";
 
 /**
  * Banner reads and writes. See src/lib/banners.ts for the model and the
@@ -81,18 +82,24 @@ export async function listLiveBanners(
       },
     });
 
-    return rows
-      .filter((row) => isBannerLive(row, now))
-      .map((row) => ({
-        id: row.id,
-        imageUrl: row.imageUrl,
-        mobileImageUrl: row.mobileImageUrl ?? null,
-        alt: row.alt,
-        href: row.href ?? null,
-        title: row.title || null,
-        subtitle: row.subtitle || null,
-        ctaLabel: row.ctaLabel || null,
-      }));
+    const live = rows.filter((row) => isBannerLive(row, now));
+    // Each banner's shape, read from its file (memoised per URL — keys are
+    // content-addressed). Unknown is fine: the carousel has a fixed frame.
+    const shapes = await Promise.all(
+      live.map((row) => Promise.all([imageAspect(row.imageUrl), imageAspect(row.mobileImageUrl)])),
+    );
+    return live.map((row, i) => ({
+      id: row.id,
+      imageUrl: row.imageUrl,
+      mobileImageUrl: row.mobileImageUrl ?? null,
+      alt: row.alt,
+      href: row.href ?? null,
+      title: row.title || null,
+      subtitle: row.subtitle || null,
+      ctaLabel: row.ctaLabel || null,
+      aspect: shapes[i][0],
+      mobileAspect: row.mobileImageUrl ? shapes[i][1] : null,
+    }));
   } catch (error) {
     console.error("[banners] live read failed:", error);
     return [];

@@ -85,6 +85,13 @@ export interface StorefrontBanner {
   title: string | null;
   subtitle: string | null;
   ctaLabel: string | null;
+  /**
+   * Width ÷ height of `imageUrl` / `mobileImageUrl`, read from the files on
+   * the server. The carousel draws each banner whole at its own shape; null
+   * (unknown) falls back to the fixed 3:1 / 2:1 frame.
+   */
+  aspect?: number | null;
+  mobileAspect?: number | null;
 }
 
 export interface BannerSchedule {

@@ -28,11 +28,44 @@ import { catalogImageUrl } from "@/lib/image-loader";
  *    is disabled entirely under prefers-reduced-motion. It never moves while
  *    a keyboard user is tabbing through the links.
  *  - A single banner renders as a plain image: no dots, no timer, no swipe
- *    affordance promising something that isn't there.
+ *    affordance promising something that isn't there. The same goes for
+ *    banners that all fit side by side (two 16:9 offers on a laptop).
+ *  - EVERY BANNER IS SHOWN WHOLE, AT ITS OWN SHAPE. Owners upload whatever
+ *    their design tool gives them (16:9, 3:2, 3:1, square). A fixed 3:1
+ *    frame meant blurred filler beside a 16:9 offer, or a re-cut that looked
+ *    stitched together. Slides share one height and take their own width
+ *    (see .md-banners in globals.css); the server reads each file's shape.
  */
 
 /** How long each slide holds. Long enough to read, short enough to cycle. */
 const AUTOPLAY_MS = 5000;
+
+/** The frame a banner of unknown shape gets (the old fixed strip). */
+const FALLBACK_DESKTOP = 3;
+const FALLBACK_PHONE = 2;
+
+/**
+ * Each slide's shape on a laptop (desktop art) and on a phone (the phone art
+ * when there is one). The sizes themselves are CSS (.md-banners in
+ * globals.css) — this only hands it the numbers.
+ */
+export function bannerShapes(banner: StorefrontBanner): { desktop: number; phone: number } {
+  const desktop = banner.aspect ?? FALLBACK_DESKTOP;
+  const phone = banner.mobileImageUrl
+    ? (banner.mobileAspect ?? FALLBACK_PHONE)
+    : (banner.aspect ?? FALLBACK_PHONE);
+  return { desktop, phone };
+}
+
+/**
+ * Roughly how wide a slide is drawn, as a fraction of the strip — the same
+ * clamp the CSS does, minus the gaps. Only used for `sizes`, so the browser
+ * picks a sharp-enough file without downloading a 1920 for a half-width slide.
+ */
+function slideFraction(ratio: number, sum: number, min: number, max: number): number {
+  const height = Math.min(max, Math.max(min, 1 / sum));
+  return Math.min(1, height * ratio);
+}
 
 export function BannerCarousel({
   banners,
@@ -45,6 +78,7 @@ export function BannerCarousel({
   const multiple = banners.length > 1;
 
   const [emblaRef, emblaApi] = useEmblaCarousel({
+    // Embla quietly turns looping off when the slides can't fill a loop.
     loop: multiple,
     duration: reducedMotion ? 0 : 24,
     align: "center",
@@ -52,15 +86,24 @@ export function BannerCarousel({
   });
 
   const [selected, setSelected] = React.useState(0);
+  // Stops, not banners: two banners side by side on a laptop are ONE stop —
+  // no dots, no timer, nothing to swipe.
+  const [stops, setStops] = React.useState(banners.length);
   const [paused, setPaused] = React.useState(false);
+  const moves = stops > 1;
 
   React.useEffect(() => {
     if (!emblaApi) return;
-    const sync = () => setSelected(emblaApi.selectedScrollSnap());
+    const sync = () => {
+      setSelected(emblaApi.selectedScrollSnap());
+      setStops(emblaApi.scrollSnapList().length);
+    };
     emblaApi.on("select", sync);
+    emblaApi.on("reInit", sync);
     sync();
     return () => {
       emblaApi.off("select", sync);
+      emblaApi.off("reInit", sync);
     };
   }, [emblaApi]);
 
@@ -68,12 +111,14 @@ export function BannerCarousel({
   // paused (hover/focus), and while the tab is hidden — a carousel spinning in
   // a background tab is pure waste.
   React.useEffect(() => {
-    if (!emblaApi || !multiple || reducedMotion || paused) return;
+    if (!emblaApi || !moves || reducedMotion || paused) return;
 
     let timer: ReturnType<typeof setInterval> | null = null;
+    // Without a loop the last stop wraps back to the first.
+    const advance = () => (emblaApi.canScrollNext() ? emblaApi.scrollNext() : emblaApi.scrollTo(0));
     const start = () => {
       if (timer !== null) return;
-      timer = setInterval(() => emblaApi.scrollNext(), AUTOPLAY_MS);
+      timer = setInterval(advance, AUTOPLAY_MS);
     };
     const stop = () => {
       if (timer === null) return;
@@ -88,41 +133,65 @@ export function BannerCarousel({
       document.removeEventListener("visibilitychange", onVisibility);
       stop();
     };
-  }, [emblaApi, multiple, reducedMotion, paused]);
+  }, [emblaApi, moves, reducedMotion, paused]);
 
   if (banners.length === 0) return null;
+
+  const shapes = banners.map(bannerShapes);
+  const sumDesktop = shapes.reduce((t, s) => t + s.desktop, 0);
+  const sumPhone = shapes.reduce((t, s) => t + s.phone, 0);
+  const rowStyle = {
+    "--sum-d": sumDesktop,
+    "--sum-m": sumPhone,
+    "--gaps-d": `calc(${banners.length - 1} * var(--gap))`,
+    "--gaps-m": `calc(${banners.length - 1} * var(--gap))`,
+  } as React.CSSProperties;
 
   return (
     <section
       aria-label="Offers"
       aria-roledescription={multiple ? "carousel" : undefined}
-      className={cn("relative", className)}
+      className={cn("md-banners relative", className)}
+      style={rowStyle}
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       onFocusCapture={() => setPaused(true)}
       onBlurCapture={() => setPaused(false)}
     >
-      <div ref={emblaRef} className="overflow-hidden rounded-2xl">
-        <div className="flex touch-pan-y">
-          {banners.map((banner, index) => (
-            <div
-              key={banner.id}
-              className="min-w-0 shrink-0 grow-0 basis-full"
-              role={multiple ? "group" : undefined}
-              aria-roledescription={multiple ? "slide" : undefined}
-              aria-label={
-                multiple ? `${index + 1} of ${banners.length}` : undefined
-              }
-            >
-              <BannerSlide banner={banner} priority={index === 0} active={index === selected} />
-            </div>
-          ))}
+      <div className="md-banners-row">
+        <div ref={emblaRef} className="overflow-hidden rounded-2xl">
+          <div className="md-banners-track flex touch-pan-y">
+            {banners.map((banner, index) => {
+              const shape = shapes[index];
+              const desktopPart = slideFraction(shape.desktop, sumDesktop, 1 / 4, 1 / 2.4);
+              const phonePart = slideFraction(shape.phone, sumPhone, 1 / 2, 1 / 1.6);
+              return (
+                <div
+                  key={banner.id}
+                  className="md-banner-slide min-w-0 shrink-0 grow-0"
+                  style={{ "--r-d": shape.desktop, "--r-m": shape.phone } as React.CSSProperties}
+                  role={multiple ? "group" : undefined}
+                  aria-roledescription={multiple ? "slide" : undefined}
+                  aria-label={
+                    multiple ? `${index + 1} of ${banners.length}` : undefined
+                  }
+                >
+                  <BannerSlide
+                    banner={banner}
+                    priority={index === 0}
+                    active={index === selected}
+                    sizes={`(min-width: 1280px) ${Math.ceil(desktopPart * 1200)}px, (min-width: 640px) ${Math.ceil(desktopPart * 100)}vw, ${Math.ceil(phonePart * 100)}vw`}
+                  />
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 
-      {multiple ? (
+      {moves ? (
         <div className="mt-2 flex items-center justify-center gap-1.5">
-          {banners.map((banner, index) => {
+          {Array.from({ length: stops }, (_, index) => {
             const isActive = index === selected;
             // The active dot is a tiny progress bar: it fills over the hold
             // time, so the carousel never moves without warning. Keyed on the
@@ -130,7 +199,7 @@ export function BannerCarousel({
             const running = isActive && !paused && !reducedMotion;
             return (
               <button
-                key={banner.id}
+                key={index}
                 type="button"
                 aria-label={`Show offer ${index + 1}`}
                 aria-current={isActive}
@@ -142,7 +211,7 @@ export function BannerCarousel({
               >
                 {isActive ? (
                   <span
-                    key={`${banner.id}-${selected}-${running ? "run" : "hold"}`}
+                    key={`${selected}-${running ? "run" : "hold"}`}
                     aria-hidden
                     className={cn("absolute inset-0 rounded-full bg-primary", running ? "md-progress" : "")}
                     style={running ? ({ "--md-progress-ms": `${AUTOPLAY_MS}ms` } as React.CSSProperties) : { transform: "scaleX(1)" }}
@@ -161,11 +230,14 @@ function BannerSlide({
   banner,
   priority,
   active,
+  sizes,
 }: {
   banner: StorefrontBanner;
   priority: boolean;
-  /** The slide currently showing — drives the slow drift. */
+  /** The slide currently showing — drives the slow drift on hero copy. */
   active: boolean;
+  /** How wide this slide is drawn, for the browser's file pick. */
+  sizes: string;
 }) {
   // Artwork is on object storage, so it can fail independently of the page —
   // offline, a flaky phone connection, a deleted object. A broken-image icon
@@ -184,9 +256,8 @@ function BannerSlide({
     if (node && node.complete && node.naturalWidth === 0) setFailed(true);
   }, []);
 
-  // Aspect ratio is reserved by the wrapper, so the row never reflows when the
-  // artwork arrives. Wide on desktop, squarer on phones where a 3:1 strip
-  // would be a sliver.
+  // The slide's size is set by CSS from the banner's known shape, so the row
+  // never reflows when the artwork arrives.
   const art = failed ? (
     <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-muted to-muted/40 px-6">
       <span className="line-clamp-2 text-center text-sm font-medium text-muted-foreground sm:text-base">
@@ -195,13 +266,11 @@ function BannerSlide({
     </div>
   ) : (
     <>
-      {/* AMBIENT FILL. Owners upload artwork in whatever ratio the design tool
-          gave them; the frame is 2:1 on phones and 3:1 wider. object-cover
-          used to crop whichever edge did not fit — on the live site that was
-          the row of feature badges along the bottom of a brand's banner. Now
-          the artwork is shown whole (object-contain) over a blurred, enlarged
-          copy of itself, so the frame is always full, nothing is cut, and a
-          3:1 banner in a 3:1 frame looks exactly as before. */}
+      {/* AMBIENT FILL — only ever visible in the fallback cases: a banner
+          whose shape couldn't be read (fixed 3:1 / 2:1 frame) or one wider
+          than the strip (a 3:1 desktop file on a phone). Then the artwork is
+          shown whole over a blurred copy of itself. A banner of known shape
+          gets a slide of exactly its shape, and this sits hidden behind it. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         aria-hidden
@@ -212,10 +281,14 @@ function BannerSlide({
         decoding="async"
         className="absolute inset-0 h-full w-full scale-125 object-cover opacity-80 blur-2xl saturate-125"
       />
-    <picture className={cn("relative block h-full w-full", active ? "md-kenburns" : "")}>
+    {/* The drift is for photo heroes with copy over them. Owner artwork is
+        designed edge to edge — zooming it crops the price strip and the
+        logos along its borders. */}
+    <picture className={cn("relative block h-full w-full", active && banner.title ? "md-kenburns" : "")}>
       {banner.mobileImageUrl ? (
         <source
-          media="(max-width: 640px)"
+          // Same breakpoint as the phone sizing in globals.css (min-width: 640px).
+          media="(max-width: 639.98px)"
           srcSet={`${catalogImageUrl(banner.mobileImageUrl, 640)} 640w, ${catalogImageUrl(banner.mobileImageUrl, 828)} 828w`}
           sizes="100vw"
         />
@@ -227,7 +300,7 @@ function BannerSlide({
         ref={checkAlreadyFailed}
         src={catalogImageUrl(banner.imageUrl, 1200)}
         srcSet={`${catalogImageUrl(banner.imageUrl, 750)} 750w, ${catalogImageUrl(banner.imageUrl, 1200)} 1200w, ${catalogImageUrl(banner.imageUrl, 1920)} 1920w`}
-        sizes="(min-width: 1280px) 1200px, 100vw"
+        sizes={sizes}
         alt={banner.alt}
         draggable={false}
         loading={priority ? "eager" : "lazy"}
@@ -270,7 +343,7 @@ function BannerSlide({
   ) : null;
 
   const frame = (
-    <div className="relative aspect-[2/1] w-full overflow-hidden bg-muted sm:aspect-[3/1]">
+    <div className="md-banner-frame relative w-full overflow-hidden rounded-2xl bg-muted">
       {art}
       {hero}
     </div>
@@ -287,7 +360,7 @@ function BannerSlide({
         href={banner.href}
         target="_blank"
         rel="noopener noreferrer"
-        className="block outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        className="block rounded-2xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
       >
         {frame}
       </a>
@@ -297,7 +370,7 @@ function BannerSlide({
   return (
     <Link
       href={banner.href}
-      className="block outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+      className="block rounded-2xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
     >
       {frame}
     </Link>

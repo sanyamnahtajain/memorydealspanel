@@ -297,6 +297,57 @@
   transform-origin: 60% 50%;
 }
 
+/* HOME BANNERS — every slide the same height, each banner WHOLE at its own
+   shape (owners upload 16:9, 3:2, 3:1, square…; forcing one frame meant
+   blurred filler or cropped text). The server sends each banner's width÷height
+   (--r-d desktop art, --r-m phone art) and the row's totals (--sum-*, --gaps-*).
+   Height = the size at which the row exactly fills the strip, kept between
+   bounds: a few banners sit side by side filling the width; many keep a
+   minimum height and scroll with the next one peeking in. All of it is CSS,
+   so the strip reserves its height before any image arrives. */
+.md-banners {
+  container-type: inline-size;
+  --gap: 0.75rem;
+}
+.md-banners-row {
+  --bh: clamp(
+    calc(100cqw / 2),
+    calc((100cqw - var(--gaps-m) - 2px) / var(--sum-m)),
+    calc(100cqw / 1.6)
+  );
+  --total: calc(var(--bh) * var(--sum-m) + var(--gaps-m));
+  /* Fewer banners than the strip holds: centre them. */
+  padding-inline: max(0px, calc((100cqw - var(--total)) / 2));
+}
+@media (min-width: 640px) {
+  .md-banners-row {
+    --bh: clamp(
+      calc(100cqw / 4),
+      calc((100cqw - var(--gaps-d) - 2px) / var(--sum-d)),
+      calc(100cqw / 2.4)
+    );
+    --total: calc(var(--bh) * var(--sum-d) + var(--gaps-d));
+  }
+}
+.md-banners-track {
+  margin-left: calc(var(--gap) * -1);
+}
+.md-banner-slide {
+  --r: var(--r-m);
+  padding-left: var(--gap);
+  /* A banner wider than the strip (a 3:1 desktop file on a phone) is capped
+     at the strip and letterboxed over its own blurred colours. */
+  width: calc(min(100cqw, var(--bh) * var(--r)) + var(--gap));
+}
+.md-banner-frame {
+  height: var(--bh);
+}
+@media (min-width: 640px) {
+  .md-banner-slide {
+    --r: var(--r-d);
+  }
+}
+
 /* Autoplay progress inside the active hero dot. */
 @keyframes md-progress {
   from {
