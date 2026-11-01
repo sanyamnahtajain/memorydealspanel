@@ -47,6 +47,7 @@ import {
   type LoadMoreFn,
   type SortKey,
 } from "./types";
+import { scrollListingIntoView } from "@/lib/scroll-listing";
 
 export interface StorefrontListingProps {
   initialItems: ListingItem[];
@@ -100,6 +101,38 @@ function isViewMode(value: unknown): value is ViewMode {
   return (VIEW_MODES as readonly string[]).includes(value as string);
 }
 
+/**
+ * Pages loaded beyond the first, per listing (address + price access). The
+ * component unmounts when a shopper opens a product, but the module stays
+ * loaded across client-side navigation — so on Back the list comes back at
+ * its full length straight away and the browser can return to the spot the
+ * shopper left. (Before, Back showed page 1 only and the position was lost.)
+ * Ten minutes, then it is dropped in favour of fresh data.
+ */
+const PAGE_CACHE_TTL_MS = 10 * 60 * 1000;
+const pageCache = new Map<string, { appended: ListingItem[]; cursor: string | null; at: number }>();
+
+/** TEST-ONLY: forget every cached listing. */
+export function _resetListingPageCacheForTests(): void {
+  pageCache.clear();
+}
+
+function readPageCache(key: string) {
+  const hit = pageCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.at > PAGE_CACHE_TTL_MS) {
+    pageCache.delete(key);
+    return null;
+  }
+  return hit;
+}
+
+function writePageCache(key: string, value: { appended: ListingItem[]; cursor: string | null }) {
+  pageCache.set(key, { ...value, at: Date.now() });
+  // Keep it small: the most recent dozen listings.
+  if (pageCache.size > 12) pageCache.delete(pageCache.keys().next().value as string);
+}
+
 export function StorefrontListing({
   initialItems,
   loadMore,
@@ -148,8 +181,22 @@ export function StorefrontListing({
   // means exhausted. Seeded from the server's first-page `nextCursor` — the
   // total count travels the same way (the `total` prop), fetched once on the
   // first page and never re-counted by load-more.
-  const [appended, setAppended] = React.useState<ListingItem[]>([]);
-  const [cursor, setCursor] = React.useState<string | null>(initialNextCursor);
+  const facetKey = React.useMemo(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("view");
+    params.sort();
+    const qs = params.toString();
+    return qs ? `${pathname}?${qs}` : pathname;
+  }, [pathname, searchParams]);
+  // Pages 2+ come back from the cache after a trip to a product and Back.
+  const cacheKey = `${canSeePrices ? "p" : "g"}|${facetKey}`;
+  const [appended, setAppended] = React.useState<ListingItem[]>(
+    () => readPageCache(cacheKey)?.appended ?? [],
+  );
+  const [cursor, setCursor] = React.useState<string | null>(() => {
+    const cached = readPageCache(cacheKey);
+    return cached ? cached.cursor : initialNextCursor;
+  });
   const [pending, setPending] = React.useState(false);
   // Reset accumulated pages ONLY when the listing identity actually changes
   // (path, a facet-bearing param, or the SORT) — NEVER on array identity. A
@@ -162,18 +209,12 @@ export function StorefrontListing({
   // cursor — a cursor minted under one order is meaningless under another, so
   // a sort change restarts from the fresh server-rendered first page (whose
   // new `initialNextCursor` prop arrives in the same render as the new URL).
-  const facetKey = React.useMemo(() => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete("view");
-    params.sort();
-    const qs = params.toString();
-    return qs ? `${pathname}?${qs}` : pathname;
-  }, [pathname, searchParams]);
   const [baselineKey, setBaselineKey] = React.useState(facetKey);
   if (baselineKey !== facetKey) {
     setBaselineKey(facetKey);
-    setAppended([]);
-    setCursor(initialNextCursor);
+    const cached = readPageCache(cacheKey);
+    setAppended(cached?.appended ?? []);
+    setCursor(cached ? cached.cursor : initialNextCursor);
   }
 
   // ---- Persist view / sort into the URL (shareable, back-safe). ----
@@ -197,6 +238,7 @@ export function StorefrontListing({
     if ((value === "price-asc" || value === "price-desc") && !canSeePrices) return;
     setSort(value);
     writeUrl({ sort: value });
+    scrollListingIntoView();
   };
 
   const items = React.useMemo(() => {
@@ -217,14 +259,16 @@ export function StorefrontListing({
     setPending(true);
     try {
       const result = await loadMore(cursor);
-      setAppended((prev) => [...prev, ...result.items]);
+      const nextAppended = [...appended, ...result.items];
+      setAppended(nextAppended);
       setCursor(result.nextCursor);
+      writePageCache(cacheKey, { appended: nextAppended, cursor: result.nextCursor });
     } catch {
       // Leave the button visible (and the cursor untouched) for a retry.
     } finally {
       setPending(false);
     }
-  }, [loadMore, pending, cursor]);
+  }, [loadMore, pending, cursor, appended, cacheKey]);
 
   // ---- Client-side re-sort over the accumulated set. ----
   // Stock (and every facet) is filtered SERVER-SIDE by the discovery layer, so
@@ -256,7 +300,7 @@ export function StorefrontListing({
   const resultCount = visible.length;
 
   return (
-    <div>
+    <div data-listing-top="">
       {/* Toolbar */}
       <div className="mb-4 flex flex-col gap-3 md:mb-6">
         <p

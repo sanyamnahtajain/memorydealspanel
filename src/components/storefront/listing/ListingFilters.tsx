@@ -46,6 +46,7 @@ import {
   toggleListValue,
   writeListParam,
 } from "./filter-params";
+import { scrollListingIntoView } from "@/lib/scroll-listing";
 
 /** One selectable refinement (brand or category), with its product count. */
 export interface ContextFacetBucket {
@@ -113,6 +114,7 @@ export function ListingFilters({ contextFacet, stockCounts }: ListingFiltersProp
       const qs = params.toString();
       startTransition(() => {
         router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+      scrollListingIntoView();
       });
     },
     [router, pathname, searchParams, facet],

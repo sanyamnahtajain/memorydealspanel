@@ -1,8 +1,8 @@
-import Link from "next/link";
 import { LayoutGrid } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { catalogLabel } from "@/lib/display-case";
+import { RailLink } from "./RailLink";
 import { catalogImageUrl } from "@/lib/image-loader";
 import type { BrandCategory } from "@/server/dal/brands";
 
@@ -65,10 +65,9 @@ function RailItem({
   image: string | null;
 }) {
   return (
-    <Link
+    <RailLink
       href={href}
-      prefetch={false}
-      aria-current={active ? "page" : undefined}
+      active={active}
       className={cn(
         "relative flex flex-col items-center gap-1 rounded-xl px-0.5 py-1.5 text-center outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50",
         "md:flex-row md:gap-3 md:px-2 md:text-left",
@@ -105,6 +104,6 @@ function RailItem({
       >
         {label}
       </span>
-    </Link>
+    </RailLink>
   );
 }

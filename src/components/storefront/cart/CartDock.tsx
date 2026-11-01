@@ -34,9 +34,18 @@ export function CartDock({ initialCount }: { initialCount: number | undefined })
     return () => window.removeEventListener(CART_COUNT_EVENT, onCount)
   }, [])
 
-  if (initialCount === undefined) return null // not a customer who can order
   const quiet = QUIET_PREFIXES.some((p) => pathname === p || pathname.startsWith(p))
-  const visible = count > 0 && !quiet
+  const visible = initialCount !== undefined && count > 0 && !quiet
+
+  // While the bar floats over the page, the page reserves room for it — the
+  // last row of products (and its ADD buttons) must stay reachable.
+  React.useEffect(() => {
+    const root = document.documentElement
+    root.style.setProperty("--md-dock-pad", visible ? "4.25rem" : "0px")
+    return () => root.style.setProperty("--md-dock-pad", "0px")
+  }, [visible])
+
+  if (initialCount === undefined) return null // not a customer who can order
 
   return (
     <div

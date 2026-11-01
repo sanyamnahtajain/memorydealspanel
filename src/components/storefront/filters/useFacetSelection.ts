@@ -10,6 +10,7 @@ import {
   writeSelection,
   type FacetSelection,
 } from "./types";
+import { scrollListingIntoView } from "@/lib/scroll-listing";
 
 /**
  * URL-backed facet-selection state for the discovery panel.
@@ -67,6 +68,7 @@ export function useFacetSelection(approved: boolean): FacetSelectionApi {
       );
       const qs = params.toString();
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+      scrollListingIntoView();
     },
     [router, pathname, searchParams, approved],
   );

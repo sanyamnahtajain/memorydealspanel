@@ -45,7 +45,7 @@ vi.mock("next/navigation", () => ({
 
 import { PreferencesProvider } from "@/components/preferences/PreferencesProvider";
 import type { PublicProduct } from "@/server/dto/product";
-import { StorefrontListing } from "./StorefrontListing";
+import { StorefrontListing, _resetListingPageCacheForTests } from "./StorefrontListing";
 import type { ListingItem, LoadMoreResult } from "./types";
 
 beforeAll(() => {
@@ -75,6 +75,7 @@ beforeAll(() => {
 });
 
 afterEach(() => {
+  _resetListingPageCacheForTests();
   cleanup();
   nav.search = "";
   vi.clearAllMocks();
@@ -155,6 +156,26 @@ function renderListing(
 const loadMoreButton = () => screen.queryByRole("button", { name: "Load more" });
 
 describe("StorefrontListing cursor threading", () => {
+  it("keeps loaded pages when the list comes back (open a product, then Back)", async () => {
+    const loadMore = vi
+      .fn<(cursor: string) => Promise<LoadMoreResult>>()
+      .mockResolvedValueOnce({ items: makeItems(3, 2), nextCursor: "c2" });
+    const first = renderListing({ initialItems: makeItems(1, 2), initialNextCursor: "c1", loadMore, total: 6 });
+    fireEvent.click(loadMoreButton()!);
+    await waitFor(() => expect(screen.getByText("Test Product 4")).toBeInTheDocument());
+
+    // Leave (the page unmounts) and come back to the same listing.
+    first.unmount();
+    renderListing({ initialItems: makeItems(1, 2), initialNextCursor: "c1", loadMore, total: 6 });
+    // Page 2 is there immediately — no refetch — and the next page resumes at c2.
+    expect(screen.getByText("Test Product 4")).toBeInTheDocument();
+    expect(loadMore).toHaveBeenCalledTimes(1);
+    loadMore.mockResolvedValueOnce({ items: makeItems(5, 2), nextCursor: null });
+    fireEvent.click(loadMoreButton()!);
+    await waitFor(() => expect(screen.getByText("Test Product 6")).toBeInTheDocument());
+    expect(loadMore).toHaveBeenLastCalledWith("c2");
+  });
+
   it("threads each returned nextCursor into the next loadMore call", async () => {
     const loadMore = vi
       .fn<(cursor: string) => Promise<LoadMoreResult>>()

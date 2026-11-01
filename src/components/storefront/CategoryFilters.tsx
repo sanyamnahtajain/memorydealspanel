@@ -26,6 +26,7 @@ import {
   SheetFooter,
   SheetClose,
 } from "@/components/ui/sheet";
+import { scrollListingIntoView } from "@/lib/scroll-listing";
 
 interface CategoryFiltersProps {
   /** All brands available in this category. */
@@ -49,6 +50,7 @@ function useBrandNavigation() {
       }
       const qs = params.toString();
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+      scrollListingIntoView();
     },
     [router, pathname, searchParams],
   );

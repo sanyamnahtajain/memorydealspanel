@@ -364,7 +364,7 @@ export function StorefrontShell({
       {/* ——— Content ——— */}
       {/* Bottom padding clears the FIXED mobile tab bar (--md-tab-h + safe
           area + breathing room) — the footer is desktop-only, so main owns it. */}
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-[calc(var(--md-tab-h)+1rem+env(safe-area-inset-bottom))] md:px-6 md:pb-12">
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-[calc(var(--md-tab-h)+1rem+env(safe-area-inset-bottom)+var(--md-dock-pad,0px))] md:px-6 md:pb-12">
         {children}
         {/* "This store runs on Slaby" — the end of every browsing screen
             (owner-toggleable; skips cart, checkout and sign-in). */}
@@ -402,7 +402,15 @@ export function StorefrontShell({
                 <Link
                   href={item.href}
                   aria-current={active ? "page" : undefined}
-                  onClick={hapticTap}
+                  onClick={(e) => {
+                    hapticTap()
+                    // Tapping the tab you are already on scrolls back to the
+                    // top (the app convention) instead of doing nothing.
+                    if (pathname === item.href) {
+                      e.preventDefault()
+                      window.scrollTo({ top: 0, behavior: "smooth" })
+                    }
+                  }}
                   className="group relative flex min-h-14 flex-col items-center justify-center gap-0.5 outline-none focus-visible:bg-muted/60"
                 >
                   <span className="relative flex h-8 w-16 items-center justify-center">
