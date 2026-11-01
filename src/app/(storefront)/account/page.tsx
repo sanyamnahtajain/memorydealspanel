@@ -19,7 +19,6 @@ import { GstViewToggle } from "@/components/storefront/GstViewToggle";
 import { BusinessProfileForm } from "@/components/storefront/account/BusinessProfileForm";
 import { NotificationSettingsPanel } from "@/components/notify/NotificationSettingsPanel";
 import { getNotifyTopicStates } from "@/server/services/notify-prefs";
-import { SlabyPoweredBy } from "@/components/slaby/SlabyPoweredBy";
 
 export const metadata: Metadata = {
   title: "Your account — MemoryDeals",
@@ -295,7 +294,6 @@ export default async function AccountPage({
           </FadeUp>
         ) : null}
       </div>
-      <SlabyPoweredBy phoneOnly className="mt-4" />
     </StorefrontShell>
   );
 }

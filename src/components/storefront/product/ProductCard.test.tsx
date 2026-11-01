@@ -13,7 +13,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 import type { PublicProduct } from "@/server/dto/product";
-import { ProductCard, cardImages, cardSpecSnippet } from "./ProductCard";
+import { ProductCard, cardImages, cardSpecSnippet, cardPackLine } from "./ProductCard";
 
 beforeAll(() => {
   // jsdom has no PointerEvent; React derives onPointerEnter from pointerover,
@@ -94,7 +94,8 @@ describe("ProductCard", () => {
     expect(
       screen.getByRole("heading", { name: base.name }),
     ).toBeInTheDocument();
-    expect(screen.getByText("15h · Over-ear")).toBeInTheDocument();
+    // A trade minimum wins the grey line (Blinkit's pack size slot).
+    expect(screen.getByText("Min 5 pcs")).toBeInTheDocument();
     expect(screen.getByTestId("slot")).toBeInTheDocument();
     expect(screen.getByRole("link")).toHaveAttribute("href", "/p/boat-rockerz-450");
   });
@@ -146,5 +147,14 @@ describe("ProductCard", () => {
     render(<ProductCard product={{ ...base, images: [] }} priceSlot={null} />);
     expect(screen.getByText("No photo yet")).toBeInTheDocument();
     expect(screen.getByRole("link").querySelectorAll("img")).toHaveLength(0);
+  });
+});
+
+describe("cardPackLine", () => {
+  it("states the trade minimum and pack size, or nothing for single pieces", () => {
+    expect(cardPackLine({ moq: 10, packMultiple: 5 })).toBe("Min 10 · packs of 5");
+    expect(cardPackLine({ moq: 10, packMultiple: null })).toBe("Min 10 pcs");
+    expect(cardPackLine({ moq: 1, packMultiple: 6 })).toBe("Packs of 6");
+    expect(cardPackLine({ moq: null, packMultiple: 1 })).toBeNull();
   });
 });

@@ -88,6 +88,12 @@ export interface StorefrontListingProps {
    * exactly as before.
    */
   filterSlot?: React.ReactNode;
+  /**
+   * Phones: the chip bar runs edge to edge (default). Off when the listing
+   * sits in a column beside something else (the brand page's category rail),
+   * where bleeding left would cover it.
+   */
+  toolbarBleed?: boolean;
 }
 
 function isViewMode(value: unknown): value is ViewMode {
@@ -105,6 +111,7 @@ export function StorefrontListing({
   savedProductIds,
   canAddToCart = canSeePrices,
   filterSlot,
+  toolbarBleed = true,
 }: StorefrontListingProps) {
   const prefs = usePreferences();
   const router = useRouter();
@@ -264,8 +271,18 @@ export function StorefrontListing({
             so refinements stay reachable mid-scroll — a hairline appears
             under it only once it is actually stuck (see the page padding).
             Desktop wraps inline. */}
-        <div className="sticky top-[calc(3rem+env(safe-area-inset-top))] z-30 -mx-4 bg-background/95 px-4 py-2 shadow-[0_1px_0_0_var(--color-border)] backdrop-blur supports-backdrop-filter:bg-background/85 md:static md:z-auto md:mx-0 md:bg-transparent md:p-0 md:shadow-none md:backdrop-blur-none">
-          <div className="no-scrollbar flex items-center gap-2 overflow-x-auto md:flex-wrap md:overflow-visible">
+        <div
+          className={cn(
+            "sticky top-[calc(3rem+env(safe-area-inset-top))] z-30 bg-background/95 py-2 shadow-[0_1px_0_0_var(--color-border)] backdrop-blur supports-backdrop-filter:bg-background/85 md:static md:z-auto md:mx-0 md:bg-transparent md:p-0 md:shadow-none md:backdrop-blur-none",
+            toolbarBleed && "-mx-4 px-4",
+          )}
+        >
+          <div
+            className={cn(
+              "no-scrollbar flex items-center gap-2 overflow-x-auto md:mx-0 md:flex-wrap md:overflow-visible md:px-0",
+              toolbarBleed && "-mx-4 px-4",
+            )}
+          >
             {filterSlot}
             <div className={cn("shrink-0", filterSlot ? "md:ml-auto" : "ml-auto")}>
               <ListingControls

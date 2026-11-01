@@ -17,6 +17,7 @@ vi.mock("@/app/(storefront)/search/actions", () => ({
 vi.mock("@/components/access/AccessStatusBanner", () => ({ AccessStatusBanner: () => null }));
 vi.mock("@/components/access/TrustStrip", () => ({ TrustStrip: () => null }));
 vi.mock("@/components/slaby/SlabyPromoCard", () => ({ SlabyPromoCard: () => null }));
+vi.mock("@/components/slaby/SlabyBand", () => ({ SlabyBand: () => null }));
 vi.mock("@/components/notify/NotifyGate", () => ({ NotifyGate: () => null }));
 vi.mock("@/components/brand/IndependenceBadge", () => ({ IndependenceBadge: () => null }));
 vi.mock("@/components/theme/ThemeToggle", () => ({ ThemeToggle: () => null }));
@@ -27,6 +28,7 @@ vi.mock("@/components/storefront/wishlist/WishlistBadge", () => ({
   ),
 }));
 vi.mock("@/components/storefront/cart/CartBadge", () => ({
+  CART_COUNT_EVENT: "cart:count",
   CartBadge: ({ className }: { className?: string }) => (
     <a href="/account/cart" aria-label="Cart" className={className} />
   ),

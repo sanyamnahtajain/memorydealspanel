@@ -96,7 +96,7 @@ export function PriceReveal({
 
       {showMrp ? (
         <motion.span
-          className="flex items-baseline gap-1.5"
+          className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5"
           initial={shouldAnimate ? { opacity: 0 } : false}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.3, delay: 0.2 }}

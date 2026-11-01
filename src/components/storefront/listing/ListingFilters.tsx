@@ -157,12 +157,12 @@ export function ListingFilters({ contextFacet, stockCounts }: ListingFiltersProp
           render={
             <button
               type="button"
-              className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full bg-card px-4 text-sm font-medium text-foreground shadow-sm ring-1 ring-foreground/10 outline-none transition-[background-color,transform] hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97]"
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border bg-card px-3 text-[13px] font-medium text-foreground outline-none transition-[background-color,border-color,transform] hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97] md:h-9 md:px-3.5 md:text-sm"
             >
-              <SlidersHorizontal className="size-4" aria-hidden />
+              <SlidersHorizontal className="size-3.5" aria-hidden />
               Filters
               {activeCount > 0 ? (
-                <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-semibold tabular-nums text-primary-foreground">
+                <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold tabular-nums text-primary-foreground">
                   {activeCount}
                 </span>
               ) : null}
@@ -256,10 +256,10 @@ export function ListingFilters({ contextFacet, stockCounts }: ListingFiltersProp
                   )
                 }
                 className={cn(
-                  "inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full px-4 text-sm font-medium ring-1 outline-none transition-[background-color,color,transform] focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97] disabled:opacity-60",
+                  "inline-flex h-8 shrink-0 items-center gap-1 rounded-full border px-3 text-[13px] font-medium outline-none transition-[background-color,border-color,color,transform] focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97] disabled:opacity-60 md:h-9 md:px-3.5 md:text-sm",
                   active
-                    ? "bg-primary text-primary-foreground ring-primary"
-                    : "bg-card text-foreground shadow-sm ring-foreground/10 hover:bg-muted",
+                    ? "border-primary bg-primary/[0.08] text-primary"
+                    : "border-border bg-card text-foreground hover:bg-muted",
                 )}
               >
                 {bucket.label}

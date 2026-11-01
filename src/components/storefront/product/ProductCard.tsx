@@ -72,6 +72,20 @@ export function cardSpecSnippet(product: PublicProduct, max = 2): string | null 
   return product.tags.length > 0 ? product.tags.slice(0, max).join(" · ") : null;
 }
 
+/**
+ * The pack line under a card's name — Blinkit shows "500 ml"; a wholesale
+ * buyer needs the trade minimum and pack size instead ("Min 10 · packs of 5").
+ * Null when the product sells by the piece with no minimum.
+ */
+export function cardPackLine(product: Pick<PublicProduct, "moq" | "packMultiple">): string | null {
+  const moq = typeof product.moq === "number" && product.moq > 1 ? product.moq : null;
+  const pack = typeof product.packMultiple === "number" && product.packMultiple > 1 ? product.packMultiple : null;
+  if (moq && pack) return `Min ${moq} · packs of ${pack}`;
+  if (moq) return `Min ${moq} pcs`;
+  if (pack) return `Packs of ${pack}`;
+  return null;
+}
+
 export interface ProductCardProps {
   product: PublicProduct;
   /** Server-rendered price node (or null for a price-free shelf). Never money. */
@@ -115,6 +129,7 @@ export function ProductCard({
 }: ProductCardProps) {
   const { primary, secondary } = cardImages(product);
   const snippet = showSnippet ? cardSpecSnippet(product) : null;
+  const packLine = showSnippet ? cardPackLine(product) : null;
 
   // Second image: mounted on the first MOUSE hover only (touch never pays for
   // it), and faded in only once it has loaded.
@@ -187,36 +202,43 @@ export function ProductCard({
       </div>
 
       {/* TEXT BLOCK — reserved title height, so a short name leaves no hole. */}
-      <div className="flex flex-1 flex-col px-3 pt-2.5 pb-3">
+      <div className="@container flex flex-1 flex-col px-2.5 pt-2 pb-2.5 sm:px-3 sm:pt-2.5 sm:pb-3">
         {product.brandRef ? (
           <BrandBadge
             name={product.brandRef.name}
             slug={product.brandRef.slug}
             asLink={false}
-            className="text-[11px] tracking-[0.14em]"
+            className="text-[10px] tracking-[0.12em] sm:text-[11px]"
           />
         ) : brandName ? (
-          <span className="truncate text-[11px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
+          <span className="truncate text-[10px] font-medium tracking-[0.12em] text-muted-foreground uppercase sm:text-[11px]">
             {brandName}
           </span>
         ) : null}
-        <h3 className="mt-0.5 line-clamp-2 min-h-[2.6rem] text-[15px] leading-snug font-semibold tracking-tight text-foreground">
+        {/* Blinkit's card text: a compact two-line name, then ONE grey line
+            for the pack (here: the trade minimum / pack size, else specs). */}
+        <h3 className="mt-0.5 line-clamp-2 min-h-[2.25rem] text-[13px] leading-snug font-semibold tracking-tight text-foreground sm:min-h-[2.6rem] sm:text-[15px]">
           {product.name}
         </h3>
-        {snippet ? (
-          <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
-            {snippet}
+        {packLine ?? snippet ? (
+          <p className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground sm:text-xs">
+            {packLine ?? snippet}
           </p>
         ) : null}
 
         {priceSlot || action ? (
-          <div className="mt-auto flex items-end justify-between gap-2 pt-2.5">
+          // A narrow card (the brand page beside its category rail) has no room
+          // for price + MRP + ADD on one line: there the action drops to its own
+          // full-width row, Blinkit-style, instead of sliding over the price.
+          <div className="mt-auto flex items-end justify-between gap-2 pt-2.5 @max-[9.75rem]:flex-col @max-[9.75rem]:items-stretch">
             {/* The slot node is untouched; only its wrapper is styled: the
                 price reads a step larger than the metadata around it. */}
-            <div className="min-w-0 flex-1 [&_[data-slot=price-reveal]>span:first-child]:text-[15px] [&_[data-slot=price-pill]]:h-7 [&_[data-slot=price-pill]]:px-2.5 [&_[data-slot=price-pill]]:text-[13px]">
+            <div className="min-w-0 flex-1 @max-[9.75rem]:flex-none [&_[data-slot=price-reveal]>span:first-child]:text-[15px] [&_[data-slot=price-pill]]:h-7 [&_[data-slot=price-pill]]:px-2.5 [&_[data-slot=price-pill]]:text-[13px]">
               {priceSlot}
             </div>
-            {action ? <div className="shrink-0">{action}</div> : null}
+            {action ? (
+              <div className="shrink-0 @max-[9.75rem]:[&>*]:w-full">{action}</div>
+            ) : null}
           </div>
         ) : null}
 

@@ -104,9 +104,9 @@ function MobileControls({ sort, onSort, canSortPrice }: ListingControlsProps) {
         render={
           <button
             type="button"
-            className="inline-flex min-h-11 items-center gap-2 rounded-full bg-card px-4 text-sm font-medium text-foreground shadow-sm ring-1 ring-foreground/10 outline-none transition-[background-color,transform] hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97]"
+            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border bg-card px-3 text-[13px] font-medium text-foreground outline-none transition-[background-color,border-color,transform] hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97] md:h-9 md:px-3.5 md:text-sm"
           >
-            <ArrowUpDown className="size-4" aria-hidden />
+            <ArrowUpDown className="size-3.5" aria-hidden />
             Sort
             {!isDefault ? (
               <span className="inline-flex size-2 rounded-full bg-primary" aria-hidden />

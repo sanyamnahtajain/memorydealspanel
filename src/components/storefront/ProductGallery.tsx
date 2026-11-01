@@ -319,7 +319,7 @@ export function ProductGallery({
       </div>
 
       {showControls ? (
-        <div ref={thumbRef} className="overflow-hidden">
+        <div ref={thumbRef} className="-m-1 overflow-hidden p-1">
           <div className="flex gap-2">
             {ordered.map((image, index) => {
               const isActive = index === selected;
@@ -336,7 +336,7 @@ export function ProductGallery({
                   className={cn(
                     "relative aspect-square w-16 shrink-0 overflow-hidden rounded-xl bg-muted/40 p-1.5 ring-1 transition-[opacity,box-shadow,transform] active:scale-95 sm:w-20",
                     isActive
-                      ? "ring-2 ring-foreground"
+                      ? "ring-2 ring-primary"
                       : "opacity-75 ring-foreground/10 hover:opacity-100 hover:ring-foreground/30",
                   )}
                 >
@@ -368,7 +368,7 @@ export function ProductGallery({
                   className={cn(
                     "relative aspect-square w-16 shrink-0 overflow-hidden rounded-xl bg-muted/40 ring-1 transition-[opacity,box-shadow,transform] active:scale-95 sm:w-20",
                     isActive
-                      ? "ring-2 ring-foreground"
+                      ? "ring-2 ring-primary"
                       : "opacity-75 ring-foreground/10 hover:opacity-100 hover:ring-foreground/30",
                   )}
                 >

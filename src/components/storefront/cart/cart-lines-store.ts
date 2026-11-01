@@ -93,3 +93,12 @@ export function useProductInCartQty(productId: string): number {
     return sum;
   }, [productId, v]);
 }
+
+/** Quantity of ONE cart line (a product, or one variant of it). */
+export function useCartLineQty(productId: string, variantId: string | null | undefined): number {
+  const v = React.useSyncExternalStore(subscribe, getVersion, getVersion);
+  return React.useMemo(() => {
+    void v;
+    return lineQty.get(key(productId, variantId)) ?? 0;
+  }, [productId, variantId, v]);
+}

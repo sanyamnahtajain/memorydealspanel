@@ -31,8 +31,8 @@ export const SLABY_PLACEMENT_LABELS: Record<SlabyPlacement, { label: string; hin
     hint: "“Powered by Slaby” on the animated order-success screen.",
   },
   footer: {
-    label: "Storefront footer & page ends",
-    hint: "A “Powered by Slaby” mark in the footer, and at the end of the home, account and search screens on phones (where there is no footer).",
+    label: "Footer & page-end band",
+    hint: "A “Powered by Slaby” mark in the footer and search, and a “This store runs on Slaby” band at the end of every browsing screen (never on cart, checkout or sign-in).",
   },
   promo: {
     label: "Occasional promo card",
@@ -89,7 +89,10 @@ export function slabyPlacementOn(
   return config.enabled && config.placements[placement];
 }
 
-/** The outbound link, tagged so Slaby can see where visitors came from. */
-export function slabyHref(placement: SlabyPlacement): string {
-  return `https://slaby.in/?utm_source=memorydeals&utm_medium=badge&utm_campaign=${placement}`;
+/**
+ * The outbound link, tagged so Slaby can see where visitors came from.
+ * `medium` tells a badge apart from the bigger band in the same placement.
+ */
+export function slabyHref(placement: SlabyPlacement, medium: "badge" | "band" = "badge"): string {
+  return `https://slaby.in/?utm_source=memorydeals&utm_medium=${medium}&utm_campaign=${placement}`;
 }

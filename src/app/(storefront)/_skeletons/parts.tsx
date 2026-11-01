@@ -128,44 +128,29 @@ export function SkeletonProductGrid({
 }
 
 /* ------------------------------------------------------------------ */
-/* Category tiles — 4:3 image with the name on a bottom gradient       */
+/* Category tiles — Blinkit squares with a two-line name underneath    */
 /* ------------------------------------------------------------------ */
 
 export function SkeletonCategoryGrid({
-  count = 6,
-  teaser = false,
+  count = 12,
   className,
 }: {
+  /** How many tiles to sketch (home shows 12; /categories more). */
   count?: number;
-  /**
-   * Mirror CategoryGrid's home teaser: 12 tiles, 2 columns on phones with
-   * only the first 8 shown (the shared `md-teaser-8` rule), 4 → 6 columns
-   * from md. `count` is ignored — the real grid always gets 12.
-   */
-  teaser?: boolean;
   className?: string;
 }) {
-  const tiles = teaser ? 12 : count;
   return (
     <div
       aria-hidden
       className={cn(
-        "grid grid-cols-2 gap-3 sm:grid-cols-3 md:gap-4",
-        teaser ? "md-teaser-8 md:grid-cols-4 lg:grid-cols-6" : "lg:grid-cols-4",
+        "grid grid-cols-4 gap-x-2.5 gap-y-4 sm:grid-cols-6 sm:gap-x-3 lg:grid-cols-8",
         className,
       )}
     >
-      {Array.from({ length: tiles }, (_, i) => (
-        <div
-          key={i}
-          className={cn(
-            "relative aspect-4/3 overflow-hidden rounded-2xl bg-card shadow-sm ring-1 ring-foreground/5",
-            !teaser && i >= 4 && "hidden sm:block",
-            !teaser && i >= 6 && "sm:hidden lg:block",
-          )}
-        >
-          <Shimmer className="absolute inset-0 rounded-none" />
-          <Shimmer className="absolute bottom-3 left-3 h-3.5 w-24 rounded-full bg-foreground/10" />
+      {Array.from({ length: count }, (_, i) => (
+        <div key={i} className="flex flex-col items-center gap-1.5">
+          <Shimmer className="aspect-square w-full rounded-2xl" />
+          <Shimmer className="h-3 w-4/5 rounded-full" />
         </div>
       ))}
     </div>

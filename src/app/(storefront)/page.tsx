@@ -30,7 +30,6 @@ import { swrCached } from "@/server/cache/swr";
 import { BuyAgainRail } from "@/components/storefront/home/BuyAgainRail";
 import { CatalogCta } from "@/components/storefront/home/CatalogCta";
 import { RecentlyViewedRail } from "@/components/storefront/recently-viewed/RecentlyViewedRail";
-import { SlabyPoweredBy } from "@/components/slaby/SlabyPoweredBy";
 import { LastOrderCard } from "@/components/storefront/home/LastOrderCard";
 import { APP_NAME } from "@/lib/constants";
 
@@ -157,7 +156,7 @@ export default async function HomePage() {
       <BuyAgainRail />
 
       <HomePriceReveal>
-      {/* Section rhythm (HomeSections): category → brand →
+      {/* Section rhythm (HomeSections): brand → category →
           best sellers → reels → trending → new & featured → the dark
           "how it works" panel. Every rail here is rendered for the ANONYMOUS
           viewer — see the module comment. */}
@@ -167,30 +166,9 @@ export default async function HomePage() {
         // empty band. Tighten it in that case only.
         className={heroBanners.length > 0 ? undefined : "mt-4 md:mt-6"}
       >
-        {/* Shop by category — the retailer's #1 jump-off point, first. */}
-        <section aria-labelledby="home-categories">
-          <SectionHeading
-            id="home-categories"
-            title="Shop by category"
-            subtitle="Jump straight to the shelf you restock most."
-            seeAllHref="/categories"
-            seeAllLabel="View all"
-          />
-          {categories.length > 0 ? (
-            // Home teaser — 8 tiles on phones, 12 from md (CategoryGrid's
-            // teaser rule); the full list lives at /categories.
-            <CategoryGrid categories={categories.slice(0, 12)} animated teaser />
-          ) : (
-            <EmptyState
-              illustration="empty-box"
-              title="Categories coming soon"
-              description="We're organising the catalog — check back shortly."
-            />
-          )}
-        </section>
-
-        {/* Shop by brand — leverages the brand master. One-row rail on
-            phones, capped grid on md+, so it never pushes the catalog down. */}
+        {/* Shop by brand — FIRST (owner request): wholesale buyers think in
+            brands. Order is the owner's "Position among brands" (Admin →
+            Brands → Brand page). Two-row swipe rail on phones. */}
         {brands.length > 0 ? (
           <section aria-labelledby="home-brands">
             <SectionHeading
@@ -202,6 +180,28 @@ export default async function HomePage() {
             <BrandShowcase brands={brands} />
           </section>
         ) : null}
+
+        {/* Shop by category — Blinkit tiles, four across on a phone. */}
+        <section aria-labelledby="home-categories">
+          <SectionHeading
+            id="home-categories"
+            title="Shop by category"
+            subtitle="Jump straight to the shelf you restock most."
+            seeAllHref="/categories"
+            seeAllLabel="View all"
+          />
+          {categories.length > 0 ? (
+            // Home teaser — 12 tiles: three rows of four on a phone, two
+            // rows of six on a laptop. The full list lives at /categories.
+            <CategoryGrid categories={categories.slice(0, 12)} animated />
+          ) : (
+            <EmptyState
+              illustration="empty-box"
+              title="Categories coming soon"
+              description="We're organising the catalog — check back shortly."
+            />
+          )}
+        </section>
 
         {/* Best sellers — global, price-free (ANON locked pills), identical
             for every visitor: see the comment above bestSellers. Young shop
@@ -268,9 +268,6 @@ export default async function HomePage() {
       </HomeSections>
       </HomePriceReveal>
 
-      {/* Phones have no footer (owner request), so the platform mark lives
-          here at the end of the page; laptops get it in the footer. */}
-      <SlabyPoweredBy phoneOnly className="mt-6" />
     </StorefrontShell>
   );
 }

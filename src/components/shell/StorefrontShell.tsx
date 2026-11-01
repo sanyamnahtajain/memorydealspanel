@@ -18,8 +18,11 @@ import { StorefrontFooter } from "@/components/shell/StorefrontFooter"
 import { AccessStatusBanner } from "@/components/access/AccessStatusBanner"
 import { TrustStrip } from "@/components/access/TrustStrip"
 import { SlabyPromoCard } from "@/components/slaby/SlabyPromoCard"
+import { SlabyBand } from "@/components/slaby/SlabyBand"
 import { WishlistBadge } from "@/components/storefront/wishlist/WishlistBadge"
 import { CartBadge } from "@/components/storefront/cart/CartBadge"
+import { CartDock } from "@/components/storefront/cart/CartDock"
+import { HeaderSearchBar } from "@/components/shell/HeaderSearchBar"
 import { SearchOverlay } from "@/components/storefront/SearchOverlay"
 import { PullToRefresh } from "@/components/pwa/PullToRefresh"
 import { hapticTap } from "@/lib/haptics"
@@ -185,6 +188,9 @@ export function StorefrontShell({
 
   const reelsActive = isReelsPath(pathname)
   const reelsAvailable = useReelsAvailable()
+  // Blinkit's persistent phone search bar — everywhere but the immersive
+  // reels feed and the search page itself (it has its own big input).
+  const showSearchBar = !reelsActive && !pathname.startsWith("/search")
 
   return (
     <div
@@ -219,6 +225,19 @@ export function StorefrontShell({
                 condensed ? "text-sm" : "text-base",
               )}
             />
+            {/* Phones: Blinkit's two-line title beside the mark — the shop's
+                name in bold, what it is underneath. */}
+            <span className="ml-2 flex min-w-0 flex-col leading-tight sm:hidden">
+              <span className="truncate text-[15px] font-bold tracking-tight text-foreground">The Memory Deals</span>
+              <span
+                className={cn(
+                  "truncate text-[11px] text-muted-foreground transition-[opacity,max-height] duration-200",
+                  condensed ? "max-h-0 opacity-0" : "max-h-4 opacity-100",
+                )}
+              >
+                Wholesale mobile accessories
+              </span>
+            </span>
           </Link>
 
           {/* Seasonal: compact animated tricolor beside the logo (self-gated
@@ -286,6 +305,8 @@ export function StorefrontShell({
                 aria-expanded={searchOpen}
                 className={cn(
                   HEADER_ICON,
+                  // Phones get the full-width search bar below instead.
+                  showSearchBar && "hidden md:inline-flex",
                   searchOpen || isHrefActive("/search", pathname)
                     ? HEADER_ICON_ACTIVE
                     : HEADER_ICON_IDLE,
@@ -333,6 +354,11 @@ export function StorefrontShell({
             </HeaderIconLink>
           </div>
         </div>
+        {showSearchBar ? (
+          <div className="mx-auto w-full max-w-6xl px-4 pb-2.5 md:hidden">
+            <HeaderSearchBar onOpen={openSearch} expanded={searchOpen} />
+          </div>
+        ) : null}
       </header>
 
       {/* ——— Access status strip (renders nothing for anon/active) ——— */}
@@ -346,6 +372,9 @@ export function StorefrontShell({
           area + breathing room) — the footer is desktop-only, so main owns it. */}
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-[calc(var(--md-tab-h)+1rem+env(safe-area-inset-bottom))] md:px-6 md:pb-12">
         {children}
+        {/* "This store runs on Slaby" — the end of every browsing screen
+            (owner-toggleable; skips cart, checkout and sign-in). */}
+        <SlabyBand />
       </main>
 
       {/* ——— Footer — desktop only; the app-like mobile view ends at the
@@ -360,6 +389,9 @@ export function StorefrontShell({
       {/* Installed-app gesture: pull down from the top to refresh (no-op in a
           browser tab, which already has its own). */}
       <PullToRefresh />
+
+      {/* ——— Floating "View cart" bar (phones, once the cart has items) ——— */}
+      <CartDock initialCount={cartCount} />
 
       {/* ——— Mobile bottom tab bar ——— exactly the 5 storefrontNav items. */}
       <nav

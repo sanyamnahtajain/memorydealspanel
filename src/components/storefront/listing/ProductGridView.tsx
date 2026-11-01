@@ -127,7 +127,9 @@ function GridCard({
               className="bg-background/85 shadow-sm ring-1 ring-foreground/10 backdrop-blur hover:bg-background"
             />
           </div>
-          <InCartChip productId={product.id} className="bottom-2 left-2" />
+          {/* The ADD stepper shows the quantity itself; the chip is for
+              cards without one (variant products). */}
+          {quickAdd ? null : <InCartChip productId={product.id} className="bottom-2 left-2" />}
         </>
       }
       action={
