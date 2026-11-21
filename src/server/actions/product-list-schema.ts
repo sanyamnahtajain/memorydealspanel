@@ -33,6 +33,8 @@ export const listProductsInputSchema = z.object({
   categoryId: objectIdSchema.optional(),
   status: entityStatusSchema.optional(),
   stockStatus: stockStatusSchema.optional(),
+  /** Only products whose MAIN photo is too small to look sharp. */
+  smallPhoto: z.boolean().optional(),
   sort: productSortSchema.default("newest"),
   page: z.number().int().positive().default(1),
   take: z.number().int().positive().max(PAGE_SIZES.max).default(PAGE_SIZES.admin),

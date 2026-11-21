@@ -31,6 +31,7 @@ import {
 import type { AdminReel } from "@/server/services/reels";
 import { ReelProductPicker, type PickedProduct } from "./ReelProductPicker";
 import { formatDuration, probeVideoDuration, putWithProgress } from "./upload";
+import { catalogImageUrl } from "@/lib/image-loader";
 
 /**
  * Create / edit one reel. The clip goes straight from the browser to storage
@@ -498,7 +499,7 @@ function PosterField({
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={value}
+              src={catalogImageUrl(value, 128)}
               alt=""
               className="h-16 w-9 rounded-md border border-border object-cover"
             />

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { searchProductsForReelAction } from "@/server/actions/reels";
 import type { ReelProductPick } from "@/server/services/reels";
+import { catalogImageUrl } from "@/lib/image-loader";
 
 /**
  * "This reel sells…" — a debounced product search that collapses to a chip
@@ -208,7 +209,7 @@ function Thumb({ src }: { src: string | null }) {
     <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted/60">
       {src ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={src} alt="" className="size-full object-contain p-0.5" />
+        <img src={catalogImageUrl(src, 128)} alt="" className="size-full object-contain p-0.5" />
       ) : (
         <Package className="size-4 text-muted-foreground" aria-hidden />
       )}

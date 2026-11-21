@@ -3,7 +3,8 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { FlameIcon, Loader2Icon } from "lucide-react";
+import { FlameIcon, Loader2Icon, SparklesIcon } from "lucide-react";
+import { describeProduct } from "@/lib/product-description";
 import { cn } from "@/lib/utils";
 import { parseRupees, formatPaise } from "@/lib/money";
 import {
@@ -234,6 +235,9 @@ function buildInitialState(product?: EditorProduct): FormState {
       thumbUrl: image.thumbUrl ?? undefined,
       sortOrder: image.sortOrder,
       isPrimary: image.isPrimary,
+      // Keep the measured size, or the next save would forget it.
+      width: image.width ?? null,
+      height: image.height ?? null,
     })),
     hsnInput: product?.hsnCode ?? "",
     gstPercentInput: bpsToPercentInput(product?.gstRateBps),
@@ -521,11 +525,43 @@ export function ProductEditorForm({
               id="description"
               value={state.description}
               onChange={(e) => set("description", e.target.value)}
-              placeholder="Short marketing description shown on the product page."
+              placeholder="Short description shown on the product page — or tap “Write for me”."
               maxLength={5000}
-              rows={3}
+              rows={state.description.split("\n").length > 3 ? 8 : 3}
               className="w-full resize-y rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
             />
+            <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground">
+                Written from the name, brand and category — facts only. Edit freely.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={state.name.trim().length === 0}
+                onClick={() => {
+                  const previous = state.description;
+                  set(
+                    "description",
+                    describeProduct({
+                      name: state.name,
+                      brand: brands.find((b) => b.id === state.brandId)?.name ?? null,
+                      category: categories.find((c) => c.id === state.categoryId)?.name ?? null,
+                      moq: Number(state.moq) || null,
+                      packMultiple: Number(state.packMultiple) || null,
+                    }),
+                  );
+                  if (previous.trim().length > 0) {
+                    toast("Description rewritten", {
+                      action: { label: "Undo", onClick: () => set("description", previous) },
+                    });
+                  }
+                }}
+              >
+                <SparklesIcon aria-hidden />
+                Write for me
+              </Button>
+            </div>
           </Field>
         </Section>
       </FadeUp>

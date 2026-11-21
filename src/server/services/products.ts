@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/server/db";
+import { describeProduct, needsDescription } from "@/lib/product-description";
 import { makeUniqueSlug } from "@/lib/slug";
 import type { EntityStatus } from "@/lib/schemas/shared";
 import {
@@ -197,6 +198,8 @@ function normaliseImages(
     thumbUrl: image.thumbUrl,
     sortOrder: index,
     isPrimary: index === resolvedPrimary,
+    width: image.width ?? null,
+    height: image.height ?? null,
   }));
 }
 
@@ -256,6 +259,24 @@ export async function createProduct(
   // SKU is optional — use the provided one (verified unique) or auto-generate.
   const sku = await resolveSku(data.sku, slug);
 
+  // Owner rule: every product has a description. Left blank (a quick add, a
+  // bulk import), one is written from the product's own facts — see
+  // src/lib/product-description.ts. The admin can edit it any time.
+  let description = data.description;
+  if (needsDescription(description)) {
+    const category = await prisma.category.findUnique({
+      where: { id: data.categoryId },
+      select: { name: true },
+    });
+    description = describeProduct({
+      name: data.name,
+      brand: brandName ?? null,
+      category: category?.name ?? null,
+      moq: data.moq ?? null,
+      packMultiple: data.packMultiple ?? null,
+    });
+  }
+
   try {
     const row = await prisma.product.create({
       data: {
@@ -265,7 +286,7 @@ export async function createProduct(
         sku,
         brand: brandName,
         brandId: data.brandId,
-        description: data.description,
+        description,
         specs: data.specs ?? undefined,
         price: data.price,
         mrp: data.mrp,
@@ -476,6 +497,8 @@ export async function duplicateProduct(id: string): Promise<PricedProduct> {
         thumbUrl: image.thumbUrl ?? undefined,
         sortOrder: image.sortOrder,
         isPrimary: image.isPrimary,
+        width: image.width ?? null,
+        height: image.height ?? null,
       })),
       // Explicit null so `{ deletedAt: null }` matches on MongoDB/Atlas (an
       // absent field is not matched) — see createProduct.

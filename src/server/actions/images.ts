@@ -88,6 +88,9 @@ const attachInputSchema = z.object({
   url: storedUrlSchema,
   thumbUrl: storedUrlSchema.optional(),
   isPrimary: z.boolean().optional(),
+  /** Measured in the browser before upload — feeds the "small photo" flag. */
+  width: z.number().int().min(1).max(30_000).optional(),
+  height: z.number().int().min(1).max(30_000).optional(),
 });
 
 export type AttachImageInput = z.infer<typeof attachInputSchema>;
@@ -140,6 +143,10 @@ function normalizeImages(images: ProductImage[]): ProductImage[] {
     thumbUrl: image.thumbUrl ?? null,
     sortOrder: index,
     isPrimary: index === primaryIndex,
+    // Kept through every reorder / primary change — dropping it here would
+    // silently forget which photos are too small.
+    width: image.width ?? null,
+    height: image.height ?? null,
   }));
 }
 
@@ -258,6 +265,8 @@ export async function attachImageToProduct(
         thumbUrl: input.thumbUrl ?? null,
         sortOrder: existing.length,
         isPrimary: makePrimary,
+        width: input.width ?? null,
+        height: input.height ?? null,
       },
     ];
 

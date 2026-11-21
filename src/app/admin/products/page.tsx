@@ -38,6 +38,8 @@ import {
   RecentActivityPanelSkeleton,
 } from "@/components/admin/audit/RecentActivityPanel";
 import type { StockStatus } from "@/lib/schemas/shared";
+import { catalogImageUrl } from "@/lib/image-loader";
+import { isSmallPhoto, SMALL_PHOTO_EDGE } from "@/lib/photo-quality";
 
 export const metadata: Metadata = {
   title: "Products — MemoryDeals Admin",
@@ -97,6 +99,7 @@ export default async function AdminProductsPage({
       categoryParam && categoryParam !== "all" ? categoryParam : undefined,
     status: statusParsed.success ? statusParsed.data : undefined,
     stockStatus: stockParsed.success ? stockParsed.data : undefined,
+    smallPhoto: first(params.photo) === "small" || undefined,
     sort: sortParsed.success ? (sortParsed.data as ProductSort) : "newest",
     page: Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1,
   };
@@ -119,7 +122,9 @@ export default async function AdminProductsPage({
   const hasActiveFilters =
     Boolean(listInput.search) ||
     Boolean(listInput.categoryId) ||
-    Boolean(listInput.status);
+    Boolean(listInput.status) ||
+    Boolean(listInput.smallPhoto);
+  const smallPhotoOnly = Boolean(listInput.smallPhoto);
 
   return (
     <AdminShell title="Products">
@@ -149,6 +154,24 @@ export default async function AdminProductsPage({
         />
 
         <ProductFilters categories={categories} />
+
+        {/* Photo quality worklist (owner: "photos have to be of good quality"). */}
+        <div className="-mt-3 flex flex-wrap items-center gap-2 text-sm">
+          {smallPhotoOnly ? (
+            <>
+              <span className="rounded-md bg-amber-500/15 px-2 py-1 font-medium text-amber-700 dark:text-amber-400">
+                Showing products whose main photo is under {SMALL_PHOTO_EDGE}px — replace these first.
+              </span>
+              <Link href="/admin/products" className="font-medium text-primary hover:underline">
+                Show all
+              </Link>
+            </>
+          ) : (
+            <Link href="/admin/products?photo=small" className="font-medium text-primary hover:underline">
+              Find products that need a better photo
+            </Link>
+          )}
+        </div>
 
         {hadError ? (
           <EmptyState
@@ -206,7 +229,7 @@ export default async function AdminProductsPage({
                             {thumb ? (
                               // eslint-disable-next-line @next/next/no-img-element
                               <img
-                                src={thumb}
+                                src={catalogImageUrl(thumb, 128)}
                                 alt=""
                                 className="size-full object-cover"
                               />
@@ -227,6 +250,14 @@ export default async function AdminProductsPage({
                               {product.sku}
                               {product.brand ? ` · ${product.brand}` : ""}
                             </p>
+                            {primary && isSmallPhoto(primary) ? (
+                              <span
+                                title={`Main photo is ${primary.width}×${primary.height}px — it will look soft. Replace it with a bigger photo.`}
+                                className="mt-0.5 inline-block rounded bg-amber-500/15 px-1.5 py-px text-[0.68rem] font-medium text-amber-700 dark:text-amber-400"
+                              >
+                                Small photo
+                              </span>
+                            ) : null}
                           </div>
                         </div>
                       </TableCell>

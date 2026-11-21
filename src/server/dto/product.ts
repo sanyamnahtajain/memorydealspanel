@@ -47,6 +47,9 @@ export interface PublicProductImage {
   thumbUrl: string | null;
   sortOrder: number;
   isPrimary: boolean;
+  /** Stored original's pixel size when measured — no price, safe for anyone. */
+  width?: number | null;
+  height?: number | null;
 }
 
 /**
@@ -341,6 +344,8 @@ export function toPublicImages(images: ProductImage[]): PublicProductImage[] {
     thumbUrl: image.thumbUrl ?? null,
     sortOrder: image.sortOrder,
     isPrimary: image.isPrimary,
+    width: image.width ?? null,
+    height: image.height ?? null,
   }));
 }
 

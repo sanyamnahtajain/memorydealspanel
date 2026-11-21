@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ChevronRight, ImageOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/common";
+import { catalogImageUrl } from "@/lib/image-loader";
 
 /**
  * One row in a {@link MiniList}: a thumbnailed item with a name, an optional
@@ -100,7 +101,7 @@ function MiniListRow({
           // needing next/image remotePatterns config for the admin surface.
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={item.imageUrl}
+            src={catalogImageUrl(item.imageUrl, 128)}
             alt=""
             className="size-full object-cover"
             loading="lazy"

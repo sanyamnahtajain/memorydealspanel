@@ -49,6 +49,9 @@ export const productImageSchema = z.object({
   thumbUrl: displayUrlSchema("thumbnail url must be a valid URL").optional(),
   sortOrder: z.number().int().min(0).default(0),
   isPrimary: z.boolean().default(false),
+  /** Stored original's pixel size, when measured (feeds the small-photo flag). */
+  width: z.number().int().min(1).max(30_000).nullish(),
+  height: z.number().int().min(1).max(30_000).nullish(),
 });
 export type ProductImageInput = z.infer<typeof productImageSchema>;
 

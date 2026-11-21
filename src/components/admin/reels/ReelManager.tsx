@@ -28,6 +28,7 @@ import {
 import type { AdminReel } from "@/server/services/reels";
 import { ReelDialog } from "./ReelDialog";
 import { formatDuration } from "./upload";
+import { catalogImageUrl } from "@/lib/image-loader";
 
 /**
  * Reel management: a grid of 9:16 cards in storefront order.
@@ -263,7 +264,7 @@ function ReelThumb({ reel }: { reel: AdminReel }) {
       {reel.posterUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={reel.posterUrl}
+          src={catalogImageUrl(reel.posterUrl, 384)}
           alt=""
           loading="lazy"
           className="size-full object-cover"
@@ -310,7 +311,7 @@ function ProductChip({ reel, hidden }: { reel: AdminReel; hidden: boolean }) {
       {reel.product.imageUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={reel.product.imageUrl}
+          src={catalogImageUrl(reel.product.imageUrl, 64)}
           alt=""
           className="size-4 shrink-0 rounded-sm object-contain"
         />

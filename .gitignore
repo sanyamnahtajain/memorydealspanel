@@ -53,3 +53,4 @@ scripts/*.progress.log
 
 # Local production backups (category image rollbacks etc.)
 /.backups/
+/scripts/.qa/

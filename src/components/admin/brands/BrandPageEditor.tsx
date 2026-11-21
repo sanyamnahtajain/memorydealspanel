@@ -28,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { catalogImageUrl } from "@/lib/image-loader";
 
 /** One category row in the editor (the server resolves names and counts). */
 export interface EditorCategory {
@@ -243,7 +244,7 @@ export function BrandPageEditor({
         <div className="relative aspect-[3/1] w-full overflow-hidden rounded-xl border border-dashed border-border bg-muted/40">
           {coverImage ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={coverImage} alt="" className="size-full object-cover" />
+            <img src={catalogImageUrl(coverImage, 750)} alt="" className="size-full object-cover" />
           ) : (
             <div className="flex size-full flex-col items-center justify-center gap-1.5 text-muted-foreground">
               <ImageIcon aria-hidden className="size-6" />
@@ -375,7 +376,7 @@ export function BrandPageEditor({
                     <span className="relative flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[#EEF4F7] text-muted-foreground">
                       {shown ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={shown} alt="" className="size-full object-cover" />
+                        <img src={catalogImageUrl(shown, 256)} alt="" className="size-full object-cover" />
                       ) : (
                         <ImageOff aria-hidden className="size-5" />
                       )}

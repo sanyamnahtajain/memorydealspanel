@@ -11,6 +11,7 @@ import { StatusChip } from "@/components/common";
 import { ScaleTap } from "@/components/motion/primitives";
 import { restoreProductAction } from "@/server/actions/products";
 import type { TrashedProduct } from "./types";
+import { catalogImageUrl } from "@/lib/image-loader";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -65,7 +66,7 @@ export function TrashCard({ product, now, className }: TrashCardProps) {
             // Remote R2 / local upload URL — plain img avoids next/image config.
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={product.imageUrl}
+              src={catalogImageUrl(product.imageUrl, 256)}
               alt=""
               className="size-full object-cover opacity-90"
               loading="lazy"

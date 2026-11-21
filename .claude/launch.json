@@ -67,6 +67,15 @@
         "cd /Users/master/work/personal/code/memorydeals && DATABASE_URL='mongodb://127.0.0.1:27018/memorydeals?replicaSet=rs0local&directConnection=true' R2_ACCESS_KEY_ID= R2_SECRET_ACCESS_KEY= exec /Users/master/.nvm/versions/node/v20.20.2/bin/node node_modules/next/dist/bin/next start -p 3014"
       ],
       "port": 3014
+    },
+    {
+      "name": "memorydeals-perf",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd /Users/master/work/personal/code/memorydeals && DATABASE_URL='mongodb://127.0.0.1:27018/memorydeals_perf?replicaSet=rs0local&directConnection=true' R2_ACCESS_KEY_ID= R2_SECRET_ACCESS_KEY= exec /Users/master/.nvm/versions/node/v20.20.2/bin/node node_modules/next/dist/bin/next start -p 3015"
+      ],
+      "port": 3015
     }
   ]
 }

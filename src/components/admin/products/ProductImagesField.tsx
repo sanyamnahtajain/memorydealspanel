@@ -51,6 +51,8 @@ function toInput(image: ProductImage): ProductImageInput {
     thumbUrl: image.thumbUrl ?? undefined,
     sortOrder: image.sortOrder,
     isPrimary: image.isPrimary,
+    width: image.width ?? null,
+    height: image.height ?? null,
   };
 }
 
@@ -61,6 +63,8 @@ function toStored(image: ProductImageInput, index: number): ProductImage {
     thumbUrl: image.thumbUrl ?? null,
     sortOrder: image.sortOrder ?? index,
     isPrimary: image.isPrimary ?? false,
+    width: image.width ?? null,
+    height: image.height ?? null,
   };
 }
 

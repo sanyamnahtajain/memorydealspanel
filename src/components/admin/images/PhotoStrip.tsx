@@ -17,6 +17,7 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { lockBodyScroll } from "@/lib/scroll-lock";
+import { isSmallPhoto, SMALL_PHOTO_EDGE } from "@/lib/image";
 import { AnimatePresence, motion } from "motion/react";
 import {
   ImageOffIcon,
@@ -40,6 +41,7 @@ import {
   reorderImages,
   setPrimaryImage,
 } from "@/server/actions/images";
+import { catalogImageUrl } from "@/lib/image-loader";
 
 export interface PhotoStripProps {
   productId: string;
@@ -57,7 +59,7 @@ export interface PhotoStripProps {
 
 /** Prefer the small thumbnail; fall back to the full image. */
 function tileSrc(image: ProductImage): string {
-  return image.thumbUrl ?? image.url;
+  return catalogImageUrl(image.thumbUrl ?? image.url, 256);
 }
 
 export function PhotoStrip({
@@ -215,6 +217,16 @@ export function PhotoStrip({
               >
                 <GripVerticalIcon className="size-3.5" />
               </span>
+
+              {/* Small-photo flag: too few pixels to look sharp on a phone. */}
+              {isSmallPhoto(image) ? (
+                <span
+                  title={`Small photo (${image.width}×${image.height}px) — will look soft. Replace it with a bigger photo (at least ${SMALL_PHOTO_EDGE}px) if you can.`}
+                  className="absolute bottom-9 left-1 rounded-md bg-amber-500 px-1.5 py-0.5 text-[0.65rem] font-semibold text-white shadow-sm"
+                >
+                  Small photo
+                </span>
+              ) : null}
 
               {/* Primary badge */}
               {image.isPrimary ? (
@@ -386,7 +398,7 @@ function Lightbox({
 
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={image.url}
+        src={catalogImageUrl(image.url, 1920)}
         alt=""
         onClick={(e) => e.stopPropagation()}
         className="max-h-[86vh] max-w-full rounded-lg object-contain shadow-2xl"

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { resetSwrCache } from "@/server/cache/swr";
 import { resetSearchIndex } from "@/server/storefront/search-index";
+import { SMALL_PHOTO_EDGE } from "@/lib/photo-quality";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/server/db";
@@ -398,6 +399,10 @@ export async function listProductsAction(
       ...(params.categoryId ? { categoryId: params.categoryId } : {}),
       ...(params.status ? { status: params.status } : {}),
       ...(params.stockStatus ? { stockStatus: params.stockStatus } : {}),
+      // Main photo measured and under SMALL_PHOTO_EDGE on both sides.
+      ...(params.smallPhoto
+        ? { images: { some: { isPrimary: true, width: { lt: SMALL_PHOTO_EDGE }, height: { lt: SMALL_PHOTO_EDGE } } } }
+        : {}),
     };
 
     if (params.search) {

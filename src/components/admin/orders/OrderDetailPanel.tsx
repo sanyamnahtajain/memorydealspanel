@@ -61,6 +61,7 @@ import {
   type OrderDetailDTO,
   type OrderLineDTO,
 } from "@/server/actions/admin-orders";
+import { catalogImageUrl } from "@/lib/image-loader";
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString("en-IN", {
@@ -586,7 +587,7 @@ function OrderLineRow({ line }: { line: OrderLineDTO }) {
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={a.url}
+                  src={catalogImageUrl(a.url, 128)}
                   alt="Requirement photo"
                   loading="lazy"
                   className="size-14 object-cover"

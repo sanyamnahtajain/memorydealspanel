@@ -26,6 +26,7 @@ import {
   assertWithinImageCap,
   ImageError,
   MAX_IMAGES_PER_PRODUCT,
+  measureImage,
   prepareImage,
 } from "@/lib/image";
 import {
@@ -171,9 +172,11 @@ export function useImageUploads({
         }
 
         patch(item.id, { phase: "saving", progress: 95 });
+        const size = await measureImage(full);
         const attached = await attachImageToProduct(productId, {
           url: fullTarget.publicUrl,
           thumbUrl,
+          ...(size ?? {}),
         });
         if (!attached.ok) {
           throw new ImageError(attached.error);

@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip } from "@/components/ui/tooltip";
 import { StatusChip, ConfirmSheet } from "@/components/common";
+import { catalogImageUrl } from "@/lib/image-loader";
 
 interface RowBrand {
   id: string;
@@ -89,7 +90,7 @@ export function BrandRow({
       <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-muted">
         {brand.logo ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={brand.logo} alt="" className="size-full object-contain" />
+          <img src={catalogImageUrl(brand.logo, 128)} alt="" className="size-full object-contain" />
         ) : (
           <ImageIcon className="size-4 text-muted-foreground" aria-hidden />
         )}

@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { reorderBrandsAction } from "@/server/actions/brands";
 import type { BrandListItem } from "./BrandManager";
+import { catalogImageUrl } from "@/lib/image-loader";
 
 /**
  * "Arrange" mode of the admin brand list: the order brands appear in on the
@@ -90,7 +91,7 @@ export function BrandArrangeList({
             <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-background">
               {brand.logo ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={brand.logo} alt="" className="size-full object-contain" />
+                <img src={catalogImageUrl(brand.logo, 128)} alt="" className="size-full object-contain" />
               ) : (
                 <ImageIcon className="size-4 text-muted-foreground" aria-hidden />
               )}

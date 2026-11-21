@@ -110,6 +110,10 @@ type ProductImage {
   thumbUrl  String?
   sortOrder Int     @default(0)
   isPrimary Boolean @default(false)
+  /// Pixel size of the stored original (recorded at upload / by backfill).
+  /// Lets the admin flag photos too small to look sharp. Null = not measured.
+  width     Int?
+  height    Int?
 }
 
 /// A product demo clip. Stored alongside the images but kept as its own

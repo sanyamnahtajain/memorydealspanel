@@ -34,7 +34,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { PageHeader, EmptyState } from "@/components/common";
-import { IMAGE_ACCEPT_ATTR, ImageError, prepareImage } from "@/lib/image";
+import { IMAGE_ACCEPT_ATTR, ImageError, measureImage, prepareImage } from "@/lib/image";
 import {
   attachImageToProduct,
   presignUpload,
@@ -130,9 +130,11 @@ async function uploadOne(
   }
 
   onPhase({ status: "saving", progress: 95 });
+  const size = await measureImage(full);
   const attached = await attachImageToProduct(productId, {
     url: fullTarget.publicUrl,
     thumbUrl,
+    ...(size ?? {}),
   });
   if (!attached.ok) {
     throw new ImageError(attached.error);

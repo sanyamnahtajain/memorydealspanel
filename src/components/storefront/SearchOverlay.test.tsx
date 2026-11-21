@@ -147,6 +147,37 @@ describe("SearchOverlay", () => {
     expect(screen.getByRole("option", { name: /Ambrane Charger/ })).toBeInTheDocument();
   });
 
+  it("narrows what it already has while the server is asked (slow lines)", async () => {
+    vi.useFakeTimers();
+    let release!: () => void;
+    fetchMock.mockImplementation(async (url: string) => {
+      if (String(url).endsWith("q=char")) return suggestions([{ id: "p1", name: "Ambrane Charger" }, { id: "p2", name: "Char Cable" }]);
+      await new Promise<void>((r) => (release = r));
+      return suggestions([{ id: "p1", name: "Ambrane Charger" }]);
+    });
+    render(<SearchOverlay open onClose={() => {}} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1); // the sheet finishes opening
+    });
+    const input = screen.getByRole("combobox", { name: "Search products" });
+    fireEvent.change(input, { target: { value: "char" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    expect(screen.getAllByRole("option")).toHaveLength(2);
+    // "charg": the server hasn't answered yet, but the list already narrowed.
+    fireEvent.change(input, { target: { value: "charg" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+    expect(screen.getByRole("option", { name: /Ambrane Charger/ })).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+      release();
+    });
+  });
+
   it("renders nothing when closed", () => {
     render(<SearchOverlay open={false} onClose={() => {}} />);
     expect(screen.queryByRole("dialog")).toBeNull();

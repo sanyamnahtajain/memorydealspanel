@@ -98,6 +98,26 @@ async function fetchSuggestions(q: string, signal: AbortSignal): Promise<SearchS
   return items;
 }
 
+/**
+ * While the server is asked about "charger", narrow what we already have for
+ * "charge" (or "char") on the phone itself, so the list reacts to every letter
+ * even on a slow line. The server's answer replaces it a moment later.
+ */
+export function provisionalSuggestions(q: string): SearchSuggestion[] | null {
+  let best: string | null = null;
+  for (const key of suggestCache.keys()) {
+    if (key.length < q.length && q.startsWith(key) && (!best || key.length > best.length)) best = key;
+  }
+  if (!best) return null;
+  const terms = q.split(/\s+/).filter(Boolean);
+  const items = cachedSuggestions(best) ?? [];
+  const narrowed = items.filter((item) => {
+    const hay = `${item.name} ${item.brand ?? ""}`.toLowerCase();
+    return terms.every((t) => hay.includes(t));
+  });
+  return narrowed.length > 0 ? narrowed : null;
+}
+
 /** Test hook. */
 export function _resetSuggestCacheForTests(): void {
   suggestCache.clear();
@@ -195,8 +215,11 @@ export function SearchOverlay({
       return () => window.clearTimeout(show);
     }
     const controller = new AbortController();
+    const provisional = key.length > 0 ? provisionalSuggestions(key) : null;
     const spin = window.setTimeout(() => {
-      if (reqId.current === id) setLoading(true);
+      if (reqId.current !== id) return;
+      setLoading(true);
+      if (provisional) setResults(provisional);
     }, 0);
     const handle = window.setTimeout(async () => {
       try {

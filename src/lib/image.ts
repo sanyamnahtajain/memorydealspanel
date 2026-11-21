@@ -24,53 +24,62 @@ export {
 };
 
 /*
- * SIZE AND QUALITY BUDGETS.
+ * SIZE AND QUALITY BUDGETS — store the BEST copy, serve small ones.
  *
- * These numbers decide what a buyer actually sees, because `images.unoptimized`
- * is on in next.config.ts — what leaves this file is what gets served. There
- * is no second chance to re-encode later: the original never leaves the
- * browser, so an image compressed too hard here is permanently soft.
+ * Owner rule (Nov 2026): uploads must be kept at the highest quality.
  *
- * The old budgets (1600px/0.5MB full, 400px/0.1MB thumb) were set to protect
- * an image-optimisation quota that no longer applies, and they were visibly
- * too tight:
+ * Every picture the shop shows goes through the resizer (/api/img, see
+ * src/lib/image-loader.ts), which cuts the size each screen needs from the
+ * stored original and caches it. So the original no longer has to be small to
+ * keep pages fast — it has to be GOOD, because it is the source of every copy
+ * and of the product gallery's zoom. Anything compressed here is permanently
+ * soft; there is no second chance later.
  *
- *  - A 400px thumbnail is UPSCALED in every card it appears in. A grid card is
- *    ~45vw on a phone and ~22vw on a desktop — roughly 580 and 630 device
- *    pixels once screen density is counted. The card was being handed 400.
- *  - 0.5 MB for a 1600x1600 detail photo lands around JPEG quality 60, and the
- *    product gallery lets buyers ZOOM it, which is exactly where those
- *    artifacts show.
- *
- * `initialQuality` matters as much as the byte budget: without it
- * browser-image-compression starts at 0.7 and re-encodes at that quality even
- * when the file would have fit comfortably at 0.9. Starting high and letting
- * the size budget step it down only if needed is strictly better.
+ *  - A photo already within the limits is uploaded EXACTLY as taken — no
+ *    re-encode at all (see `withinBudget`).
+ *  - Larger ones are scaled to a generous edge and re-encoded starting at a
+ *    very high quality, stepping down only if the byte budget demands it.
+ *  - The 15 MB per-file cap (MAX_IMAGE_SIZE_BYTES) still guards uploads.
  */
 
-/** Full-size longest-edge cap, in pixels. Covers a full-width retina zoom. */
-const FULL_MAX_DIMENSION = 2000;
-/** Full-size target byte budget after compression, in megabytes. */
-const FULL_MAX_SIZE_MB = 1.5;
+/** Full-size longest-edge cap, in pixels — sharp zoom on any phone or laptop. */
+const FULL_MAX_DIMENSION = 3000;
+/** Full-size byte budget after compression, in megabytes. */
+const FULL_MAX_SIZE_MB = 4;
 /** Encoder quality to start from before the size budget forces it down. */
-const FULL_INITIAL_QUALITY = 0.92;
-/** Thumbnail longest-edge cap, in pixels — 2x the largest card we render. */
-const THUMB_MAX_DIMENSION = 800;
-/** Thumbnail target byte budget after compression, in megabytes. */
-const THUMB_MAX_SIZE_MB = 0.22;
-/** Thumbnails can start slightly lower; they are never zoomed. */
-const THUMB_INITIAL_QUALITY = 0.85;
+const FULL_INITIAL_QUALITY = 0.95;
+/** Thumbnail longest-edge cap, in pixels. */
+const THUMB_MAX_DIMENSION = 1000;
+/** Thumbnail byte budget after compression, in megabytes. */
+const THUMB_MAX_SIZE_MB = 0.35;
+/** Thumbnails are never zoomed, but are what grids start from. */
+const THUMB_INITIAL_QUALITY = 0.9;
 
 /*
- * Banner artwork is a different problem from a product photo. It is WIDE, it
- * is never zoomed, and it is the home page's LCP element — the single image
- * whose arrival decides how fast the shop feels. So it gets a generous
- * dimension (a 3:1 strip needs the width) on a tight byte budget, rather than
- * the product photo's 1.5 MB.
+ * Banner artwork: wide, never zoomed, and the home page's first image. The
+ * resizer serves phones a small copy, so the stored original can be the
+ * owner's full-quality artwork too.
  */
-const BANNER_MAX_DIMENSION = 1800;
-const BANNER_MAX_SIZE_MB = 0.4;
-const BANNER_INITIAL_QUALITY = 0.85;
+const BANNER_MAX_DIMENSION = 2400;
+const BANNER_MAX_SIZE_MB = 2.5;
+const BANNER_INITIAL_QUALITY = 0.93;
+
+/**
+ * Already small enough to keep exactly as it is? Then it is uploaded
+ * untouched — re-encoding a good photo only ever loses detail.
+ */
+async function withinBudget(file: File, maxDimension: number, maxSizeMB: number): Promise<boolean> {
+  if (file.size > maxSizeMB * 1024 * 1024) return false;
+  if (typeof createImageBitmap !== "function") return false;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const longest = Math.max(bitmap.width, bitmap.height);
+    bitmap.close?.();
+    return longest <= maxDimension;
+  } catch {
+    return false;
+  }
+}
 
 /** A validation/compression failure that carries a user-facing message. */
 export class ImageError extends Error {
@@ -140,12 +149,14 @@ function withExtension(name: string, ext: string): string {
 }
 
 /**
- * Compress a full-size product image: longest edge <= FULL_MAX_DIMENSION,
- * target <= FULL_MAX_SIZE_MB. Preserves the source MIME type
+ * Prepare a full-size product image at the highest sensible quality: kept
+ * untouched when already within budget, otherwise longest edge <=
+ * FULL_MAX_DIMENSION and <= FULL_MAX_SIZE_MB, starting at quality 0.95. Preserves the source MIME type
  * (JPEG/PNG/WebP/AVIF). Returns a new `File` — the original is never mutated.
  */
 export async function compressImage(file: File): Promise<File> {
   assertValidImageFile(file);
+  if (await withinBudget(file, FULL_MAX_DIMENSION, FULL_MAX_SIZE_MB)) return file;
   try {
     const compressed = await imageCompression(file, {
       maxWidthOrHeight: FULL_MAX_DIMENSION,
@@ -167,11 +178,12 @@ export async function compressImage(file: File): Promise<File> {
 }
 
 /**
- * Compress banner artwork. Wide enough for a full-bleed promo strip, light
- * enough to be the first thing a phone downloads. See the budget note above.
+ * Prepare banner artwork: the owner's file as-is when within budget, else a
+ * high-quality scale-down. Phones get a small copy from the resizer.
  */
 export async function compressBannerArtwork(file: File): Promise<File> {
   assertValidImageFile(file);
+  if (await withinBudget(file, BANNER_MAX_DIMENSION, BANNER_MAX_SIZE_MB)) return file;
   try {
     const compressed = await imageCompression(file, {
       maxWidthOrHeight: BANNER_MAX_DIMENSION,
@@ -257,5 +269,24 @@ export function extensionForType(type: string): string {
       return "avif";
     default:
       return "jpg";
+  }
+}
+
+export { SMALL_PHOTO_EDGE, isSmallPhoto } from "@/lib/photo-quality";
+
+/**
+ * Pixel size of a photo about to be uploaded, or null when the browser can't
+ * tell. Recorded with the image so the admin can flag photos too small to
+ * look sharp (see SMALL_PHOTO_EDGE).
+ */
+export async function measureImage(file: Blob): Promise<{ width: number; height: number } | null> {
+  if (typeof createImageBitmap !== "function") return null;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const size = { width: bitmap.width, height: bitmap.height };
+    bitmap.close?.();
+    return size.width > 0 && size.height > 0 ? size : null;
+  } catch {
+    return null;
   }
 }

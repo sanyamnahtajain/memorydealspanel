@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/sheet";
 import { useIsMobile } from "@/components/common";
 import { createBrandLogoUploadTargetAction } from "@/server/actions/brands";
+import { catalogImageUrl } from "@/lib/image-loader";
 
 export interface BrandFormValues {
   name: string;
@@ -234,7 +235,7 @@ function BrandFormBody({
           <div className="relative flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-muted">
             {logo ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={logo} alt="" className="size-full object-contain" />
+              <img src={catalogImageUrl(logo, 128)} alt="" className="size-full object-contain" />
             ) : (
               <ImageIcon
                 className="size-5 text-muted-foreground"

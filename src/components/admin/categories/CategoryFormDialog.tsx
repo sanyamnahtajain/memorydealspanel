@@ -27,6 +27,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { useIsMobile } from "@/components/common";
 import { createCategoryImageUploadTargetAction } from "@/server/actions/categories";
+import { catalogImageUrl } from "@/lib/image-loader";
 
 export interface CategoryFormValues {
   name: string;
@@ -302,7 +303,7 @@ function CategoryFormBody({
           <div className="relative flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-muted">
             {image ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={image} alt="" className="size-full object-cover" />
+              <img src={catalogImageUrl(image, 256)} alt="" className="size-full object-cover" />
             ) : (
               <ImageIcon
                 className="size-5 text-muted-foreground"

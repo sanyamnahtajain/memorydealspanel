@@ -41,6 +41,7 @@ import {
   saveBannerAction,
 } from "@/server/actions/banners";
 import type { AdminBanner } from "@/server/services/banners";
+import { catalogImageUrl } from "@/lib/image-loader";
 
 /**
  * Banner management, one section per slot.
@@ -144,7 +145,7 @@ export function BannerManager({ banners }: { banners: AdminBanner[] }) {
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={banner.mobileImageUrl ?? banner.imageUrl}
+                        src={catalogImageUrl(banner.mobileImageUrl ?? banner.imageUrl, 384)}
                         alt=""
                         className="h-14 w-28 shrink-0 rounded-lg object-cover"
                       />
@@ -537,7 +538,7 @@ function ArtworkField({
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={value}
+              src={catalogImageUrl(value, 384)}
               alt=""
               className="h-14 w-28 rounded-lg border border-border object-cover"
             />

@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip } from "@/components/ui/tooltip";
 import { StatusChip, ConfirmSheet } from "@/components/common";
+import { catalogImageUrl } from "@/lib/image-loader";
 
 interface RowCategory {
   id: string;
@@ -137,7 +138,7 @@ export function CategoryRow({
       >
         {category.image ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={category.image} alt="" className="size-full object-cover" />
+          <img src={catalogImageUrl(category.image, 128)} alt="" className="size-full object-cover" />
         ) : (
           <ImageIcon
             className={cn("text-muted-foreground", isRoot ? "size-4" : "size-3.5")}
