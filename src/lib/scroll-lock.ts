@@ -46,3 +46,23 @@ export function lockBodyScroll(): () => void {
     }
   };
 }
+
+/**
+ * Safety net, called on every route change and whenever the app comes back to
+ * the foreground: if nothing holds a lock yet the body is still frozen, unfreeze
+ * it. A page that cannot scroll and offers no reload button (the installed
+ * app) is a page the shopper has to kill — the "site stucks" report.
+ */
+export function healBodyScroll(): void {
+  if (typeof document === "undefined") return;
+  if (depth === 0 && document.body.style.overflow === "hidden") {
+    document.body.style.overflow = saved ?? "";
+    saved = null;
+  }
+}
+
+/** Test hook: forget every lock. */
+export function _resetScrollLockForTests(): void {
+  depth = 0;
+  saved = null;
+}

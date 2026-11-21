@@ -1,17 +1,15 @@
 import * as React from "react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 const push = vi.fn();
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push, refresh: vi.fn() }),
   usePathname: () => "/",
 }));
-vi.mock("@/app/(storefront)/search/actions", () => ({
-  searchSuggestions: () => Promise.resolve([]),
-}));
+const fetchMock = vi.fn();
 
-import { SearchOverlay } from "./SearchOverlay";
+import { SearchOverlay, _resetSuggestCacheForTests } from "./SearchOverlay";
 import { RECENTS_KEY } from "./search/recents";
 
 beforeAll(() => {
@@ -30,11 +28,26 @@ beforeAll(() => {
   });
 });
 
+function suggestions(items: { id: string; name: string }[]) {
+  return new Response(
+    JSON.stringify({ items: items.map((i) => ({ ...i, slug: i.id, brand: null, thumbUrl: null })) }),
+    { status: 200, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 beforeEach(() => {
   push.mockReset();
   window.localStorage.clear();
+  _resetSuggestCacheForTests();
+  fetchMock.mockReset();
+  fetchMock.mockImplementation(async () => suggestions([]));
+  vi.stubGlobal("fetch", fetchMock);
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 describe("SearchOverlay", () => {
   it("renders recent searches as chips and submits one on tap", () => {
@@ -73,6 +86,65 @@ describe("SearchOverlay", () => {
     fireEvent.keyDown(input, { key: "Enter" });
     expect(push).toHaveBeenCalledWith("/search?q=charger");
     expect(JSON.parse(window.localStorage.getItem(RECENTS_KEY) ?? "[]")).toEqual(["charger"]);
+  });
+
+  it("has a visible Search button once something is typed (phones have no Enter key to find)", () => {
+    render(<SearchOverlay open onClose={() => {}} />);
+    // Empty box: only the tappable magnifier.
+    expect(screen.getAllByRole("button", { name: "Search" })).toHaveLength(1);
+    const input = screen.getByRole("combobox", { name: "Search products" });
+    fireEvent.change(input, { target: { value: "neckband" } });
+    const buttons = screen.getAllByRole("button", { name: "Search" });
+    // The tappable magnifier and the green Search button both submit.
+    expect(buttons.length).toBe(2);
+    fireEvent.click(buttons[buttons.length - 1]);
+    expect(push).toHaveBeenCalledWith("/search?q=neckband");
+  });
+
+  it("submits through the form when the keyboard sends no clean Enter (Android predictive text)", () => {
+    render(<SearchOverlay open onClose={() => {}} />);
+    const input = screen.getByRole("combobox", { name: "Search products" });
+    fireEvent.change(input, { target: { value: "boat" } });
+    // Mid-word the keydown is a composition Enter: ignored…
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    expect(push).not.toHaveBeenCalled();
+    // …and the keyboard's Search key submits the form.
+    fireEvent.submit(screen.getByRole("search"));
+    expect(push).toHaveBeenCalledWith("/search?q=boat");
+  });
+
+  it("asks the suggest API, cancels the stale request and reuses answers it has", async () => {
+    vi.useFakeTimers();
+    fetchMock.mockImplementation(async (url: string) =>
+      suggestions(String(url).includes("q=char") ? [{ id: "p1", name: "Ambrane Charger" }] : []),
+    );
+    render(<SearchOverlay open onClose={() => {}} />);
+    const input = screen.getByRole("combobox", { name: "Search products" });
+
+    fireEvent.change(input, { target: { value: "cha" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    fireEvent.change(input, { target: { value: "char" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    // "cha" was cancelled before it was sent; only "char" went out.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toBe("/api/search/suggest?q=char");
+    expect(screen.getByRole("option", { name: /Ambrane Charger/ })).toBeInTheDocument();
+
+    // Back to "cha" and forward to "char" again: the second "char" is instant.
+    fireEvent.change(input, { target: { value: "cha" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    fireEvent.change(input, { target: { value: "char" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("option", { name: /Ambrane Charger/ })).toBeInTheDocument();
   });
 
   it("renders nothing when closed", () => {

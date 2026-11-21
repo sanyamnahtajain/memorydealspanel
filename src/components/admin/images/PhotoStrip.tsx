@@ -16,6 +16,7 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
+import { lockBodyScroll } from "@/lib/scroll-lock";
 import { AnimatePresence, motion } from "motion/react";
 import {
   ImageOffIcon,
@@ -329,12 +330,11 @@ function Lightbox({
       else if (event.key === "ArrowLeft") onNavigate((index - 1 + count) % count);
     }
     window.addEventListener("keydown", onKey);
-    // Lock body scroll while open.
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    // Lock body scroll while open (shared ref-counted lock).
+    const release = lockBodyScroll();
     return () => {
       window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prevOverflow;
+      release();
     };
   }, [index, count, onClose, onNavigate]);
 

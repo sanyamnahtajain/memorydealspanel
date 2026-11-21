@@ -7,9 +7,10 @@
  *   Desktop: a command-palette style panel floating over a blurred backdrop
  *   (click outside or Esc closes). Both respect reduced motion and are
  *   focus-trapped.
- * - Debounced type-ahead calls the `searchSuggestions` server action, which
- *   returns PRICE-FREE suggestions (id/name/brand/thumb only) — no money ever
- *   reaches this client component regardless of viewer. Live, viewer-aware
+ * - Type-ahead calls GET /api/search/suggest (in-memory index, cancellable,
+ *   cached per query on the device), which returns PRICE-FREE suggestions
+ *   (id/name/brand/thumb only) — no money ever reaches this client component
+ *   regardless of viewer. Live, viewer-aware
  *   pricing lives only on the `/search` results page.
  * - Recent searches persist in localStorage and render as CHIPS; category
  *   quick-chips seed common queries; matched substrings are highlighted.
@@ -26,6 +27,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
+  ArrowLeft,
   ArrowRight,
   ArrowUpRight,
   Clock,
@@ -37,8 +39,8 @@ import {
   X,
 } from "lucide-react";
 
-import { searchSuggestions } from "@/app/(storefront)/search/actions";
 import { cn } from "@/lib/utils";
+import { lockBodyScroll } from "@/lib/scroll-lock";
 import { brandName, titleCase } from "@/lib/display-case";
 import { hapticTap } from "@/lib/haptics";
 import { SlabyPoweredBy } from "@/components/slaby/SlabyPoweredBy";
@@ -54,7 +56,52 @@ import type {
   SearchSuggestion,
 } from "@/components/storefront/search/types";
 
-const DEBOUNCE_MS = 180;
+const DEBOUNCE_MS = 120;
+
+/**
+ * Type-ahead answers this device has already seen, keyed by query. Typing
+ * "charger", deleting back to "char" and retyping is instant, and so is
+ * reopening the sheet. Bounded, and short-lived so new stock shows up.
+ */
+const SUGGEST_TTL_MS = 5 * 60_000;
+const SUGGEST_MAX = 120;
+const suggestCache = new Map<string, { at: number; items: SearchSuggestion[] }>();
+
+function cachedSuggestions(q: string): SearchSuggestion[] | null {
+  const hit = suggestCache.get(q);
+  if (!hit) return null;
+  if (Date.now() - hit.at > SUGGEST_TTL_MS) {
+    suggestCache.delete(q);
+    return null;
+  }
+  return hit.items;
+}
+
+/**
+ * Ask the server for suggestions. A plain GET so the previous letter's
+ * request is CANCELLED when the next one is typed (server actions queue one
+ * behind another and cannot be aborted — that was the "search slow hai").
+ */
+async function fetchSuggestions(q: string, signal: AbortSignal): Promise<SearchSuggestion[]> {
+  const res = await fetch(`/api/search/suggest?q=${encodeURIComponent(q)}`, {
+    signal,
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) throw new Error(`suggest ${res.status}`);
+  const body = (await res.json()) as { items?: SearchSuggestion[] };
+  const items = Array.isArray(body.items) ? body.items : [];
+  if (suggestCache.size >= SUGGEST_MAX) {
+    const oldest = suggestCache.keys().next().value;
+    if (oldest !== undefined) suggestCache.delete(oldest);
+  }
+  suggestCache.set(q, { at: Date.now(), items });
+  return items;
+}
+
+/** Test hook. */
+export function _resetSuggestCacheForTests(): void {
+  suggestCache.clear();
+}
 
 /** Focusable elements considered by the focus trap, in DOM order. */
 const FOCUSABLE =
@@ -115,13 +162,11 @@ export function SearchOverlay({
   }, [open, initialQuery]);
 
   // Lock body scroll while open.
+  // Through the shared ref-counted lock: hand-rolled save/restore here once
+  // raced the boot splash and left the whole shop unscrollable.
   React.useEffect(() => {
     if (!open) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
+    return lockBodyScroll();
   }, [open]);
 
   // Reset the active-row highlight whenever the navigable set changes. The
@@ -132,37 +177,43 @@ export function SearchOverlay({
     return () => window.clearTimeout(t);
   }, [trimmed, rowCount]);
 
-  // Debounced instant search. All state mutation happens inside the timer
-  // callback so nothing is set synchronously during the effect body.
+  // Instant search: an answer this device already has shows at once; anything
+  // else is fetched after a short pause, and a newer letter CANCELS the older
+  // request. The previous results stay on screen while the next ones load (a
+  // spinner in the box says it is working) instead of flashing a skeleton.
   React.useEffect(() => {
     if (!open) return;
-    if (trimmed.length === 0) {
-      const id = ++reqId.current;
-      const clear = window.setTimeout(() => {
-        if (reqId.current === id) {
-          setResults([]);
-          setLoading(false);
-        }
-      }, 0);
-      return () => window.clearTimeout(clear);
-    }
     const id = ++reqId.current;
+    const key = trimmed.toLowerCase();
+    const known = key.length === 0 ? [] : cachedSuggestions(key);
+    if (known) {
+      const show = window.setTimeout(() => {
+        if (reqId.current !== id) return;
+        setResults(known);
+        setLoading(false);
+      }, 0);
+      return () => window.clearTimeout(show);
+    }
+    const controller = new AbortController();
     const spin = window.setTimeout(() => {
       if (reqId.current === id) setLoading(true);
     }, 0);
     const handle = window.setTimeout(async () => {
       try {
-        const rows = await searchSuggestions(trimmed);
+        const rows = await fetchSuggestions(key, controller.signal);
         if (reqId.current === id) setResults(rows);
-      } catch {
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        void error;
         if (reqId.current === id) setResults([]);
       } finally {
-        if (reqId.current === id) setLoading(false);
+        if (reqId.current === id && !controller.signal.aborted) setLoading(false);
       }
     }, DEBOUNCE_MS);
     return () => {
       window.clearTimeout(spin);
       window.clearTimeout(handle);
+      controller.abort();
     };
   }, [trimmed, open]);
 
@@ -211,6 +262,9 @@ export function SearchOverlay({
         return;
       }
       if (e.key === "Enter") {
+        // Mid-word on an Android keyboard the Enter only commits the word;
+        // the <form> below submits once it is really pressed.
+        if (e.nativeEvent.isComposing) return;
         e.preventDefault();
         if (activeRow >= 0) {
           if (trimmed.length === 0) {
@@ -301,15 +355,44 @@ export function SearchOverlay({
               "md:max-h-[76vh] md:w-full md:max-w-2xl md:flex-none md:overflow-hidden md:rounded-3xl md:pt-0 md:shadow-[0_30px_80px_-30px_rgb(0_0_0/0.45)] md:ring-1 md:ring-foreground/10",
             )}
           >
-            {/* Search bar */}
-            <div className="flex items-center gap-2 px-4 pt-3 pb-2 md:px-4 md:pt-4">
+            {/* Search bar — a real <form>, so the keyboard's Search key
+                submits even when a phone keyboard sends no clean Enter
+                keypress (predictive text on Android), and with a visible
+                Search button: retailers type and then look for one to tap. */}
+            <form
+              role="search"
+              action="/search"
+              method="get"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (activeRow >= 0 && trimmed.length > 0 && results[activeRow]) {
+                  openProduct(results[activeRow]);
+                } else {
+                  submit(query);
+                }
+              }}
+              className="flex items-center gap-2 px-3 pt-3 pb-2 md:px-4 md:pt-4"
+            >
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close search"
+                className="inline-flex size-11 shrink-0 items-center justify-center rounded-full text-foreground outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.95] md:hidden"
+              >
+                <ArrowLeft className="size-5" aria-hidden />
+              </button>
               <div className="relative flex flex-1 items-center">
-                <SearchIcon
-                  className="pointer-events-none absolute left-4 size-5 text-muted-foreground"
-                  aria-hidden
-                />
+                <button
+                  type="submit"
+                  tabIndex={-1}
+                  aria-label="Search"
+                  className="absolute left-1.5 inline-flex size-9 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:text-foreground active:scale-[0.92]"
+                >
+                  <SearchIcon className="size-5" aria-hidden />
+                </button>
                 <input
                   ref={inputRef}
+                  name="q"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   type="search"
@@ -323,12 +406,12 @@ export function SearchOverlay({
                     activeRow >= 0 ? `search-row-${activeRow}` : undefined
                   }
                   autoComplete="off"
-                  className="h-12 w-full rounded-2xl bg-muted/70 pr-11 pl-12 text-base text-foreground outline-none ring-1 ring-foreground/5 transition-[box-shadow,background-color] placeholder:text-muted-foreground/80 focus-visible:bg-card focus-visible:ring-2 focus-visible:ring-ring/50 md:h-14 md:text-lg [&::-webkit-search-cancel-button]:hidden"
+                  className="h-12 w-full rounded-2xl bg-muted/70 pr-11 pl-11 text-base text-foreground outline-none ring-1 ring-foreground/5 transition-[box-shadow,background-color] placeholder:text-muted-foreground/80 focus-visible:bg-card focus-visible:ring-2 focus-visible:ring-ring/50 md:h-14 md:pl-12 md:text-lg [&::-webkit-search-cancel-button]:hidden"
                 />
                 {loading ? (
                   <Loader2
                     className="absolute right-4 size-4.5 animate-spin text-muted-foreground"
-                    aria-hidden
+                    aria-label="Searching"
                   />
                 ) : trimmed.length > 0 ? (
                   <button
@@ -344,14 +427,15 @@ export function SearchOverlay({
                   </button>
                 ) : null}
               </div>
-              <button
-                type="button"
-                onClick={onClose}
-                className="inline-flex min-h-11 shrink-0 items-center rounded-full px-3 text-sm font-semibold text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97] md:hidden"
-              >
-                Cancel
-              </button>
-            </div>
+              {trimmed.length > 0 ? (
+                <button
+                  type="submit"
+                  className="inline-flex min-h-11 shrink-0 items-center rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground outline-none transition-colors hover:bg-primary/90 focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97]"
+                >
+                  Search
+                </button>
+              ) : null}
+            </form>
 
             {/* Body */}
             <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-2 pb-6 md:pb-4">

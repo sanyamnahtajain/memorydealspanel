@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { lockBodyScroll } from "@/lib/scroll-lock";
 
 /**
  * Full-screen celebration takeover for milestone events (order placed,
@@ -71,11 +72,7 @@ export function CelebrationOverlay({
   // Scroll lock while the takeover is up.
   React.useEffect(() => {
     if (!open) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
+    return lockBodyScroll();
   }, [open]);
 
   return (

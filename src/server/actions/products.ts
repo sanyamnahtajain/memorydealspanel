@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { resetSwrCache } from "@/server/cache/swr";
+import { resetSearchIndex } from "@/server/storefront/search-index";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/server/db";
@@ -94,6 +95,8 @@ function revalidateProductViews(id?: string): void {
   // The home shell memoises its catalogue bundle in process (see
   // src/app/(storefront)/page.tsx); drop it so the change shows at once.
   resetSwrCache("home-data");
+  // …and the in-memory search index, so a renamed or new product is findable now.
+  resetSearchIndex();
   revalidatePath("/");
 }
 

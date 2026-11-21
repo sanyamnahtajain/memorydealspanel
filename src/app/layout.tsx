@@ -13,6 +13,8 @@ import { PWARegister } from "@/components/pwa/PWARegister";
 import { PushSoundBridge } from "@/components/notify/PushSoundBridge";
 import { InstallPrompt } from "@/components/pwa/InstallPrompt";
 import { SplashScreen } from "@/components/pwa/SplashScreen";
+import { ActivityBar } from "@/components/feedback/ActivityBar";
+import { BOOT_SCRIPT, BOOT_STYLE } from "@/lib/boot-script";
 import { ScrollToTop } from "@/components/common/ScrollToTop";
 import { siteBaseUrl } from "./seo-site-url";
 import "./globals.css";
@@ -103,6 +105,15 @@ export default async function RootLayout({
             for the prompt gone. Trade-off: it also disables manual Chrome
             translation for this site. */}
         <meta name="google" content="notranslate" />
+        {/* FIRST, before any app code: recovers a page whose scripts failed
+            to load (stale after a deploy), keeps taps made before the app has
+            started, and reports both. See src/lib/boot-script.ts. */}
+        <script
+          nonce={nonce}
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{ __html: BOOT_SCRIPT }}
+        />
+        <style dangerouslySetInnerHTML={{ __html: BOOT_STYLE }} />
         {/* Render-blocking theme bootstrap — sets the `dark` class before the
             first paint to prevent a flash of the wrong theme (FOUC). */}
         <script
@@ -158,6 +169,7 @@ export default async function RootLayout({
             {/* PWA_REGISTER_SLOT */}
             <PWARegister />
             <SplashScreen />
+            <ActivityBar />
             <InstallPrompt />
             <AppToaster />
             {/* Turns a push that arrives while the app is open into the

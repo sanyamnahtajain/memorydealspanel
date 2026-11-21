@@ -26,7 +26,7 @@
  * open — while the OS handles the background case.
  */
 
-const CACHE_VERSION = "v8";
+const CACHE_VERSION = "v9";
 const CACHE_NAME = `memorydeals-${CACHE_VERSION}`;
 const OFFLINE_URL = "/offline";
 

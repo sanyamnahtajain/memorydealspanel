@@ -4,6 +4,7 @@ import * as React from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 
 import { APP_NAME, APP_TAGLINE } from "@/lib/constants";
+import { lockBodyScroll } from "@/lib/scroll-lock";
 
 /**
  * CRED-style boot splash for the INSTALLED app (owner request): a dark,
@@ -87,13 +88,10 @@ export function SplashScreen() {
   }, [phase]);
 
   // Scroll lock while the boot plays.
+  // Shared ref-counted lock — see src/lib/scroll-lock.ts for the incident.
   React.useEffect(() => {
     if (phase === "idle") return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
+    return lockBodyScroll();
   }, [phase]);
 
   if (phase === "idle") return null;
