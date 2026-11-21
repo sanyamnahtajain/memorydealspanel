@@ -25,6 +25,29 @@ export interface DescribeInput {
   category?: string | null;
   moq?: number | null;
   packMultiple?: number | null;
+  /**
+   * Verified specs (key → value), e.g. taken from the brand's official
+   * product page. Listed first in Key points; name-derived facts that say the
+   * same thing are dropped.
+   */
+  specs?: Record<string, unknown> | null;
+}
+
+/** Printable spec rows, in order, from the product's `specs` object. */
+function specRows(specs: DescribeInput["specs"]): string[] {
+  if (!specs || typeof specs !== "object" || Array.isArray(specs)) return [];
+  return Object.entries(specs)
+    .filter(([key, value]) => key.trim() && value != null && String(value).trim())
+    .map(([key, value]) => `${key.trim()}: ${String(value).trim()}`);
+}
+
+/** Does a spec row already state this name-derived fact? */
+function coveredBy(fact: string, rows: string[]): boolean {
+  const hay = rows.join(" ").toLowerCase().replace(/,/g, "");
+  const number = fact.replace(/,/g, "").match(/\d+(?:\.\d+)?/)?.[0];
+  if (number && new RegExp(`(^|[^\\d.])${number.replace(".", "\\.")}(?![\\d])`).test(hay)) return true;
+  const keyword = fact.toLowerCase().match(/type-c|usb-c|lightning|micro-usb|anc|enc|gan|magsafe|magnetic|wireless|rgb|amoled|bluetooth calling|fast charging|power delivery|quick charge/)?.[0];
+  return Boolean(keyword && hay.includes(keyword.replace("magsafe", "mag")));
 }
 
 /* ------------------------------------------------------------------ */
@@ -198,11 +221,20 @@ export function readableName(name: string): string {
     .join(" ");
 }
 
+/** Brands whose official spelling isn't plain title case. */
+const BRAND_CASING: Record<string, string> = {
+  boat: "boAt", realme: "realme", oneplus: "OnePlus", jbl: "JBL", hp: "HP", mi: "Mi", iqoo: "iQOO",
+  sandisk: "SanDisk", "cp plus": "CP Plus", dji: "DJI", mz: "MZ", erd: "ERD", ikare: "iKare", lg: "LG",
+  hmd: "HMD", evm: "EVM", tcl: "TCL", "fire-boltt": "Fire-Boltt", fireboltt: "Fire-Boltt",
+};
+
 function cleanBrand(brand: string | null | undefined, name: string): string | null {
   const b = (brand ?? "").trim();
   if (!b || /^(other|others|na|n\/a|none|generic|unbranded|local)$/i.test(b)) return null;
-  // The shop's own brand display rule (boAt, JBL, HP…), then — if the product
-  // name spells the brand its own way ("boAt PB300") — that spelling.
+  const known = BRAND_CASING[b.toLowerCase()];
+  if (known) return known;
+  // Otherwise: the name's own spelling when it is deliberate mixed case
+  // ("Nothing", "Ubon"), else the shop's brand display rule.
   const inName = name.match(new RegExp(`\\b${b.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i"))?.[0];
   if (inName && inName !== inName.toUpperCase()) return inName;
   return brandName(b) || null;
@@ -223,7 +255,10 @@ function article(phrase: string): string {
  * name, and a wholesale line when the product has a minimum order or pack.
  */
 export function describeProduct(input: DescribeInput): string {
-  const name = readableName(input.name);
+  const officialModel = input.specs && typeof input.specs === "object" && !Array.isArray(input.specs)
+    ? String((input.specs as Record<string, unknown>).Model ?? "").trim()
+    : "";
+  const name = officialModel || readableName(input.name);
   const kind = productKind(input);
   const brand = cleanBrand(input.brand, input.name);
   const facts = factsFromName(input.name);
@@ -240,8 +275,11 @@ export function describeProduct(input: DescribeInput): string {
   );
   const paragraph = `${opener} ${pick(kind.use, input.name + "u")}`;
 
-  const points = [...facts];
-  if (brand) points.push(`Brand: ${brand}`);
+  // "Model" is the opening sentence and "Type" restates it — keep both in the
+  // spec table, not in the bullets.
+  const official = specRows(input.specs).filter((row) => !/^(model|type):/i.test(row));
+  const points = [...official, ...facts.filter((fact) => !coveredBy(fact, official))];
+  if (brand && !official.some((row) => /^brand:/i.test(row))) points.push(`Brand: ${brand}`);
 
   const lines = [paragraph];
   if (points.length > 0) {
@@ -254,6 +292,11 @@ export function describeProduct(input: DescribeInput): string {
     lines.push("", `Wholesale: ${parts.join(", ")}.`);
   }
   return lines.join("\n");
+}
+
+/** Every opening line the writer can produce — used to recognise its own text. */
+export function writerSentences(): string[] {
+  return [...KINDS, FALLBACK].flatMap((kind) => kind.use);
 }
 
 /** Is this box empty enough to fill? Owner-written text is never replaced. */

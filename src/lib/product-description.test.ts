@@ -64,6 +64,28 @@ describe("describeProduct", () => {
   });
 });
 
+describe("describeProduct with verified specs", () => {
+  it("lists official specs first and drops name facts they already state", () => {
+    const text = describeProduct({
+      name: "boAt Airdopes 141 ANC 32dB BT 5.3",
+      brand: "BOAT",
+      category: "Bluetooth Airpods",
+      specs: { Playback: "Up to 42 hours", Bluetooth: "v5.3", ANC: "Up to 32dB", "Water resistance": "IPX5" },
+    });
+    const points = text.split("Key points\n")[1].split("\n");
+    expect(points.slice(0, 4)).toEqual(["• Playback: Up to 42 hours", "• Bluetooth: v5.3", "• ANC: Up to 32dB", "• Water resistance: IPX5"]);
+    expect(text).not.toContain("• Bluetooth 5.3");
+    expect(text).not.toContain("Active noise cancellation (ANC)");
+    expect(text).toContain("• Brand: boAt");
+  });
+
+  it("ignores empty or malformed specs", () => {
+    const plain = describeProduct({ name: "realme T110", brand: "realme", category: "Bluetooth Airpods" });
+    expect(describeProduct({ name: "realme T110", brand: "realme", category: "Bluetooth Airpods", specs: { "": "x", Colour: "" } })).toBe(plain);
+    expect(describeProduct({ name: "realme T110", brand: "realme", category: "Bluetooth Airpods", specs: [] as never })).toBe(plain);
+  });
+});
+
 describe("needsDescription", () => {
   it("fills only empty boxes — owner-written text is never replaced", () => {
     expect(needsDescription(null)).toBe(true);
