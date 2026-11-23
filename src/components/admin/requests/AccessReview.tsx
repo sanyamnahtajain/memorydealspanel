@@ -4,14 +4,21 @@ import * as React from "react";
 import {
   AlertTriangle as AlertTriangleIcon,
   BadgeCheck as BadgeCheckIcon,
+  Eye as EyeIcon,
+  Hourglass as HourglassIcon,
+  KeyRound as KeyRoundIcon,
+  Lock as LockIcon,
   OctagonX as OctagonXIcon,
+  ShoppingCart as ShoppingCartIcon,
   Sparkles as SparklesIcon,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import {
+  agoLabel,
   OVERRIDE_REASON_MIN,
   type AccessReview,
+  type TrailEvent,
   type AccessReviewLevel,
   type FactTone,
 } from "@/lib/access-review";
@@ -107,14 +114,18 @@ export function AccessReviewLine({
   review,
   className,
   maxFacts = 4,
+  showNow = true,
 }: {
   review: AccessReview;
   className?: string;
   maxFacts?: number;
+  /** End the trail with a "now — asking again" point (open requests). */
+  showNow?: boolean;
 }) {
   const emphasise = review.level === "hold" || review.level === "watch";
+  const hasTrail = review.history.trail.length > 0;
   return (
-    <div className={cn("flex flex-col gap-1.5", className)}>
+    <div className={cn("flex w-full flex-col gap-1.5", className)}>
       <p
         className={cn(
           "flex items-start gap-1.5 text-xs leading-snug",
@@ -128,7 +139,8 @@ export function AccessReviewLine({
         <ReviewLevelPill level={review.level} className="mt-px" />
         <span className={emphasise ? undefined : "pt-0.5"}>{review.headline}</span>
       </p>
-      <Facts review={review} max={maxFacts} />
+      {hasTrail ? <AccessTrail review={review} showNow={showNow} /> : null}
+      <Facts review={review} max={hasTrail ? Math.min(maxFacts, 3) : maxFacts} />
     </div>
   );
 }
@@ -140,9 +152,12 @@ export function AccessReviewLine({
 export function AccessReviewNotice({
   review,
   className,
+  showNow = true,
 }: {
   review: AccessReview;
   className?: string;
+  /** End the trail with a "now" point — false on a profile with live access. */
+  showNow?: boolean;
 }) {
   const meta = LEVEL[review.level];
   const Icon = meta.icon;
@@ -165,13 +180,19 @@ export function AccessReviewNotice({
           )}
           aria-hidden
         />
-        <div className="min-w-0 space-y-2">
+        <div className="min-w-0 flex-1 space-y-1">
           <p className="text-sm font-semibold text-foreground">{review.headline}</p>
           {review.advice ? (
             <p className="text-xs text-muted-foreground">{review.advice}</p>
           ) : null}
-          <Facts review={review} />
         </div>
+      </div>
+      {/* Full width under the headline — a phone needs every pixel here. */}
+      <div className="mt-3 space-y-3">
+        <ReviewStats review={review} />
+        {review.history.trail.length > 0 || showNow ? (
+          <AccessTrail review={review} variant="full" showNow={showNow} />
+        ) : null}
       </div>
     </div>
   );
@@ -240,5 +261,331 @@ export function OverrideReasonField({
           : "Saved in the activity log with your name."}
       </p>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Graphics: verdict accent, trail, number tiles                       */
+/* ------------------------------------------------------------------ */
+
+/** A thin bar in the verdict's colour across the top of a card. */
+export function ReviewAccentBar({
+  level,
+  side = "top",
+}: {
+  level: AccessReviewLevel;
+  /** "top" for cards, "left" for list rows. */
+  side?: "top" | "left";
+}) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "pointer-events-none absolute",
+        side === "top" ? "inset-x-0 top-0 h-1" : "inset-y-0 left-0 w-1",
+        level === "hold"
+          ? "bg-destructive"
+          : level === "watch"
+            ? "bg-warning"
+            : level === "good"
+              ? "bg-success"
+              : "bg-primary/60",
+      )}
+    />
+  );
+}
+
+/**
+ * Button styling that points at the action the review suggests: on a held
+ * shop Reject is the solid button and Approve wears a lock.
+ */
+export function suggestedActions(level: AccessReviewLevel | undefined) {
+  const hold = level === "hold";
+  return {
+    rejectClassName: hold
+      ? "bg-destructive text-white hover:bg-destructive/90 dark:bg-destructive dark:hover:bg-destructive/90"
+      : undefined,
+    approveVariant: hold ? ("outline" as const) : ("default" as const),
+    ApproveIcon: hold ? LockIcon : null,
+    approveLabel: hold ? "Approve…" : level === "watch" ? "Approve again" : "Approve",
+  };
+}
+
+// Pinned to India time: the server renders in UTC, the phone in IST — an
+// unpinned date near midnight would differ between the two (hydration error).
+const shortDate = new Intl.DateTimeFormat("en-IN", {
+  day: "numeric",
+  month: "short",
+  timeZone: "Asia/Kolkata",
+});
+const longDate = new Intl.DateTimeFormat("en-IN", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  timeZone: "Asia/Kolkata",
+});
+
+function eventText(e: TrailEvent): string {
+  const when = longDate.format(new Date(e.at));
+  if (e.kind === "order") return `Order placed · ${when}`;
+  return e.unused ? `Approved · ${when} · no order after` : `Approved · ${when} · ordered after`;
+}
+
+function TrailNode({
+  event,
+  full,
+  align = "center",
+}: {
+  event: TrailEvent | "now";
+  full: boolean;
+  /** Where the note sits, so the first/last ones never run off the card. */
+  align?: "start" | "center" | "end";
+}) {
+  const size = full ? "size-7" : "size-6";
+  const icon = full ? "size-3.5" : "size-3";
+  let look: string;
+  let Icon: React.ComponentType<{ className?: string }>;
+  let text: string;
+  let label: string;
+  if (event === "now") {
+    look = "border-2 border-dashed border-muted-foreground/60 bg-background text-muted-foreground";
+    Icon = HourglassIcon;
+    text = "Now · asking for prices";
+    label = "Now";
+  } else if (event.kind === "order") {
+    look = "bg-success text-white";
+    Icon = ShoppingCartIcon;
+    text = eventText(event);
+    label = shortDate.format(new Date(event.at));
+  } else if (event.unused) {
+    look = "border-2 border-destructive bg-destructive/10 text-destructive";
+    Icon = KeyRoundIcon;
+    text = eventText(event);
+    label = shortDate.format(new Date(event.at));
+  } else {
+    look = "border-2 border-success bg-background text-success";
+    Icon = KeyRoundIcon;
+    text = eventText(event);
+    label = shortDate.format(new Date(event.at));
+  }
+  return (
+    <li className="group relative flex shrink-0 flex-col items-center">
+      {/* tabIndex -1: a tap (phone) focuses it and shows the same note a
+          mouse gets on hover, but a dialog's auto-focus never lands here.
+          Keyboard and screen-reader users get the whole story from the
+          list's own label. */}
+      <span
+        tabIndex={-1}
+        aria-label={text}
+        className={cn(
+          "grid place-items-center rounded-full outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+          size,
+          look,
+        )}
+      >
+        <Icon className={icon} aria-hidden />
+      </span>
+      {full ? (
+        // Hangs under the point without widening it, so seven dated points
+        // still fit a phone. The ends align inward to stay on the card.
+        <span
+          className={cn(
+            "absolute top-full mt-1 text-[10px] leading-none whitespace-nowrap text-muted-foreground tabular-nums",
+            align === "start" ? "left-0" : align === "end" ? "right-0" : "left-1/2 -translate-x-1/2",
+          )}
+        >
+          {label}
+        </span>
+      ) : null}
+      <span
+        role="tooltip"
+        className={cn(
+          "pointer-events-none absolute bottom-full z-20 mb-1.5 hidden rounded-md bg-foreground px-2 py-1 text-[11px] whitespace-nowrap text-background shadow-md group-focus-within:block group-hover:block",
+          align === "start" ? "left-0" : align === "end" ? "right-0" : "left-1/2 -translate-x-1/2",
+        )}
+      >
+        {text}
+      </span>
+    </li>
+  );
+}
+
+/** The line between two points: red and dashed after an unused approval. */
+function TrailLink({ after, full }: { after: TrailEvent; full: boolean }) {
+  const dead = after.kind === "approval" && after.unused;
+  return (
+    <li
+      aria-hidden
+      className={cn(
+        "min-w-2 flex-1 self-start",
+        full ? "mt-[13px]" : "mt-[11px]",
+        dead ? "border-t-2 border-dashed border-destructive/60" : "h-0.5 bg-border",
+      )}
+    />
+  );
+}
+
+/**
+ * The shop's story on one line, oldest → newest: every approval (key) and
+ * order (cart). An approval that no order followed is red, and so is the
+ * stretch after it — "approved, nothing, approved, nothing" reads at a glance.
+ */
+export function AccessTrail({
+  review,
+  variant = "compact",
+  showNow = true,
+}: {
+  review: AccessReview;
+  variant?: "compact" | "full";
+  showNow?: boolean;
+}) {
+  const full = variant === "full";
+  const { trail, trailEarlier } = review.history;
+  const summary = [
+    trailEarlier ? `${trailEarlier} earlier` : null,
+    ...trail.map(eventText),
+    showNow ? "now asking for prices" : null,
+  ]
+    .filter(Boolean)
+    .join("; ");
+
+  return (
+    <div className="space-y-2">
+      <ol
+        aria-label={`History: ${summary || "nothing yet"}`}
+        className={cn("flex w-full items-start", full ? "pb-4" : "max-w-xs")}
+      >
+        {trailEarlier > 0 ? (
+          <>
+            <li className="relative flex shrink-0 flex-col items-center">
+              <span
+                className={cn(
+                  "grid place-items-center rounded-full bg-muted text-[10px] font-semibold text-muted-foreground tabular-nums",
+                  full ? "size-7" : "size-6",
+                )}
+              >
+                +{trailEarlier}
+              </span>
+              {full ? (
+                <span className="absolute top-full left-0 mt-1 text-[10px] leading-none whitespace-nowrap text-muted-foreground">
+                  earlier
+                </span>
+              ) : null}
+            </li>
+            <li aria-hidden className={cn("h-0.5 min-w-2 flex-1 self-start bg-border", full ? "mt-[13px]" : "mt-[11px]")} />
+          </>
+        ) : null}
+        {trail.map((event, i) => (
+          <React.Fragment key={`${event.kind}-${event.at}`}>
+            {i > 0 ? <TrailLink after={trail[i - 1]!} full={full} /> : null}
+            <TrailNode
+              event={event}
+              full={full}
+              align={
+                i === 0 && trailEarlier === 0
+                  ? "start"
+                  : i === trail.length - 1 && !showNow
+                    ? "end"
+                    : "center"
+              }
+            />
+          </React.Fragment>
+        ))}
+        {showNow ? (
+          <>
+            {trail.length > 0 ? <TrailLink after={trail[trail.length - 1]!} full={full} /> : null}
+            <TrailNode event="now" full={full} align={trail.length > 0 ? "end" : "start"} />
+          </>
+        ) : null}
+      </ol>
+      {full && trail.length > 0 ? (
+        <ul className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground" aria-label="Legend">
+          <li className="inline-flex items-center gap-1">
+            <span className="grid size-3.5 place-items-center rounded-full bg-success text-white">
+              <ShoppingCartIcon className="size-2" aria-hidden />
+            </span>
+            Order
+          </li>
+          <li className="inline-flex items-center gap-1">
+            <span className="grid size-3.5 place-items-center rounded-full border border-success text-success">
+              <KeyRoundIcon className="size-2" aria-hidden />
+            </span>
+            Approved, then ordered
+          </li>
+          <li className="inline-flex items-center gap-1">
+            <span className="grid size-3.5 place-items-center rounded-full border border-destructive bg-destructive/10 text-destructive">
+              <KeyRoundIcon className="size-2" aria-hidden />
+            </span>
+            Approved, no order after
+          </li>
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+/** Four numbers that decide it: orders, last order, unused approvals, views. */
+export function ReviewStats({ review }: { review: AccessReview }) {
+  const h = review.history;
+  const unusedTone =
+    h.approvalsSinceLastOrder >= 2
+      ? "text-destructive"
+      : h.approvalsSinceLastOrder === 1
+        ? "text-amber-700 dark:text-amber-300"
+        : "text-success";
+  const tiles: {
+    label: string;
+    value: string;
+    sub?: string;
+    icon: React.ComponentType<{ className?: string }>;
+    iconClass: string;
+  }[] = [
+    {
+      label: "Orders",
+      value: String(h.ordersTotal),
+      sub: h.cancelledTotal ? `+${h.cancelledTotal} cancelled` : h.ordersRecent ? `${h.ordersRecent} in 30 days` : undefined,
+      icon: ShoppingCartIcon,
+      iconClass: h.ordersTotal > 0 ? "text-success" : "text-muted-foreground",
+    },
+    {
+      label: "Last order",
+      value: h.lastOrderAt ? agoLabel(h.lastOrderAt).replace(" days ago", "d ago") : "Never",
+      icon: HourglassIcon,
+      iconClass: h.lastOrderAt ? "text-muted-foreground" : "text-destructive",
+    },
+    {
+      label: "Approved, no order",
+      value: h.approvalsTotal ? `${h.approvalsSinceLastOrder} of ${h.approvalsTotal}` : "—",
+      icon: KeyRoundIcon,
+      iconClass: h.approvalsTotal ? unusedTone : "text-muted-foreground",
+    },
+    {
+      label: "Seen in 30 days",
+      value: String(h.viewsRecent),
+      sub: "products",
+      icon: EyeIcon,
+      iconClass: "text-muted-foreground",
+    },
+  ];
+  return (
+    <dl className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+      {tiles.map((t) => {
+        const Icon = t.icon;
+        return (
+          <div key={t.label} className="rounded-lg border border-border/70 bg-background/70 px-2.5 py-2">
+            <dt className="flex items-center gap-1 text-[11px] font-medium whitespace-nowrap text-muted-foreground">
+              <Icon className={cn("size-3", t.iconClass)} aria-hidden />
+              {t.label}
+            </dt>
+            <dd className="mt-0.5 text-base leading-tight font-semibold text-foreground tabular-nums">
+              {t.value}
+              {t.sub ? (
+                <span className="ml-1 text-[10px] font-normal text-muted-foreground">{t.sub}</span>
+              ) : null}
+            </dd>
+          </div>
+        );
+      })}
+    </dl>
   );
 }

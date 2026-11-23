@@ -707,7 +707,14 @@ export function CustomerDetailModal({
             : "This customer cannot see prices right now."}
         </p>
 
-        {review ? <AccessReviewNotice review={review} className="mt-3" /> : null}
+        {review ? (
+          <AccessReviewNotice
+            review={review}
+            className="mt-3"
+            // "Now · asking for prices" only while a request is open.
+            showNow={status === "PENDING" || (profile?.requests ?? []).some((r) => r.status === "PENDING" || r.status === "SNOOZED")}
+          />
+        ) : null}
 
         {(canApprove || priceAccess) && (
           <div className="mt-3 rounded-lg border border-border bg-background p-3">

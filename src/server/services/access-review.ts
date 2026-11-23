@@ -1,6 +1,7 @@
 import { prisma } from "@/server/db";
 import {
   ACCESS_REVIEW_POLICY,
+  buildTrail,
   EMPTY_HISTORY,
   reviewAccess,
   type AccessHistory,
@@ -26,7 +27,10 @@ export async function getAccessReviews(
 
   const since = new Date(now.getTime() - ACCESS_REVIEW_POLICY.recentDays * 86_400_000);
 
-  const [ordersByStatus, recentOrders, grants, rejections, views] = await Promise.all([
+  // The trail only needs the recent past; a year is far more than six points.
+  const trailSince = new Date(now.getTime() - 365 * 86_400_000);
+
+  const [ordersByStatus, recentOrders, grants, rejections, views, orderDates] = await Promise.all([
     prisma.order.groupBy({
       by: ["customerId", "status"],
       where: { customerId: { in: ids } },
@@ -51,6 +55,10 @@ export async function getAccessReviews(
       by: ["customerId"],
       where: { customerId: { in: ids }, createdAt: { gte: since } },
       _count: { _all: true },
+    }),
+    prisma.order.findMany({
+      where: { customerId: { in: ids }, status: { not: "CANCELLED" }, placedAt: { gte: trailSince } },
+      select: { customerId: true, placedAt: true },
     }),
   ]);
 
@@ -98,6 +106,27 @@ export async function getAccessReviews(
     if (!h.lastOrderAt || grant.approvedAt.toISOString() > h.lastOrderAt) {
       h.approvalsSinceLastOrder += 1;
     }
+  }
+
+  // Trail: admin approvals + real orders, per customer.
+  const approvalsBy = new Map<string, string[]>();
+  for (const grant of grants) {
+    if (grant.grantedBy.startsWith("system:")) continue;
+    const list = approvalsBy.get(grant.customerId) ?? [];
+    list.push(grant.approvedAt.toISOString());
+    approvalsBy.set(grant.customerId, list);
+  }
+  const ordersBy = new Map<string, string[]>();
+  for (const o of orderDates) {
+    const list = ordersBy.get(o.customerId) ?? [];
+    list.push(o.placedAt.toISOString());
+    ordersBy.set(o.customerId, list);
+  }
+  for (const id of ids) {
+    const approvals = approvalsBy.get(id) ?? [];
+    const orders = ordersBy.get(id) ?? [];
+    if (approvals.length === 0 && orders.length === 0) continue;
+    Object.assign(get(id), buildTrail(approvals, orders));
   }
 
   for (const id of ids) out.set(id, reviewAccess(hist.get(id) ?? { ...EMPTY_HISTORY }, now));

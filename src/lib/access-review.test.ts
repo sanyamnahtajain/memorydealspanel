@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildTrail,
   EMPTY_HISTORY,
   matchesReviewFilter,
   NO_ORDER_REJECT_REASON,
@@ -108,5 +109,35 @@ describe("reviewPushLine", () => {
     const r = reviewAccess(h({ approvalsTotal: 3, approvalsSinceLastOrder: 3 }), NOW);
     expect(reviewPushLine(r)).toBe("Approved 3 times already — never placed an order.");
     expect(reviewPushLine(reviewAccess(h({}), NOW))).toBeNull();
+  });
+});
+
+describe("buildTrail", () => {
+  it("orders approvals and orders oldest-first and marks approvals no order followed", () => {
+    const { trail, trailEarlier } = buildTrail(
+      [ago(200), ago(130), ago(60)],
+      [ago(180)],
+    );
+    expect(trailEarlier).toBe(0);
+    expect(trail.map((e) => [e.kind, e.unused ?? null])).toEqual([
+      ["approval", false], // ordered after
+      ["order", null],
+      ["approval", true], // approved, nothing, approved again
+      ["approval", true], // still nothing
+    ]);
+  });
+
+  it("keeps only the latest points and counts the rest as earlier", () => {
+    const approvals = [300, 250, 200, 150, 100, 50, 20].map(ago);
+    const { trail, trailEarlier } = buildTrail(approvals, [], 4);
+    expect(trailEarlier).toBe(3);
+    expect(trail).toHaveLength(4);
+    expect(trail.at(-1)!.at).toBe(ago(20));
+  });
+
+  it("an order on the same instant as an approval counts as using it", () => {
+    const at = ago(10);
+    expect(buildTrail([at], [at]).trail.map((e) => e.kind)).toEqual(["approval", "order"]);
+    expect(buildTrail([at], [at]).trail[0]!.unused).toBe(false);
   });
 });

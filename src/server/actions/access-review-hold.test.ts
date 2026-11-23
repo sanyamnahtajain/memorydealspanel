@@ -146,6 +146,16 @@ describe("getAccessReviews (batched history)", () => {
     });
 
     expect(reviews.get(brandNew)!.level).toBe("new");
+    expect(reviews.get(brandNew)!.history.trail).toEqual([]);
+
+    // The trail a person reads: approval → order → approval → approval
+    // (the cancelled order and the system renewal are not on it).
+    expect(f.history.trail.map((e) => [e.kind, e.unused ?? null])).toEqual([
+      ["approval", false],
+      ["order", null],
+      ["approval", true],
+      ["approval", true],
+    ]);
   });
 
   it("answers for an empty list without touching the database", async () => {

@@ -747,7 +747,7 @@ function RenewalsList({
                   ) : null}
                 </div>
                 {item.review ? (
-                  <AccessReviewLine review={item.review} className="mt-2" maxFacts={6} />
+                  <AccessReviewLine review={item.review} className="mt-2" maxFacts={6} showNow={false} />
                 ) : null}
               </div>
               <div className="flex max-w-full flex-wrap items-center gap-2">
@@ -779,7 +779,9 @@ function RenewalsList({
                 : null}
             </DialogDescription>
           </DialogHeader>
-          {renewing?.review ? <AccessReviewNotice review={renewing.review} /> : null}
+          {renewing?.review ? (
+            <AccessReviewNotice review={renewing.review} showNow={false} />
+          ) : null}
           {guard.held ? (
             <OverrideReasonField
               id="renew-override-reason"

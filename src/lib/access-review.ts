@@ -25,6 +25,17 @@ export const ACCESS_REVIEW_POLICY = {
   holdAfterUnusedApprovals: 2,
 } as const;
 
+/** One point on the shop's approval/order trail (ISO date). */
+export interface TrailEvent {
+  kind: "approval" | "order";
+  at: string;
+  /** Approvals only: no order followed it before the next approval / now. */
+  unused?: boolean;
+}
+
+/** How many trail points a screen shows; older ones fold into "+N earlier". */
+export const TRAIL_MAX = 6;
+
 /** Raw, serialisable facts about one customer (ISO dates). */
 export interface AccessHistory {
   /** Orders that count — everything except CANCELLED. */
@@ -42,6 +53,10 @@ export interface AccessHistory {
   rejectionsTotal: number;
   /** Product pages viewed within `recentDays`. */
   viewsRecent: number;
+  /** The latest approvals and orders, oldest first (at most TRAIL_MAX). */
+  trail: TrailEvent[];
+  /** Trail points older than the ones kept. */
+  trailEarlier: number;
 }
 
 export type AccessReviewLevel =
@@ -84,7 +99,31 @@ export const EMPTY_HISTORY: AccessHistory = {
   lastApprovedAt: null,
   rejectionsTotal: 0,
   viewsRecent: 0,
+  trail: [],
+  trailEarlier: 0,
 };
+
+/**
+ * Merge approvals and orders into the trail a person reads left to right:
+ * oldest first, each approval marked "unused" when no order came after it
+ * before the next approval (or now). Only the last `max` points are kept.
+ */
+export function buildTrail(
+  approvals: readonly string[],
+  orders: readonly string[],
+  max: number = TRAIL_MAX,
+): { trail: TrailEvent[]; trailEarlier: number } {
+  const events: TrailEvent[] = [
+    ...approvals.map((at) => ({ kind: "approval" as const, at })),
+    ...orders.map((at) => ({ kind: "order" as const, at })),
+  ].sort((a, b) => (a.at === b.at ? (a.kind === "approval" ? -1 : 1) : a.at < b.at ? -1 : 1));
+  // An approval was used when the very next event is an order.
+  events.forEach((e, i) => {
+    if (e.kind === "approval") e.unused = events[i + 1]?.kind !== "order";
+  });
+  const trailEarlier = Math.max(0, events.length - max);
+  return { trail: events.slice(trailEarlier), trailEarlier };
+}
 
 /** Reject reason used for the hold case (also offered as a quick pick). */
 export const NO_ORDER_REJECT_REASON = "No order after earlier approvals";

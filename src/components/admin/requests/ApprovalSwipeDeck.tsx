@@ -58,7 +58,9 @@ import {
   AccessReviewLine,
   AccessReviewNotice,
   OverrideReasonField,
+  ReviewAccentBar,
   ReviewLevelPill,
+  suggestedActions,
   useApprovalGuard,
 } from "@/components/admin/requests/AccessReview";
 import {
@@ -754,6 +756,8 @@ function SwipeCard({
 }) {
   const reduced = useReducedMotion();
   const [expanded, setExpanded] = React.useState(false);
+  const held = request.review?.level === "hold";
+  const act = suggestedActions(request.review?.level);
   const x = useMotionValue(0);
   const rotate = useTransform(x, [-200, 200], [-12, 12]);
   const approveOpacity = useTransform(x, [20, SWIPE_THRESHOLD], [0, 1]);
@@ -792,14 +796,18 @@ function SwipeCard({
       transition={reduced ? { duration: 0 } : springs.snappy}
     >
       <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-lg">
+        {request.review ? <ReviewAccentBar level={request.review.level} /> : null}
         {/* Swipe affordance overlays */}
         {interactive && (
           <>
             <motion.div
               style={{ opacity: approveOpacity }}
-              className="pointer-events-none absolute top-4 left-4 rounded-lg border-2 border-success px-2 py-0.5 text-sm font-bold tracking-wide text-success uppercase"
+              className={cn(
+                "pointer-events-none absolute top-4 left-4 rounded-lg border-2 px-2 py-0.5 text-sm font-bold tracking-wide uppercase",
+                held ? "border-destructive text-destructive" : "border-success text-success",
+              )}
             >
-              Approve
+              {held ? "Needs a reason" : "Approve"}
             </motion.div>
             <motion.div
               style={{ opacity: rejectOpacity }}
@@ -859,7 +867,9 @@ function SwipeCard({
             )}
           </dl>
 
-          {request.review ? <AccessReviewLine review={request.review} className="w-full" /> : null}
+          {request.review ? (
+            <AccessReviewLine review={request.review} className="w-full" maxFacts={2} />
+          ) : null}
 
           <p className="text-xs text-muted-foreground">
             Requested {dateFormatter.format(new Date(request.createdAt))}
@@ -884,7 +894,7 @@ function SwipeCard({
           <div className="mt-3 flex gap-2">
             <Button
               variant="destructive"
-              className="flex-1"
+              className={cn("flex-1", act.rejectClassName)}
               onClick={onReject}
             >
               <XIcon aria-hidden /> Reject
@@ -897,8 +907,9 @@ function SwipeCard({
             >
               <ClockIcon aria-hidden /> Later
             </Button>
-            <Button className="flex-1" onClick={onApprove}>
-              <CheckIcon aria-hidden /> Approve
+            <Button className="flex-1" variant={act.approveVariant} onClick={onApprove}>
+              {act.ApproveIcon ? <act.ApproveIcon aria-hidden /> : <CheckIcon aria-hidden />}
+              {act.approveLabel}
             </Button>
           </div>
         )}
@@ -937,8 +948,9 @@ function RequestList({
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
               transition={{ duration: 0.2 }}
-              className="flex flex-wrap items-center gap-x-4 gap-y-3 p-4"
+              className="relative flex flex-wrap items-center gap-x-4 gap-y-3 p-4 pl-5"
             >
+              {request.review ? <ReviewAccentBar level={request.review.level} side="left" /> : null}
               <div className="min-w-0 flex-1 basis-64">
                 <div className="flex items-center gap-2">
                   <h3 className="truncate font-medium text-foreground">
@@ -991,6 +1003,7 @@ function RequestList({
                 <Button
                   variant="destructive"
                   size="sm"
+                  className={suggestedActions(request.review?.level).rejectClassName}
                   onClick={() =>
                     onAskReject(request, request.review?.suggestedRejectReason ?? undefined)
                   }
@@ -1005,9 +1018,15 @@ function RequestList({
                 >
                   <ClockIcon aria-hidden /> Later
                 </Button>
-                <Button size="sm" onClick={() => onApprove(request)}>
-                  <CheckIcon aria-hidden /> Approve
-                </Button>
+                {(() => {
+                  const act = suggestedActions(request.review?.level);
+                  return (
+                    <Button size="sm" variant={act.approveVariant} onClick={() => onApprove(request)}>
+                      {act.ApproveIcon ? <act.ApproveIcon aria-hidden /> : <CheckIcon aria-hidden />}
+                      {act.approveLabel}
+                    </Button>
+                  );
+                })()}
               </div>
             </motion.li>
           ))}
