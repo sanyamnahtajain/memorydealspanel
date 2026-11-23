@@ -3,6 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import useEmblaCarousel from "embla-carousel-react";
+import { SnowDrift } from "@/components/seasonal/WinterDecor";
 import { useReducedMotion } from "motion/react";
 
 import type { StorefrontBanner } from "@/lib/banners";
@@ -346,6 +347,9 @@ function BannerSlide({
     <div className="md-banner-frame relative w-full overflow-hidden rounded-2xl bg-muted">
       {art}
       {hero}
+      {/* Winter: a thin layer of snow resting on the banner's top edge
+          (nothing out of season; never covers the offer text). */}
+      <SnowDrift variant="hang" className="pointer-events-none absolute inset-x-0 top-0" />
     </div>
   );
 

@@ -26,6 +26,9 @@ import { InstallPrompt } from "@/components/pwa/InstallPrompt"
 import { NotifyGate } from "@/components/notify/NotifyGate"
 import { TabBadge } from "@/components/shell/TabBadge"
 import { Logo } from "@/components/brand/Logo"
+import { AdminSeasonScope } from "@/components/seasonal/SeasonProvider"
+import { Snowfall } from "@/components/seasonal/Snowfall"
+import { LogoWinterDecor, SnowDrift } from "@/components/seasonal/WinterDecor"
 import {
   adminMoreSections,
   adminNavSections,
@@ -102,7 +105,11 @@ export function AdminShell({
   )
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-background text-foreground">
+    // Seasonal decor here follows the owner's "also in admin" switch.
+    <AdminSeasonScope>
+    {/* `isolate`: the snowfall (-z-10) paints under every panel and button. */}
+    <div className="isolate flex h-dvh overflow-hidden bg-background text-foreground">
+      <Snowfall surface="admin" />
       {/* ——— Desktop sidebar ——— */}
       <aside
         className={cn(
@@ -189,10 +196,13 @@ export function AdminShell({
       {/* ——— Main column ——— */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Top bar */}
-        <header className="z-30 shrink-0 border-b border-border bg-background/95 pt-[env(safe-area-inset-top)] backdrop-blur supports-backdrop-filter:bg-background/85">
+        <header className="relative z-30 shrink-0 border-b border-border bg-background/95 pt-[env(safe-area-inset-top)] backdrop-blur supports-backdrop-filter:bg-background/85">
+          {/* Winter: snow on the top bar's edge (nothing out of season). */}
+          <SnowDrift variant="hang" className="pointer-events-none absolute inset-x-0 top-full -mt-px" />
           <div className="flex h-14 items-center gap-3 px-4 md:px-6">
-            <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary text-xs font-bold text-primary-foreground md:hidden">
+            <span className="relative flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary text-xs font-bold text-primary-foreground md:hidden">
               M
+              <LogoWinterDecor />
             </span>
             <h1 className="min-w-0 truncate font-heading text-base font-semibold">
               {title}
@@ -362,6 +372,7 @@ export function AdminShell({
         </nav>
       </div>
     </div>
+    </AdminSeasonScope>
   )
 }
 

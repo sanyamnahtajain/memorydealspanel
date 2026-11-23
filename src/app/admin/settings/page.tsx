@@ -13,6 +13,7 @@ import {
   ShoppingCart,
   Wrench,
   UserCog,
+  Snowflake,
 } from "lucide-react";
 
 import { APP_NAME } from "@/lib/constants";
@@ -29,7 +30,8 @@ import { getMaintenance } from "@/server/services/maintenance";
 import { StoreSettingsForm } from "@/components/admin/settings/StoreSettingsForm";
 import { DeliverySettingsForm } from "@/components/admin/settings/DeliverySettingsForm";
 import { parseDeliveryRules } from "@/lib/delivery";
-import { getStoreSettings } from "@/server/services/store-settings";
+import { getSeasonal, getStoreSettings } from "@/server/services/store-settings";
+import { SeasonalForm } from "@/components/admin/settings/SeasonalForm";
 
 export const metadata: Metadata = {
   title: "Settings — MemoryDeals Admin",
@@ -55,7 +57,7 @@ export default async function AdminSettingsPage() {
     }),
     getStoreSettings(),
   ]);
-  const maintenance = await getMaintenance();
+  const [maintenance, seasonal] = await Promise.all([getMaintenance(), getSeasonal()]);
 
   return (
     <AdminShell title="Settings">
@@ -73,6 +75,15 @@ export default async function AdminSettingsPage() {
           description="Theme, layout density, default view, and motion — applied instantly and remembered on this device."
         >
           <PreferencesPanel />
+        </SettingsSection>
+
+        {/* Seasonal look — winter snow, festive touches (lib/seasonal). */}
+        <SettingsSection
+          icon={Snowflake}
+          title="Seasonal look"
+          description="Winter snow and festive touches on the shop. Decoration only — it never covers products or buttons."
+        >
+          <SeasonalForm initial={seasonal} />
         </SettingsSection>
 
         {/* Ordering — the configurable minimum order value. */}

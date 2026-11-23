@@ -187,6 +187,9 @@ export function StickyMobileBar({
         // `inert` (not aria-hidden) — removes the hidden bar's links/buttons
         // from focus order AND the a11y tree in one attribute.
         inert={!panelAway}
+        // Marks "a bar sits flush on the tab bar right now" — the seasonal
+        // snow on the tab bar steps aside so it never covers these buttons.
+        data-bottom-dock={panelAway ? "" : undefined}
         className={cn(
           // bottom-14 (the tab bar's 3.5rem) + the device safe area: the bar
           // always sits ABOVE the storefront tab nav, never under it.

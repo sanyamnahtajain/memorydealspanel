@@ -795,6 +795,9 @@ model StoreSettings {
   // Maintenance mode (owner kill-switch) — src/lib/maintenance.ts; absent or
   // malformed => OFF, so a bad row can never take the shop down.
   maintenance        Json?
+  // Seasonal look (winter snow, festive touches) — src/lib/seasonal.ts;
+  // absent or malformed => "auto" (follows the calendar), never a crash.
+  seasonal           Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

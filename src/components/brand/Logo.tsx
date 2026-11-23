@@ -2,6 +2,7 @@ import Image from "next/image";
 
 import { cn } from "@/lib/utils";
 import { APP_NAME } from "@/lib/constants";
+import { LogoWinterDecor } from "@/components/seasonal/WinterDecor";
 
 interface LogoProps {
   /** Pixel size of the square logo mark. */
@@ -33,7 +34,7 @@ export function Logo({
   const mark = (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center justify-center rounded-lg",
+        "relative inline-flex shrink-0 items-center justify-center rounded-lg",
         // Explicit chip → white backing in both themes. Otherwise the mark
         // stays bare in light mode (dark logo reads fine on light surfaces)
         // and auto-chips in dark mode so it never disappears.
@@ -52,6 +53,8 @@ export function Logo({
         className="object-contain"
         style={{ width: size, height: size }}
       />
+      {/* Seasonal: Santa hat / snow cap (renders nothing out of season). */}
+      <LogoWinterDecor />
     </span>
   );
 

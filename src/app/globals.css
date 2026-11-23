@@ -649,3 +649,242 @@ html[data-md-busy] body {
   --accent-foreground: oklch(0.86 0.1 143);
   --ring: oklch(0.7 0.17 143);
 }
+
+/* ── Seasonal: winter (src/lib/seasonal.ts, components/seasonal) ───────────
+   Decoration only. Colours are tokens so light and dark each get their own
+   snow; every animation is transform/opacity only and stops for "reduce
+   motion" (system or in-app). */
+:root {
+  --md-flake: #9dbfe0;
+  --md-snow-top: #ffffff;
+  --md-snow-shade: #e2ecf6;
+  --md-snow-shadow: rgb(100 130 175 / 0.42);
+  --md-snow-edge: #b9cfe6;
+  --md-wire: #475569;
+  --md-ice: #cfe6fb;
+  --md-pine: #2e6a54;
+  --md-pine-trunk: #6b4f3a;
+  --md-hill-far: #eef4fa;
+  --md-moon: #fff4cc;
+  --md-star: #f2c94c;
+}
+.dark {
+  --md-flake: #eef5ff;
+  --md-snow-top: #eef3fa;
+  --md-snow-shade: #c3d1e3;
+  --md-snow-shadow: rgb(0 0 0 / 0.38);
+  --md-snow-edge: rgb(255 255 255 / 0.15);
+  --md-wire: #94a3b8;
+  --md-ice: #b9dcff;
+  --md-pine: #1e4b3b;
+  --md-pine-trunk: #4a3728;
+  --md-hill-far: #2a3546;
+  --md-moon: #f6eecb;
+  --md-star: #fde68a;
+}
+
+.md-snow {
+  color: var(--md-flake);
+  contain: strict;
+}
+.md-flake {
+  position: absolute;
+  top: -28px;
+  display: block;
+  animation: md-snow-fall var(--fall) linear var(--delay) infinite;
+  will-change: transform;
+}
+.md-flake-sway {
+  display: block;
+  width: 100%;
+  height: 100%;
+  animation: md-snow-sway var(--sway) ease-in-out var(--delay) infinite alternate;
+}
+.md-flake svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.md-snow[data-paused] .md-flake,
+.md-snow[data-paused] .md-flake-sway {
+  animation-play-state: paused;
+}
+@keyframes md-snow-fall {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(0, calc(100vh + 56px), 0); }
+}
+@keyframes md-snow-sway {
+  from { transform: translate3d(calc(var(--amp) * -1), 0, 0) rotate(-30deg); }
+  to { transform: translate3d(var(--amp), 0, 0) rotate(30deg); }
+}
+
+.md-bulb {
+  animation: md-bulb-twinkle 2.4s ease-in-out infinite;
+  filter: drop-shadow(0 0 3px currentColor);
+}
+@keyframes md-bulb-twinkle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.md-star {
+  animation: md-star-twinkle 3.2s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+@keyframes md-star-twinkle {
+  0%, 100% { opacity: 0.95; transform: scale(1); }
+  50% { opacity: 0.3; transform: scale(0.6); }
+}
+.md-santa-hat {
+  animation: md-hat-sway 6s ease-in-out infinite;
+  transform-origin: 30% 90%;
+}
+@keyframes md-hat-sway {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-5deg); }
+}
+
+/* Santa pushing his cart (components/seasonal/SantaCart): a two-step walk
+   cycle — legs swing in opposite phase, the body bobs twice per cycle. */
+.md-santa-leg-a,
+.md-santa-leg-b {
+  animation: md-santa-leg 0.64s ease-in-out infinite alternate;
+}
+.md-santa-leg-b { animation-delay: -0.64s; }
+@keyframes md-santa-leg {
+  from { transform: rotate(-20deg); }
+  to { transform: rotate(18deg); }
+}
+.md-santa-bob { animation: md-santa-bob 0.32s ease-in-out infinite alternate; }
+.md-santa-bob-cart { animation: md-santa-bob 0.32s ease-in-out -0.16s infinite alternate; }
+@keyframes md-santa-bob {
+  from { transform: translateY(0); }
+  to { transform: translateY(-2.5px); }
+}
+.md-santa-wheel {
+  animation: md-santa-wheel 0.7s linear infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+@keyframes md-santa-wheel { to { transform: rotate(360deg); } }
+.md-santa-hat-tip { animation: md-santa-hat 0.64s ease-in-out infinite alternate; }
+@keyframes md-santa-hat {
+  from { transform: rotate(-5deg); }
+  to { transform: rotate(6deg); }
+}
+
+/* Santa cart extras: back-arm swing, waving TMD pennant, snow spray,
+   blink, frosty breath, bouncing pom-pom. */
+.md-santa-arm-b { animation: md-santa-arm 0.64s ease-in-out infinite alternate; }
+@keyframes md-santa-arm {
+  from { transform: rotate(14deg); }
+  to { transform: rotate(-16deg); }
+}
+.md-santa-flag { animation: md-santa-flag 0.9s ease-in-out infinite alternate; }
+@keyframes md-santa-flag {
+  from { transform: skewY(-4deg) scaleX(0.96); }
+  to { transform: skewY(5deg) scaleX(1.02); }
+}
+.md-santa-spray { animation: md-santa-spray 0.32s ease-out infinite; }
+@keyframes md-santa-spray {
+  from { transform: translate(0, 0); opacity: 1; }
+  to { transform: translate(-8px, -4px); opacity: 0; }
+}
+.md-santa-blink { animation: md-santa-blink 4.2s ease-in-out infinite; }
+@keyframes md-santa-blink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  95% { transform: scaleY(0.1); }
+}
+.md-santa-breath { animation: md-santa-breath 2.6s ease-out infinite; }
+@keyframes md-santa-breath {
+  0%, 55% { opacity: 0; transform: translate(0, 0) scale(0.6); }
+  70% { opacity: 1; }
+  100% { opacity: 0; transform: translate(10px, -6px) scale(1.3); }
+}
+.md-santa-pom { animation: md-santa-pom 0.32s ease-in-out infinite alternate; }
+@keyframes md-santa-pom {
+  from { transform: translateY(0); }
+  to { transform: translateY(2px); }
+}
+
+/* Sleigh + reindeer (components/seasonal/SantaSleigh). Parts inside
+   translated groups rotate around their own box. */
+.md-sleigh-leg-f,
+.md-sleigh-leg-b,
+.md-sleigh-bells {
+  transform-box: fill-box;
+  transform-origin: 50% 0;
+}
+.md-sleigh-leg-f { animation: md-sleigh-leg 0.48s ease-in-out infinite alternate; }
+.md-sleigh-leg-b { animation: md-sleigh-leg 0.48s ease-in-out infinite alternate-reverse; }
+@keyframes md-sleigh-leg {
+  from { transform: rotate(-34deg); }
+  to { transform: rotate(28deg); }
+}
+.md-sleigh-deer-bob { animation: md-sleigh-deer 0.48s ease-in-out infinite alternate; }
+@keyframes md-sleigh-deer {
+  from { transform: translateY(0) rotate(-1deg); }
+  to { transform: translateY(-4px) rotate(1.5deg); }
+}
+.md-sleigh-bells { animation: md-sleigh-bells 0.24s ease-in-out infinite alternate; }
+@keyframes md-sleigh-bells {
+  from { transform: rotate(-10deg); }
+  to { transform: rotate(10deg); }
+}
+.md-sleigh-bob { animation: md-sleigh-bob 1.2s ease-in-out infinite alternate; }
+@keyframes md-sleigh-bob {
+  from { transform: translateY(0) rotate(0deg); }
+  to { transform: translateY(-5px) rotate(-1.2deg); }
+}
+.md-sleigh-pom { animation: md-santa-pom 0.4s ease-in-out infinite alternate; }
+.md-sleigh-rudolph {
+  animation: md-sleigh-rudolph 1.1s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+@keyframes md-sleigh-rudolph {
+  0%, 100% { opacity: 0.25; transform: scale(0.8); }
+  50% { opacity: 0.7; transform: scale(1.35); }
+}
+.md-sleigh-spark {
+  animation: md-sleigh-spark 1.1s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+@keyframes md-sleigh-spark {
+  0%, 100% { opacity: 0.2; transform: scale(0.6); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+/* Flight across the upper part of the page (SantaParade). */
+.md-sleigh-flight {
+  animation: md-sleigh-flight var(--md-flight-s, 11s) ease-in-out forwards;
+}
+@keyframes md-sleigh-flight {
+  0% { transform: translate(-480px, 40px) rotate(-4deg); }
+  50% { transform: translate(calc(50vw - 200px), -10px) rotate(-2deg); }
+  100% { transform: translate(calc(100vw + 40px), 30px) rotate(3deg); }
+}
+
+/* The occasional stroll across the page (SantaParade): enters left, exits
+   right, once per appearance. */
+.md-santa-parade {
+  animation: md-santa-parade var(--md-parade-s, 12s) linear forwards;
+}
+@keyframes md-santa-parade {
+  from { transform: translateX(-260px); }
+  to { transform: translateX(calc(100vw + 40px)); }
+}
+[data-shell="storefront"]:has([data-bottom-dock]) .md-santa-parade { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .md-snow { display: none; }
+  .md-santa-parade, .md-sleigh-flight { display: none; }
+  .md-bulb, .md-star, .md-santa-hat { animation: none; }
+}
+[data-reduce-motion="true"] .md-snow,
+[data-reduce-motion="true"] .md-santa-parade,
+[data-reduce-motion="true"] .md-sleigh-flight { display: none; }
+/* A bar sitting flush on the phone tab bar (product page "Add" bar): the
+   tab bar's snow steps aside so it never covers those buttons. */
+[data-shell="storefront"]:has([data-bottom-dock]) .md-tabbar-snow { display: none; }

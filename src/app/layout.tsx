@@ -17,6 +17,10 @@ import { ActivityBar } from "@/components/feedback/ActivityBar";
 import { BOOT_SCRIPT, BOOT_STYLE } from "@/lib/boot-script";
 import { ScrollToTop } from "@/components/common/ScrollToTop";
 import { siteBaseUrl } from "./seo-site-url";
+import { swrCached } from "@/server/cache/swr";
+import { getSeasonal } from "@/server/services/store-settings";
+import { DEFAULT_SEASONAL, resolveSeason, type SeasonalSettings } from "@/lib/seasonal";
+import { SeasonProvider } from "@/components/seasonal/SeasonProvider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -90,12 +94,24 @@ export default async function RootLayout({
   // which React would otherwise report as a server/client mismatch.
   const nonce = (await headers()).get("x-nonce") ?? undefined;
 
+  // Seasonal look (winter snow etc.) — one cached read, resolved against the
+  // calendar here so every surface and the first paint agree. Fails soft to
+  // "auto" (src/lib/seasonal.ts); decoration must never cost a page.
+  const seasonal = await swrCached<SeasonalSettings>("seasonal", getSeasonal, {
+    ttlMs: 60_000,
+    coldBudgetMs: 800,
+    fallback: DEFAULT_SEASONAL,
+    label: "seasonal",
+  });
+  const season = resolveSeason(seasonal);
+
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
       data-scroll-behavior="smooth"
       data-density={initialDensity}
+      data-season={season.winter ? "winter" : undefined}
       suppressHydrationWarning
     >
       <head>
@@ -163,6 +179,7 @@ export default async function RootLayout({
           </span>
         </div>
         <ThemeProvider>
+          <SeasonProvider season={season}>
           <PreferencesProvider initialDensity={initialDensity}>
             <ScrollToTop />
             {children}
@@ -177,6 +194,7 @@ export default async function RootLayout({
                 lives here rather than in either shell. */}
             <PushSoundBridge />
           </PreferencesProvider>
+          </SeasonProvider>
         </ThemeProvider>
       </body>
     </html>

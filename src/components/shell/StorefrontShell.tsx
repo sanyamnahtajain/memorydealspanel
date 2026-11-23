@@ -14,6 +14,9 @@ import { TabBadge } from "@/components/shell/TabBadge"
 import { Logo } from "@/components/brand/Logo"
 import { useReelsAvailable } from "@/components/storefront/reels/ReelsAvailability"
 import { IndependenceBadge } from "@/components/brand/IndependenceBadge"
+import { Snowfall } from "@/components/seasonal/Snowfall"
+import { SantaParade } from "@/components/seasonal/SantaParade"
+import { FairyLights, SnowDrift } from "@/components/seasonal/WinterDecor"
 import { StorefrontFooter } from "@/components/shell/StorefrontFooter"
 import { AccessStatusBanner } from "@/components/access/AccessStatusBanner"
 import { TrustStrip } from "@/components/access/TrustStrip"
@@ -213,10 +216,15 @@ export function StorefrontShell({
 
   return (
     <div
-      className="flex min-h-dvh flex-col bg-background text-foreground"
+      // `isolate`: the shell is its own stacking layer, so the seasonal
+      // snowfall (-z-10 inside it) paints above the page background but
+      // UNDER every card, price and button.
+      className="isolate flex min-h-dvh flex-col bg-background text-foreground"
       style={SHELL_STYLE}
       data-shell="storefront"
     >
+      <Snowfall />
+      <SantaParade />
       {topNotice ? <NoticeMarquee text={topNotice} /> : null}
       {/* ——— Sticky condensing header ——— */}
       <header
@@ -372,6 +380,21 @@ export function StorefrontShell({
             <HeaderSearchBar onOpen={openSearch} expanded={searchOpen} />
           </div>
         ) : null}
+        {/* Winter: snow overhanging the header edge (+ icicles and fairy
+            lights from tablet up). Decoration only — renders nothing out of
+            season and never takes a tap. */}
+        <div aria-hidden className="pointer-events-none absolute inset-x-0 top-full">
+          {/* Icicles and lights only at the top of the page: once the page
+              scrolls under the header they would hang over text, so they
+              fade out and only the thin snow edge stays. */}
+          <SnowDrift variant="hang" icicles={!condensed} className="-mt-px" />
+          <FairyLights
+            className={cn(
+              "absolute inset-x-0 top-1.5 transition-opacity duration-300",
+              condensed && "opacity-0",
+            )}
+          />
+        </div>
       </header>
 
       {/* ——— Access status strip (renders nothing for anon/active) ——— */}
@@ -413,6 +436,8 @@ export function StorefrontShell({
         aria-label="Primary"
         className="fixed inset-x-0 bottom-0 z-40 border-t border-foreground/8 bg-background/92 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl supports-backdrop-filter:bg-background/80 md:hidden"
       >
+        {/* Winter: snow lying on top of the tab bar. */}
+        <SnowDrift variant="pile" className="md-tabbar-snow pointer-events-none absolute inset-x-0 bottom-full" />
         <ul className="grid grid-cols-5">
           {storefrontNav.map((item) => {
             const active = isNavItemActive(item, pathname)

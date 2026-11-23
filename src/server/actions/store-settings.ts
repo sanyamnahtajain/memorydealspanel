@@ -18,6 +18,7 @@ import {
   updateMinOrderValue,
   updateSlabyBranding,
   updateDeliveryRules,
+  updateSeasonal,
 } from "@/server/services/store-settings";
 import { slabyBrandingSchema } from "@/lib/slaby/branding";
 import { deliveryRulesSchema } from "@/lib/delivery";
@@ -328,6 +329,55 @@ export async function saveDeliveryRulesAction(
       };
     }
     console.error("[actions/store-settings] unexpected error:", error);
+    return { ok: false, error: "Something went wrong. Please try again." };
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Seasonal look (winter snow etc.)                                    */
+/* ------------------------------------------------------------------ */
+
+const seasonalSchema = z.object({
+  mode: z.enum(["auto", "on", "off"]),
+  snow: z.enum(["off", "light", "normal"]),
+  christmas: z.boolean(),
+  admin: z.boolean(),
+  sounds: z.boolean(),
+});
+
+/**
+ * Save the seasonal look. Purely decorative, so no confirm step — but it is
+ * audited like every other store switch, and the shared cache is reset so
+ * the next page view (storefront and admin) reflects it.
+ */
+export async function saveSeasonalAction(input: unknown): Promise<StoreSettingsResult> {
+  try {
+    const viewer = await resolveViewer();
+    assertAdmin(viewer);
+    await assertPermission(viewer, PERMISSIONS.SETTINGS_MANAGE);
+
+    const parsed = seasonalSchema.safeParse(input);
+    if (!parsed.success) {
+      return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input." };
+    }
+
+    const settings = await updateSeasonal(parsed.data);
+    resetSwrCache("seasonal");
+    await writeAudit({
+      actorType: "admin",
+      actorId: viewer.adminId,
+      action: "store_settings.seasonal",
+      entity: "StoreSettings",
+      entityId: settings.id,
+      diff: parsed.data,
+    });
+    revalidatePath("/", "layout");
+    return { ok: true };
+  } catch (error) {
+    if (isForbiddenError(error)) {
+      return { ok: false, error: "You don't have permission to manage store settings." };
+    }
+    console.error("[actions/store-settings] seasonal save failed:", error);
     return { ok: false, error: "Something went wrong. Please try again." };
   }
 }

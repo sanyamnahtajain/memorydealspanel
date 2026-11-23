@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { WinterScene } from "@/components/seasonal/WinterDecor";
 import { ArrowUpRight, Clock, MapPin, MessageCircle } from "lucide-react";
 
 import { APP_NAME, APP_SLOGAN, APP_TAGLINE, CONTACT } from "@/lib/constants";
@@ -56,6 +57,8 @@ export function StorefrontFooter() {
 
   return (
     <footer className="md-surface-soft mt-16 border-t border-foreground/10">
+      {/* Seasonal: winter landscape across the top (nothing out of season). */}
+      <WinterScene className="-mb-4" />
       <div className="mx-auto w-full max-w-6xl px-4 pt-12 pb-8 md:px-6">
         <div className="grid grid-cols-1 gap-10 md:grid-cols-[minmax(0,1.6fr)_repeat(3,minmax(0,1fr))] md:gap-8">
           {/* Brand block */}

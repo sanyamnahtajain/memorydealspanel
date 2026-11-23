@@ -7,6 +7,7 @@ import {
   type SlabyBrandingConfig,
   type SlabyBrandingInput,
 } from "@/lib/slaby/branding";
+import { parseSeasonal, type SeasonalSettings } from "@/lib/seasonal";
 import {
   parseDeliveryRules,
   resolveDeliveryChargePaise,
@@ -245,5 +246,27 @@ export async function updateDeliveryRules(input: DeliveryRules): Promise<StoreSe
     create: { key: SETTINGS_KEY, deliveryRules: input },
     update: { deliveryRules: input },
     select: SETTINGS_SELECT,
+  });
+}
+
+/**
+ * The seasonal-look settings (winter snow etc. — see src/lib/seasonal.ts).
+ * Direct read; the root layout wraps it in a short swr cache so it costs
+ * nothing per request. Absent/malformed JSON => "auto".
+ */
+export async function getSeasonal(): Promise<SeasonalSettings> {
+  const row = await prisma.storeSettings.findUnique({
+    where: { key: SETTINGS_KEY },
+    select: { seasonal: true },
+  });
+  return parseSeasonal(row?.seasonal);
+}
+
+export async function updateSeasonal(input: SeasonalSettings): Promise<{ id: string }> {
+  return prisma.storeSettings.upsert({
+    where: { key: SETTINGS_KEY },
+    create: { key: SETTINGS_KEY, seasonal: { ...input } },
+    update: { seasonal: { ...input } },
+    select: { id: true },
   });
 }
