@@ -34,7 +34,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { EmptyState, StatusChip, useIsMobile } from "@/components/common";
+import { EmptyState, useIsMobile } from "@/components/common";
 import { springs } from "@/components/motion/tokens";
 import { ViewCustomerButton } from "@/components/admin/requests/ViewCustomerButton";
 import {
@@ -543,6 +543,15 @@ export function ApprovalSwipeDeck({ requests, searching = false }: ApprovalSwipe
                       : "border-border bg-card text-muted-foreground hover:bg-accent",
                   )}
                 >
+                  {f.key === "good" || f.key === "risky" ? (
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "size-2 rounded-full",
+                        f.key === "good" ? "bg-success" : active ? "bg-white" : "bg-destructive",
+                      )}
+                    />
+                  ) : null}
                   {f.label}
                   <span
                     className={cn(
@@ -703,7 +712,11 @@ function SwipeDeck({
 
   return (
     <div className="flex flex-col items-center gap-6">
-      <div className="relative h-[31rem] w-full max-w-sm">
+      {/* Cards share one grid cell instead of being absolutely positioned in
+          a fixed-height box: the deck is exactly as tall as its tallest card,
+          on a 320px phone or with a long history alike. pb-6 leaves room for
+          the cards peeking out underneath. */}
+      <div className="relative grid w-full max-w-sm grid-cols-[minmax(0,1fr)] pb-6">
         <AnimatePresence initial={false}>
           {visible
             .map((request, index) => ({ request, index }))
@@ -782,7 +795,7 @@ function SwipeCard({
   return (
     <motion.div
       className={cn(
-        "absolute inset-x-0 top-0 mx-auto w-full",
+        "col-start-1 row-start-1 mx-auto w-full min-w-0 self-start",
         interactive ? "cursor-grab active:cursor-grabbing" : "pointer-events-none",
       )}
       style={interactive ? { x, rotate } : undefined}
@@ -834,7 +847,6 @@ function SwipeCard({
                 <span className="truncate">{request.contactName}</span>
               </p>
             </div>
-            <StatusChip variant="pending" />
                 {request.linkGoogleEmail ? (
                   <span className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
                     Connect Google
@@ -868,7 +880,7 @@ function SwipeCard({
           </dl>
 
           {request.review ? (
-            <AccessReviewLine review={request.review} className="w-full" maxFacts={2} />
+            <AccessReviewLine review={request.review} className="w-full" />
           ) : null}
 
           <p className="text-xs text-muted-foreground">
@@ -894,20 +906,23 @@ function SwipeCard({
           <div className="mt-3 flex gap-2">
             <Button
               variant="destructive"
-              className={cn("flex-1", act.rejectClassName)}
+              className={cn("min-w-0 flex-1", act.rejectClassName)}
               onClick={onReject}
             >
               <XIcon aria-hidden /> Reject
             </Button>
+            {/* Icon-only on a 320px phone so Reject and Approve keep their
+                words; the label (and aria-label) say what it does. */}
             <Button
               variant="outline"
-              className="flex-1"
+              className="shrink-0 min-[360px]:flex-1"
               onClick={onSnooze}
               aria-label="Skip for now — review later"
             >
-              <ClockIcon aria-hidden /> Later
+              <ClockIcon aria-hidden />
+              <span className="hidden min-[360px]:inline">Later</span>
             </Button>
-            <Button className="flex-1" variant={act.approveVariant} onClick={onApprove}>
+            <Button className="min-w-0 flex-1" variant={act.approveVariant} onClick={onApprove}>
               {act.ApproveIcon ? <act.ApproveIcon aria-hidden /> : <CheckIcon aria-hidden />}
               {act.approveLabel}
             </Button>
@@ -956,7 +971,6 @@ function RequestList({
                   <h3 className="truncate font-medium text-foreground">
                     {request.businessName}
                   </h3>
-                  <StatusChip variant="pending" />
                 {request.renewal ? (
                   <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
                     Renewal
@@ -986,7 +1000,7 @@ function RequestList({
                   )}
                 </div>
                 {request.review ? (
-                  <AccessReviewLine review={request.review} className="mt-2" maxFacts={6} />
+                  <AccessReviewLine review={request.review} className="mt-2" />
                 ) : null}
               </div>
               {/* Plain <li> content — nothing here wraps the row in a button,
@@ -1291,14 +1305,15 @@ function SelectableList({
                     <h3 className="truncate font-medium text-foreground">
                       {request.businessName}
                     </h3>
-                    <StatusChip variant="pending" />
                 {request.renewal ? (
                   <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
                     Renewal
                   </span>
                 ) : null}
-                {request.review ? <ReviewLevelPill level={request.review.level} /> : null}
                   </div>
+                  {request.review ? (
+                    <ReviewLevelPill level={request.review.level} className="mt-1.5" />
+                  ) : null}
                   <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
                     <span className="inline-flex items-center gap-1.5">
                       <UserIcon className="size-3.5" aria-hidden />
@@ -1367,11 +1382,19 @@ function BulkActionBar({
           // very bottom); drops to the screen edge on md+ where there is no tab bar.
           className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] z-40 mx-auto flex w-[calc(100%-2rem)] max-w-xl items-center gap-2 rounded-2xl border border-border bg-card/95 p-3 shadow-lg backdrop-blur md:bottom-4"
         >
-          <span className="pl-1 text-sm font-medium text-foreground">
+          <span className="pl-1 text-sm font-medium whitespace-nowrap text-foreground">
             {count} selected
           </span>
           <div className="ml-auto flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={onClear} disabled={busy}>
+            {/* On a 320px phone three buttons + the count don't fit; "Cancel"
+                in the toolbar already clears, so Clear steps aside there. */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onClear}
+              disabled={busy}
+              className="hidden min-[360px]:inline-flex"
+            >
               Clear
             </Button>
             <Button variant="destructive" size="sm" onClick={onReject} disabled={busy}>

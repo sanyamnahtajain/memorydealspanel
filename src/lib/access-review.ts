@@ -33,8 +33,11 @@ export interface TrailEvent {
   unused?: boolean;
 }
 
-/** How many trail points a screen shows; older ones fold into "+N earlier". */
-export const TRAIL_MAX = 6;
+/**
+ * How many recent events the server sends. Screens fold runs into "×N"
+ * points (see AccessTrail), so this can be generous without crowding.
+ */
+export const TRAIL_MAX = 16;
 
 /** Raw, serialisable facts about one customer (ISO dates). */
 export interface AccessHistory {

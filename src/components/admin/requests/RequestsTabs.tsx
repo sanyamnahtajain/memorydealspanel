@@ -179,7 +179,7 @@ export function RequestsTabs({
           on small screens: all four names must stay readable on a phone
           rather than overflowing off the right edge. */}
       <TabsList className="h-auto w-full">
-        <TabsTrigger value="pending" className="min-w-0 flex-1 px-1 py-1 text-xs sm:px-1.5 sm:text-sm">
+        <TabsTrigger value="pending" className="min-w-0 flex-1 flex-col gap-0.5 px-1 py-1 text-xs min-[360px]:flex-row min-[360px]:gap-0 sm:px-1.5 sm:text-sm">
           Pending
           <TabCount
             count={pending.length}
@@ -187,7 +187,7 @@ export function RequestsTabs({
             className="bg-primary text-primary-foreground"
           />
         </TabsTrigger>
-        <TabsTrigger value="later" className="min-w-0 flex-1 px-1 py-1 text-xs sm:px-1.5 sm:text-sm">
+        <TabsTrigger value="later" className="min-w-0 flex-1 flex-col gap-0.5 px-1 py-1 text-xs min-[360px]:flex-row min-[360px]:gap-0 sm:px-1.5 sm:text-sm">
           Later
           <TabCount
             count={snoozed.length}
@@ -195,7 +195,7 @@ export function RequestsTabs({
             className="bg-muted text-muted-foreground"
           />
         </TabsTrigger>
-        <TabsTrigger value="renewals" className="min-w-0 flex-1 px-1 py-1 text-xs sm:px-1.5 sm:text-sm">
+        <TabsTrigger value="renewals" className="min-w-0 flex-1 flex-col gap-0.5 px-1 py-1 text-xs min-[360px]:flex-row min-[360px]:gap-0 sm:px-1.5 sm:text-sm">
           Renewals
           <TabCount
             count={renewals.length}
@@ -203,7 +203,7 @@ export function RequestsTabs({
             className="bg-amber-500/15 text-amber-700 dark:text-amber-300"
           />
         </TabsTrigger>
-        <TabsTrigger value="decided" className="min-w-0 flex-1 px-1 py-1 text-xs sm:px-1.5 sm:text-sm">
+        <TabsTrigger value="decided" className="min-w-0 flex-1 flex-col gap-0.5 px-1 py-1 text-xs min-[360px]:flex-row min-[360px]:gap-0 sm:px-1.5 sm:text-sm">
           Decided
           {/* Decided carried NO badge at all before, so a customer found only
               in the history was invisible from every other tab. */}
@@ -267,7 +267,8 @@ function TabCount({
   return (
     <span
       className={cn(
-        "ml-1 inline-flex h-4.5 min-w-4.5 shrink-0 items-center justify-center rounded-full px-1 text-[10px] leading-none font-semibold tabular-nums sm:h-5 sm:min-w-5 sm:px-1.5 sm:text-[11px]",
+        // Under the label on the narrowest phones (320px), beside it above that.
+        "inline-flex h-4.5 min-w-4.5 shrink-0 min-[360px]:ml-1 items-center justify-center rounded-full px-1 text-[10px] leading-none font-semibold tabular-nums sm:h-5 sm:min-w-5 sm:px-1.5 sm:text-[11px]",
         className,
       )}
     >
@@ -747,7 +748,7 @@ function RenewalsList({
                   ) : null}
                 </div>
                 {item.review ? (
-                  <AccessReviewLine review={item.review} className="mt-2" maxFacts={6} showNow={false} />
+                  <AccessReviewLine review={item.review} className="mt-2" showNow={false} />
                 ) : null}
               </div>
               <div className="flex max-w-full flex-wrap items-center gap-2">
