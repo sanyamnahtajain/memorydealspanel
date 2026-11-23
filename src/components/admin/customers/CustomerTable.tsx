@@ -111,40 +111,62 @@ export function CustomerTable({
   }
 
   async function runBulk(
-    label: string,
-    fn: () => Promise<{ ok: boolean; error?: string }>,
+    verb: string,
+    fn: () => Promise<
+      | { ok: true; count: number; failed: { id: string; error: string }[] }
+      | { ok: false; error: string }
+    >,
   ) {
     setBusy(true);
     try {
       const res = await fn();
-      if (res.ok) {
-        toast.success(label);
-        setSelected(new Set());
-        router.refresh();
-      } else {
+      if (!res.ok) {
         toast.error(res.error ?? "Bulk action failed.");
+        return;
       }
+      // Say what really happened: shops the approval review holds (approved
+      // before, never ordered) are skipped by the server, not silently done.
+      const held = res.failed.filter((f) => f.error.startsWith("Held"));
+      const other = res.failed.length - held.length;
+      const summary =
+        `${verb} ${res.count}` +
+        (held.length ? ` · ${held.length} on hold` : "") +
+        (other ? ` · ${other} failed` : "");
+      if (res.failed.length) {
+        toast.warning(summary, {
+          description: held.length
+            ? `${held.length === 1 ? "1 shop was" : `${held.length} shops were`} approved before and never ordered, so skipped. Open ${held.length === 1 ? "it" : "each one"} to approve anyway.`
+            : res.failed[0]?.error,
+          duration: 8000,
+        });
+        // Keep only the ones that did not go through selected, to act on.
+        setSelected(new Set(res.failed.map((f) => f.id)));
+      } else {
+        toast.success(summary);
+        setSelected(new Set());
+      }
+      router.refresh();
     } finally {
       setBusy(false);
     }
   }
 
   const bulkApprove = () =>
-    runBulk(`Approved ${selectedIds.length}`, () =>
+    runBulk("Approved", () =>
       bulkApproveAccessAction({
         customerIds: selectedIds,
         expiry: expiryValueToInput(bulkExpiry),
       }),
     );
   const bulkExtend = () =>
-    runBulk(`Extended ${selectedIds.length}`, () =>
+    runBulk("Extended", () =>
       bulkExtendAccessAction({
         customerIds: selectedIds,
         expiry: expiryValueToInput(bulkExpiry),
       }),
     );
   const bulkRevoke = () =>
-    runBulk(`Revoked ${selectedIds.length}`, () =>
+    runBulk("Revoked", () =>
       bulkRevokeAccessAction({ customerIds: selectedIds }),
     );
 

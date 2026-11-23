@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import type { Prisma } from "@prisma/client";
 
 import { prisma } from "@/server/db";
+import { getAccessReviews } from "@/server/services/access-review";
 import { getViewer } from "@/server/auth/viewer";
 import { isAdmin } from "@/server/types/viewer";
 import { PAGE_SIZES } from "@/lib/constants";
@@ -195,6 +196,14 @@ export default async function AdminRequestsPage({
     city: true,
   } as const;
 
+  // Order + approval history for the queue (owner request): an admin must
+  // see "approved twice, never ordered" BEFORE tapping Approve. Started now so
+  // it runs alongside the renewal queries instead of after them.
+  const queueReviewsPromise = getAccessReviews([
+    ...pendingRows.map((r) => r.customerId),
+    ...snoozedRows.map((r) => r.customerId),
+  ]);
+
   const [liveGrants, expiredGrants] = await Promise.all([
     prisma.accessGrant.findMany({
       where: {
@@ -254,6 +263,12 @@ export default async function AdminRequestsPage({
     })),
   ];
 
+  // Renewal rows reuse the queue's reviews; only the rest is fetched.
+  const reviews = await queueReviewsPromise;
+  const renewalOnly = renewals.map((r) => r.customerId).filter((id) => !reviews.has(id));
+  for (const [id, review] of await getAccessReviews(renewalOnly)) reviews.set(id, review);
+  for (const item of renewals) item.review = reviews.get(item.customerId) ?? null;
+
   const pending: PendingRequest[] = pendingRows.map((row) => ({
     id: row.id,
     customerId: row.customerId,
@@ -265,6 +280,7 @@ export default async function AdminRequestsPage({
     gstNumber: row.customer.gstNumber ?? null,
     city: row.customer.city ?? null,
     createdAt: row.createdAt.toISOString(),
+    review: reviews.get(row.customerId) ?? null,
   }));
 
   const snoozed: PendingRequest[] = snoozedRows.map((row) => ({
@@ -278,6 +294,7 @@ export default async function AdminRequestsPage({
     gstNumber: row.customer.gstNumber ?? null,
     city: row.customer.city ?? null,
     createdAt: row.createdAt.toISOString(),
+    review: reviews.get(row.customerId) ?? null,
   }));
 
   const decided: DecidedRequest[] = decidedRows.map((row) => ({

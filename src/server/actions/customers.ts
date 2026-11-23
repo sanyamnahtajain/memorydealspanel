@@ -1,6 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import type { AccessReview } from "@/lib/access-review";
+import { getAccessReview } from "@/server/services/access-review";
 import { z } from "zod";
 
 import { isValidGstin } from "@/lib/gstin";
@@ -99,6 +101,8 @@ export interface ActivityItem {
 /** Full profile payload for the drawer. */
 export interface CustomerProfile extends CustomerRow {
   priceAccess: boolean;
+  /** Order + approval history and its verdict (see lib/access-review). */
+  review?: AccessReview;
   grants: GrantHistoryItem[];
   requests: RequestHistoryItem[];
   activity: ActivityItem[];
@@ -345,11 +349,14 @@ export async function getCustomerProfileAction(
     await assertPermission(viewer, PERMISSIONS.CUSTOMERS_VIEW);
 
     const customerId = objectIdSchema.parse(id);
-    const detail = await getCustomer(customerId);
+    const [detail, review] = await Promise.all([
+      getCustomer(customerId),
+      getAccessReview(customerId),
+    ]);
     if (!detail) {
       return { ok: false, error: "Customer not found." };
     }
-    return { ok: true, profile: toProfile(detail) };
+    return { ok: true, profile: { ...toProfile(detail), review } };
   });
 }
 

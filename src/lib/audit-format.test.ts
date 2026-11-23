@@ -36,6 +36,16 @@ describe("humanizeAction", () => {
 });
 
 describe("summarizeDiff", () => {
+  it("says an access decision in words, quoting an approve-anyway reason", () => {
+    expect(
+      summarizeDiff({ days: 30, review: "hold", ordersTotal: 0, approvalsSinceLastOrder: 2, overrideReason: "Called him" }),
+    ).toBe("30 days · approved anyway — was on Hold · “Called him”");
+    expect(summarizeDiff({ days: 30, review: "good", ordersTotal: 4, approvalsSinceLastOrder: 0 })).toBe("30 days");
+    expect(summarizeDiff({ expiresAt: "2026-12-23T00:00:00.000Z", review: "watch" })).toBe(
+      "until 2026-12-23 · approved again, no order after last time",
+    );
+  });
+
   it("lists changed field names", () => {
     expect(summarizeDiff({ changed: ["name", "price"] })).toBe("name, price");
     expect(summarizeDiff({ changed: ["name"] })).toBe("name");

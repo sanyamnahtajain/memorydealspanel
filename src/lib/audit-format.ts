@@ -160,6 +160,26 @@ export function summarizeDiff(diff: unknown): string {
     return Array.isArray(diff) ? "" : formatScalar(diff);
   }
 
+  // 0. An access decision carries the approval review behind it
+  //    (src/lib/access-review.ts) — say it in words, and quote any
+  //    "approve anyway" reason, instead of listing bookkeeping keys.
+  if (typeof diff.review === "string") {
+    const parts: string[] = [];
+    if (typeof diff.days === "number") parts.push(`${diff.days} days`);
+    else if (diff.days === null) parts.push("no expiry");
+    else if ("expiresAt" in diff) {
+      parts.push(
+        typeof diff.expiresAt === "string" ? `until ${diff.expiresAt.slice(0, 10)}` : "no expiry",
+      );
+    }
+    if (diff.review === "hold") parts.push("approved anyway — was on Hold");
+    else if (diff.review === "watch") parts.push("approved again, no order after last time");
+    if (typeof diff.overrideReason === "string" && diff.overrideReason) {
+      parts.push(`“${diff.overrideReason}”`);
+    }
+    return parts.join(" · ");
+  }
+
   // 1. Explicit changed-field list.
   const changed = diff.changed;
   if (Array.isArray(changed) && changed.length > 0) {

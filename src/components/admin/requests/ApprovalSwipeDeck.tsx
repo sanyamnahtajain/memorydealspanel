@@ -48,6 +48,20 @@ import {
 } from "@/components/admin/ExpiryDial";
 import { DEFAULT_ACCESS_EXPIRY_DAYS } from "@/lib/constants";
 import {
+  matchesReviewFilter,
+  NO_ORDER_REJECT_REASON,
+  REVIEW_FILTERS,
+  type AccessReview,
+  type ReviewFilterKey,
+} from "@/lib/access-review";
+import {
+  AccessReviewLine,
+  AccessReviewNotice,
+  OverrideReasonField,
+  ReviewLevelPill,
+  useApprovalGuard,
+} from "@/components/admin/requests/AccessReview";
+import {
   approveAccessAction,
   rejectAccessAction,
   snoozeAccessAction,
@@ -80,6 +94,11 @@ export interface PendingRequest {
   city: string | null;
   /** ISO timestamp the request was submitted. */
   createdAt: string;
+  /**
+   * Order + approval history and its verdict (owner request) — so "approved
+   * twice, never ordered" is on the card BEFORE anyone taps Approve.
+   */
+  review?: AccessReview | null;
 }
 
 export interface ApprovalSwipeDeckProps {
@@ -150,6 +169,21 @@ export function ApprovalSwipeDeck({ requests, searching = false }: ApprovalSwipe
 
   // Approve flow: which request is awaiting an expiry choice.
   const [approving, setApproving] = React.useState<PendingRequest | null>(null);
+  // Reject flow: ONE dialog for cards, rows and the approve dialog's
+  // "Reject instead" — which arrives with a reason already picked.
+  const [rejecting, setRejecting] = React.useState<{
+    request: PendingRequest;
+    reason: string;
+  } | null>(null);
+  const askReject = React.useCallback(
+    (request: PendingRequest, reason?: string) =>
+      setRejecting({ request, reason: reason ?? "" }),
+    [],
+  );
+
+  // History filter (owner request): with 100+ open requests, the shops that
+  // never order after approval must be findable in one tap.
+  const [filter, setFilter] = React.useState<ReviewFilterKey>("all");
 
   /**
    * Which customer profile is open, if any. ONE modal for the whole deck —
@@ -231,10 +265,15 @@ export function ApprovalSwipeDeck({ requests, searching = false }: ApprovalSwipe
 
   /** Commit an approval to the server once the Undo window has elapsed. */
   const commitApprove = React.useCallback(
-    async (request: PendingRequest, expiry: ExpiryValue) => {
+    async (
+      request: PendingRequest,
+      expiry: ExpiryValue,
+      override: { reason: string } | undefined,
+    ) => {
       const result = await approveAccessAction({
         customerId: request.customerId,
         expiry: expiryValueToInput(expiry),
+        override,
       });
       if (!result.ok) {
         toast.error(`Couldn't approve ${request.businessName}`, {
@@ -321,9 +360,15 @@ export function ApprovalSwipeDeck({ requests, searching = false }: ApprovalSwipe
   );
 
   const handleApproveConfirmed = React.useCallback(
-    (request: PendingRequest, expiry: ExpiryValue) => {
+    (
+      request: PendingRequest,
+      expiry: ExpiryValue,
+      override: { reason: string } | undefined,
+    ) => {
       setApproving(null);
-      scheduleDecision(request, "approve", () => commitApprove(request, expiry));
+      scheduleDecision(request, "approve", () =>
+        commitApprove(request, expiry, override),
+      );
     },
     [commitApprove, scheduleDecision],
   );
@@ -342,6 +387,20 @@ export function ApprovalSwipeDeck({ requests, searching = false }: ApprovalSwipe
     },
     [commitSnooze, scheduleDecision],
   );
+
+  const visibleQueue = React.useMemo(
+    () => queue.filter((r) => matchesReviewFilter(r.review?.level, filter)),
+    [queue, filter],
+  );
+  const filterCounts = React.useMemo(() => {
+    const counts = {} as Record<ReviewFilterKey, number>;
+    for (const f of REVIEW_FILTERS) {
+      counts[f.key] = queue.filter((r) => matchesReviewFilter(r.review?.level, f.key)).length;
+    }
+    return counts;
+  }, [queue]);
+  // Reviews only exist when the server sent them; no chips without data.
+  const hasReviews = queue.some((r) => r.review);
 
   /* ------------------------------ select mode --------------------------- */
   const router = useRouter();
@@ -362,19 +421,20 @@ export function ApprovalSwipeDeck({ requests, searching = false }: ApprovalSwipe
   }, []);
 
   const allSelected =
-    queue.length > 0 && queue.every((r) => selected.has(r.customerId));
+    visibleQueue.length > 0 && visibleQueue.every((r) => selected.has(r.customerId));
 
   const toggleSelectAll = React.useCallback(() => {
     setSelected((prev) => {
       const next = new Set(prev);
-      const all = queue.length > 0 && queue.every((r) => next.has(r.customerId));
-      for (const r of queue) {
+      const all =
+        visibleQueue.length > 0 && visibleQueue.every((r) => next.has(r.customerId));
+      for (const r of visibleQueue) {
         if (all) next.delete(r.customerId);
         else next.add(r.customerId);
       }
       return next;
     });
-  }, [queue]);
+  }, [visibleQueue]);
 
   const exitSelectMode = React.useCallback(() => {
     setSelectMode(false);
@@ -409,10 +469,17 @@ export function ApprovalSwipeDeck({ requests, searching = false }: ApprovalSwipe
       setSelected(new Set());
       setSelectMode(false);
       const past = verb === "approve" ? "Approved" : "Rejected";
-      toast.success(
+      const held = res.failed.filter((f) => f.error.startsWith("Held"));
+      const otherFailed = res.failed.length - held.length;
+      const summary =
         `${past} ${res.count} request${res.count === 1 ? "" : "s"}` +
-          (res.failed.length ? ` · ${res.failed.length} failed` : ""),
-      );
+        (held.length ? ` · ${held.length} on hold` : "") +
+        (otherFailed ? ` · ${otherFailed} failed` : "");
+      const description = held.length
+        ? `${held.length === 1 ? "1 shop was" : `${held.length} shops were`} approved before and never ordered, so ${held.length === 1 ? "it was" : "they were"} skipped. Open ${held.length === 1 ? "it" : "each one"} to approve anyway.`
+        : undefined;
+      if (held.length || otherFailed) toast.warning(summary, { description, duration: 8000 });
+      else toast.success(summary);
       router.refresh();
     },
     [queue, selected, router],
@@ -448,8 +515,48 @@ export function ApprovalSwipeDeck({ requests, searching = false }: ApprovalSwipe
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Toolbar: multi-select toggle (search lives at the page level). */}
-      <div className="flex items-center justify-end">
+      {/* Toolbar: history filter + multi-select toggle (search lives at the
+          page level). */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        {hasReviews ? (
+          <div
+            role="group"
+            aria-label="Filter by order history"
+            className="-mx-1 flex max-w-full gap-1.5 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
+            {REVIEW_FILTERS.map((f) => {
+              const active = filter === f.key;
+              return (
+                <button
+                  key={f.key}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setFilter(f.key)}
+                  className={cn(
+                    "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                    active
+                      ? f.key === "risky"
+                        ? "border-destructive/40 bg-destructive text-white"
+                        : "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-card text-muted-foreground hover:bg-accent",
+                  )}
+                >
+                  {f.label}
+                  <span
+                    className={cn(
+                      "rounded-full px-1.5 text-[10px] tabular-nums",
+                      active ? "bg-white/20" : "bg-muted",
+                    )}
+                  >
+                    {filterCounts[f.key]}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <span />
+        )}
         {selectMode ? (
           <Button variant="outline" size="sm" onClick={exitSelectMode}>
             Cancel
@@ -466,9 +573,20 @@ export function ApprovalSwipeDeck({ requests, searching = false }: ApprovalSwipe
         )}
       </div>
 
-      {selectMode ? (
+      {visibleQueue.length === 0 ? (
+        <EmptyState
+          illustration="empty-box"
+          title="Nothing here"
+          description="No pending requests match this filter."
+          action={
+            <Button variant="outline" size="sm" onClick={() => setFilter("all")}>
+              Show all requests
+            </Button>
+          }
+        />
+      ) : selectMode ? (
         <SelectableList
-          requests={queue}
+          requests={visibleQueue}
           selected={selected}
           onToggle={toggleSelect}
           allSelected={allSelected}
@@ -476,17 +594,17 @@ export function ApprovalSwipeDeck({ requests, searching = false }: ApprovalSwipe
         />
       ) : isMobile ? (
         <SwipeDeck
-          requests={queue}
+          requests={visibleQueue}
           onApprove={(request) => setApproving(request)}
-          onReject={handleReject}
+          onAskReject={askReject}
           onSnooze={handleSnooze}
           onViewCustomer={viewCustomer}
         />
       ) : (
         <RequestList
-          requests={queue}
+          requests={visibleQueue}
           onApprove={(request) => setApproving(request)}
-          onReject={handleReject}
+          onAskReject={askReject}
           onSnooze={handleSnooze}
           onViewCustomer={viewCustomer}
         />
@@ -508,6 +626,22 @@ export function ApprovalSwipeDeck({ requests, searching = false }: ApprovalSwipe
           if (!open) setApproving(null);
         }}
         onConfirm={handleApproveConfirmed}
+        onRejectInstead={(request, reason) => {
+          setApproving(null);
+          askReject(request, reason);
+        }}
+      />
+
+      <RejectDialog
+        request={rejecting?.request ?? null}
+        initialReason={rejecting?.reason ?? ""}
+        onOpenChange={(open) => {
+          if (!open) setRejecting(null);
+        }}
+        onConfirm={(request, reason) => {
+          setRejecting(null);
+          handleReject(request, reason);
+        }}
       />
 
       {/* Bulk action bar + its confirm dialogs (select mode only). */}
@@ -523,6 +657,9 @@ export function ApprovalSwipeDeck({ requests, searching = false }: ApprovalSwipe
       <BulkApproveDialog
         open={bulkApproving}
         count={selected.size}
+        heldCount={
+          queue.filter((r) => selected.has(r.customerId) && r.review?.level === "hold").length
+        }
         busy={bulkBusy}
         onOpenChange={(open) => {
           if (!open) setBulkApproving(false);
@@ -549,23 +686,22 @@ export function ApprovalSwipeDeck({ requests, searching = false }: ApprovalSwipe
 function SwipeDeck({
   requests,
   onApprove,
-  onReject,
+  onAskReject,
   onSnooze,
   onViewCustomer,
 }: {
   requests: PendingRequest[];
   onApprove: (request: PendingRequest) => void;
-  onReject: (request: PendingRequest, reason?: string) => void;
+  onAskReject: (request: PendingRequest, reason?: string) => void;
   onSnooze: (request: PendingRequest) => void;
   onViewCustomer: (request: PendingRequest) => void;
 }) {
   // Top card is the last element so later cards stack visually beneath it.
   const visible = requests.slice(0, 3);
-  const [rejecting, setRejecting] = React.useState<PendingRequest | null>(null);
 
   return (
     <div className="flex flex-col items-center gap-6">
-      <div className="relative h-[26rem] w-full max-w-sm">
+      <div className="relative h-[31rem] w-full max-w-sm">
         <AnimatePresence initial={false}>
           {visible
             .map((request, index) => ({ request, index }))
@@ -577,7 +713,9 @@ function SwipeDeck({
                 depth={index}
                 interactive={index === 0}
                 onApprove={() => onApprove(request)}
-                onReject={() => setRejecting(request)}
+                onReject={() =>
+                  onAskReject(request, request.review?.suggestedRejectReason ?? undefined)
+                }
                 onSnooze={() => onSnooze(request)}
                 onViewCustomer={() => onViewCustomer(request)}
               />
@@ -593,17 +731,6 @@ function SwipeDeck({
           Swipe right to approve <CheckIcon className="size-3.5 text-success" />
         </span>
       </div>
-
-      <RejectDialog
-        request={rejecting}
-        onOpenChange={(open) => {
-          if (!open) setRejecting(null);
-        }}
-        onConfirm={(request, reason) => {
-          setRejecting(null);
-          onReject(request, reason);
-        }}
-      />
     </div>
   );
 }
@@ -732,6 +859,8 @@ function SwipeCard({
             )}
           </dl>
 
+          {request.review ? <AccessReviewLine review={request.review} className="w-full" /> : null}
+
           <p className="text-xs text-muted-foreground">
             Requested {dateFormatter.format(new Date(request.createdAt))}
             {!expanded && " · tap for details"}
@@ -785,17 +914,16 @@ function SwipeCard({
 function RequestList({
   requests,
   onApprove,
-  onReject,
+  onAskReject,
   onSnooze,
   onViewCustomer,
 }: {
   requests: PendingRequest[];
   onApprove: (request: PendingRequest) => void;
-  onReject: (request: PendingRequest, reason?: string) => void;
+  onAskReject: (request: PendingRequest, reason?: string) => void;
   onSnooze: (request: PendingRequest) => void;
   onViewCustomer: (request: PendingRequest) => void;
 }) {
-  const [rejecting, setRejecting] = React.useState<PendingRequest | null>(null);
 
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-card">
@@ -845,10 +973,16 @@ function RequestList({
                     </span>
                   )}
                 </div>
+                {request.review ? (
+                  <AccessReviewLine review={request.review} className="mt-2" maxFacts={6} />
+                ) : null}
               </div>
               {/* Plain <li> content — nothing here wraps the row in a button,
                   so this control nests inside nothing. */}
-              <div className="flex shrink-0 flex-wrap items-center gap-2">
+              {/* max-w-full, not shrink-0: on a narrow screen (and in the
+                  server-rendered first paint, before the phone deck takes
+                  over) the buttons wrap instead of running off the card. */}
+              <div className="flex max-w-full flex-wrap items-center gap-2">
                 <ViewCustomerButton
                   businessName={request.businessName}
                   onClick={() => onViewCustomer(request)}
@@ -857,7 +991,9 @@ function RequestList({
                 <Button
                   variant="destructive"
                   size="sm"
-                  onClick={() => setRejecting(request)}
+                  onClick={() =>
+                    onAskReject(request, request.review?.suggestedRejectReason ?? undefined)
+                  }
                 >
                   <XIcon aria-hidden /> Reject
                 </Button>
@@ -877,17 +1013,6 @@ function RequestList({
           ))}
         </AnimatePresence>
       </ul>
-
-      <RejectDialog
-        request={rejecting}
-        onOpenChange={(open) => {
-          if (!open) setRejecting(null);
-        }}
-        onConfirm={(request, reason) => {
-          setRejecting(null);
-          onReject(request, reason);
-        }}
-      />
     </div>
   );
 }
@@ -900,12 +1025,20 @@ function ApproveDialog({
   request,
   onOpenChange,
   onConfirm,
+  onRejectInstead,
 }: {
   request: PendingRequest | null;
   onOpenChange: (open: boolean) => void;
-  onConfirm: (request: PendingRequest, expiry: ExpiryValue) => void;
+  onConfirm: (
+    request: PendingRequest,
+    expiry: ExpiryValue,
+    override: { reason: string } | undefined,
+  ) => void;
+  onRejectInstead: (request: PendingRequest, reason?: string) => void;
 }) {
   const [expiry, setExpiry] = React.useState<ExpiryValue>(defaultExpiry);
+  const review = request?.review ?? null;
+  const guard = useApprovalGuard(review, request?.id ?? null);
 
   // Reset the dial to the default whenever a new request opens the dialog —
   // done during render (tracking the request identity) to avoid an effect.
@@ -929,20 +1062,46 @@ function ApproveDialog({
           </DialogDescription>
         </DialogHeader>
 
+        {review ? <AccessReviewNotice review={review} /> : null}
+
+        {/* Right under the warning: on a phone the dial below runs past the
+            fold, and the reason is what unlocks the button. */}
+        {guard.held ? (
+          <OverrideReasonField
+            id="approve-override-reason"
+            value={guard.reason}
+            onChange={guard.setReason}
+          />
+        ) : null}
+
         <div className="py-2">
           <ExpiryDial value={expiry} onChange={setExpiry} />
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="gap-2">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
+          {review && (review.level === "hold" || review.level === "watch") ? (
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (request) {
+                  onRejectInstead(request, review.suggestedRejectReason ?? undefined);
+                }
+              }}
+            >
+              <XIcon aria-hidden /> Reject instead
+            </Button>
+          ) : null}
           <Button
+            variant={guard.held ? "outline" : "default"}
+            disabled={!guard.canConfirm}
             onClick={() => {
-              if (request) onConfirm(request, expiry);
+              if (request && guard.canConfirm) onConfirm(request, expiry, guard.override);
             }}
           >
-            <CheckIcon aria-hidden /> Approve access
+            <CheckIcon aria-hidden /> {guard.confirmLabel("Approve access")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -954,25 +1113,36 @@ function ApproveDialog({
 /* Reject dialog (optional reason)                                     */
 /* ------------------------------------------------------------------ */
 
+/** One-tap reasons — the ones staff type again and again. */
+const QUICK_REJECT_REASONS = [
+  NO_ORDER_REJECT_REASON,
+  "Could not verify GSTIN",
+  "Not a shop / not a reseller",
+  "Duplicate account",
+] as const;
+
 function RejectDialog({
   request,
+  initialReason = "",
   onOpenChange,
   onConfirm,
 }: {
   request: PendingRequest | null;
+  /** Prefilled reason (e.g. the review's suggestion, or "Reject instead"). */
+  initialReason?: string;
   onOpenChange: (open: boolean) => void;
   onConfirm: (request: PendingRequest, reason?: string) => void;
 }) {
-  const [reason, setReason] = React.useState("");
+  const [reason, setReason] = React.useState(initialReason);
 
-  // Clear the reason field when a new request opens the dialog (render-phase
+  // Reset the reason when a new request opens the dialog (render-phase
   // reset keyed on request identity — no effect, no cascading render).
   const [dialogFor, setDialogFor] = React.useState<string | null>(
     request?.id ?? null,
   );
   if ((request?.id ?? null) !== dialogFor) {
     setDialogFor(request?.id ?? null);
-    setReason("");
+    setReason(initialReason);
   }
 
   return (
@@ -986,6 +1156,27 @@ function RejectDialog({
               : null}
           </DialogDescription>
         </DialogHeader>
+
+        {request?.review ? <AccessReviewNotice review={request.review} /> : null}
+
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Quick reasons">
+          {QUICK_REJECT_REASONS.map((quick) => (
+            <button
+              key={quick}
+              type="button"
+              aria-pressed={reason === quick}
+              onClick={() => setReason(quick)}
+              className={cn(
+                "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                reason === quick
+                  ? "border-destructive/40 bg-destructive/10 text-destructive"
+                  : "border-border text-muted-foreground hover:bg-accent",
+              )}
+            >
+              {quick}
+            </button>
+          ))}
+        </div>
 
         <div className="py-1">
           <label
@@ -1087,6 +1278,7 @@ function SelectableList({
                     Renewal
                   </span>
                 ) : null}
+                {request.review ? <ReviewLevelPill level={request.review.level} /> : null}
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
                     <span className="inline-flex items-center gap-1.5">
@@ -1104,6 +1296,19 @@ function SelectableList({
                       </span>
                     )}
                   </div>
+                  {request.review &&
+                  (request.review.level === "hold" || request.review.level === "watch") ? (
+                    <p
+                      className={cn(
+                        "mt-1 text-xs",
+                        request.review.level === "hold"
+                          ? "font-medium text-destructive"
+                          : "text-amber-800 dark:text-amber-300",
+                      )}
+                    >
+                      {request.review.headline}
+                    </p>
+                  ) : null}
                 </div>
               </button>
             </li>
@@ -1166,12 +1371,15 @@ function BulkActionBar({
 function BulkApproveDialog({
   open,
   count,
+  heldCount,
   busy,
   onOpenChange,
   onConfirm,
 }: {
   open: boolean;
   count: number;
+  /** Selected shops the review holds — the server will skip them. */
+  heldCount: number;
   busy: boolean;
   onOpenChange: (open: boolean) => void;
   onConfirm: (expiry: ExpiryValue) => void;
@@ -1196,6 +1404,17 @@ function BulkApproveDialog({
           </DialogDescription>
         </DialogHeader>
 
+        {heldCount > 0 ? (
+          <p
+            role="alert"
+            className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+          >
+            {heldCount === 1
+              ? "1 selected shop is on Hold (approved before, never ordered). It will be skipped — open it to approve anyway."
+              : `${heldCount} selected shops are on Hold (approved before, never ordered). They will be skipped — open each one to approve anyway.`}
+          </p>
+        ) : null}
+
         <div className="py-2">
           <ExpiryDial value={expiry} onChange={setExpiry} />
         </div>
@@ -1204,9 +1423,11 @@ function BulkApproveDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
             Cancel
           </Button>
-          <Button onClick={() => onConfirm(expiry)} disabled={busy}>
+          <Button onClick={() => onConfirm(expiry)} disabled={busy || count - heldCount <= 0}>
             <CheckCheckIcon aria-hidden />
-            {busy ? "Approving…" : `Approve ${count}`}
+            {busy
+              ? "Approving…"
+              : `Approve ${Math.max(0, count - heldCount)}${heldCount > 0 ? ` · skip ${heldCount}` : ""}`}
           </Button>
         </DialogFooter>
       </DialogContent>

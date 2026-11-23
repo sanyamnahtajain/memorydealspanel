@@ -29,6 +29,12 @@ import {
   bulkRevoke,
   type BulkResult,
 } from "@/server/services/customers";
+import {
+  getAccessReview,
+  getAccessReviews,
+  widensAccess,
+} from "@/server/services/access-review";
+import { holdMessage, OVERRIDE_REASON_MIN } from "@/lib/access-review";
 import { accessRequestSchema } from "@/lib/schemas/customer";
 import { randomBytes } from "node:crypto";
 import {
@@ -56,7 +62,9 @@ import {
 
 export type ActionResult<T = Record<string, never>> =
   | ({ ok: true } & T)
-  | { ok: false; error: string };
+  /** `code: "ACCESS_HOLD"` = held by the approval review; resend with an
+   * `override.reason` to approve anyway. */
+  | { ok: false; error: string; code?: "ACCESS_HOLD" };
 
 const ACTOR = "admin" as const;
 
@@ -121,9 +129,24 @@ function resolveExpiresAt(expiry: ExpiryInput): Date | null {
   return target;
 }
 
+/**
+ * "Approve anyway": the typed reason that unlocks an approval the review
+ * holds (shop approved again and again with no order). Saved in the audit.
+ */
+const overrideSchema = z
+  .object({
+    reason: z
+      .string()
+      .trim()
+      .min(OVERRIDE_REASON_MIN, "Write a short reason to approve anyway.")
+      .max(300),
+  })
+  .optional();
+
 const approveSchema = z.object({
   customerId: objectIdSchema,
   expiry: expiryInputSchema,
+  override: overrideSchema,
 });
 
 const rejectSchema = z.object({
@@ -191,6 +214,70 @@ function bulkResult(result: BulkResult): ActionResult<{
     ok: true,
     count: result.succeeded.length,
     failed: result.failed,
+  };
+}
+
+/**
+ * The approval review, enforced on the server: a "hold" customer is never
+ * approved by a tap alone — not from a stale screen, not from a bulk bar.
+ * Returns the refusal to send back, or null to go ahead (with the review, for
+ * the audit trail).
+ */
+async function checkHold(
+  customerId: string,
+  override: { reason: string } | undefined,
+) {
+  const review = await getAccessReview(customerId);
+  if (review.level === "hold" && !override) {
+    return {
+      refusal: { ok: false as const, error: holdMessage(review), code: "ACCESS_HOLD" as const },
+      review,
+    };
+  }
+  return { refusal: null, review };
+}
+
+/**
+ * Bulk bars never approve a held customer — each one needs its own decision
+ * and typed reason (from the request card or the customer profile). Held ids
+ * come back as `failed` with the reason, so the admin sees exactly who and why.
+ * With `expiresAt` (bulk SET-expiry) a customer whose new date gives no extra
+ * time is never held — shortening is not an approval.
+ */
+async function splitHeld(
+  customerIds: string[],
+  expiresAt?: Date | null,
+): Promise<{ allowed: string[]; held: { id: string; error: string }[] }> {
+  const reviews = await getAccessReviews(customerIds);
+  const allowed: string[] = [];
+  const held: { id: string; error: string }[] = [];
+  for (const id of customerIds) {
+    const review = reviews.get(id);
+    const isHold = review?.level === "hold";
+    // Only a held customer needs the (per-id) "does this give more time?" read.
+    if (isHold && (expiresAt === undefined || (await widensAccess(id, expiresAt)))) {
+      held.push({ id, error: `Held — ${review.headline} Open the customer to approve anyway.` });
+    } else {
+      allowed.push(id);
+    }
+  }
+  return { allowed, held };
+}
+
+function withHeld(result: BulkResult, held: { id: string; error: string }[]): BulkResult {
+  return { succeeded: result.succeeded, failed: [...held, ...result.failed] };
+}
+
+/** What the audit keeps about the review behind a decision. */
+function reviewAudit(
+  review: Awaited<ReturnType<typeof getAccessReview>>,
+  override: { reason: string } | undefined,
+) {
+  return {
+    review: review.level,
+    ordersTotal: review.history.ordersTotal,
+    approvalsSinceLastOrder: review.history.approvalsSinceLastOrder,
+    ...(override ? { overrideReason: override.reason } : {}),
   };
 }
 
@@ -280,12 +367,15 @@ export async function requestAccess(
 export async function approveAccessAction(
   input: z.input<typeof approveSchema>,
 ): Promise<ActionResult<{ customerId: string }>> {
-  return guarded(async () => {
+  return guarded<{ customerId: string }>(async () => {
     const viewer = await resolveViewer();
     assertAdmin(viewer);
     await assertPermission(viewer, PERMISSIONS.CUSTOMERS_APPROVE);
 
-    const { customerId, expiry } = approveSchema.parse(input);
+    const { customerId, expiry, override } = approveSchema.parse(input);
+    const { refusal, review } = await checkHold(customerId, override);
+    if (refusal) return refusal;
+
     await approveRequest(customerId, {
       expiresInDays: resolveDays(expiry),
       grantedBy: viewer.adminId,
@@ -297,7 +387,7 @@ export async function approveAccessAction(
       action: "access.approve",
       entity: "Customer",
       entityId: customerId,
-      diff: { days: resolveDays(expiry) },
+      diff: { days: resolveDays(expiry), ...reviewAudit(review, override) },
     });
 
     revalidate();
@@ -308,13 +398,21 @@ export async function approveAccessAction(
 export async function extendAccessAction(
   input: z.input<typeof approveSchema>,
 ): Promise<ActionResult<{ customerId: string }>> {
-  return guarded(async () => {
+  return guarded<{ customerId: string }>(async () => {
     const viewer = await resolveViewer();
     assertAdmin(viewer);
     await assertPermission(viewer, PERMISSIONS.CUSTOMERS_APPROVE);
 
-    const { customerId, expiry } = approveSchema.parse(input);
+    const { customerId, expiry, override } = approveSchema.parse(input);
     const expiresAt = resolveExpiresAt(expiry);
+
+    // Only GIVING more time is an approval decision; shortening never holds.
+    let review: Awaited<ReturnType<typeof getAccessReview>> | null = null;
+    if (await widensAccess(customerId, expiresAt)) {
+      const check = await checkHold(customerId, override);
+      if (check.refusal) return check.refusal;
+      review = check.review;
+    }
 
     // SET, not add. The dial the admin just used previews an absolute "expires
     // on <date>"; adding days to whatever expiry they already had would save a
@@ -336,7 +434,10 @@ export async function extendAccessAction(
       action: "access.extend",
       entity: "Customer",
       entityId: customerId,
-      diff: { expiresAt: expiresAt?.toISOString() ?? null },
+      diff: {
+        expiresAt: expiresAt?.toISOString() ?? null,
+        ...(review ? reviewAudit(review, override) : {}),
+      },
     });
 
     revalidate();
@@ -405,11 +506,16 @@ export async function bulkApproveAccessAction(
     assertAdmin(viewer);
     await assertPermission(viewer, PERMISSIONS.CUSTOMERS_APPROVE);
 
-    const { customerIds, expiry } = bulkSchema.parse(input);
-    const result = await bulkApprove(customerIds, {
-      expiresInDays: resolveDays(expiry),
-      grantedBy: viewer.adminId,
-    });
+    const { customerIds: requested, expiry } = bulkSchema.parse(input);
+    const { allowed: customerIds, held } = await splitHeld(requested);
+    if (customerIds.length === 0) return bulkResult({ succeeded: [], failed: held });
+    const result = withHeld(
+      await bulkApprove(customerIds, {
+        expiresInDays: resolveDays(expiry),
+        grantedBy: viewer.adminId,
+      }),
+      held,
+    );
 
     await writeAudit({
       actorType: ACTOR,
@@ -433,17 +539,21 @@ export async function bulkExtendAccessAction(
     assertAdmin(viewer);
     await assertPermission(viewer, PERMISSIONS.CUSTOMERS_APPROVE);
 
-    const { customerIds, expiry } = bulkSchema.parse(input);
+    const { customerIds: requested, expiry } = bulkSchema.parse(input);
     const expiresAt = resolveExpiresAt(expiry);
+    const { allowed: customerIds, held } = await splitHeld(requested, expiresAt);
+    if (customerIds.length === 0) return bulkResult({ succeeded: [], failed: held });
     // SET, like the single-customer path — the same dial previews the same
     // absolute date here, so the two must not disagree.
-    const result =
+    const result = withHeld(
       expiresAt === null
         ? await bulkApprove(customerIds, {
             expiresInDays: null,
             grantedBy: viewer.adminId,
           })
-        : await bulkSetExpiry(customerIds, expiresAt, viewer.adminId);
+        : await bulkSetExpiry(customerIds, expiresAt, viewer.adminId),
+      held,
+    );
 
     await writeAudit({
       actorType: ACTOR,

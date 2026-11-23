@@ -31,6 +31,13 @@ import {
 } from "@/components/admin/ExpiryDial";
 import { DEFAULT_ACCESS_EXPIRY_DAYS } from "@/lib/constants";
 import { extendAccessAction } from "@/server/actions/access";
+import type { AccessReview } from "@/lib/access-review";
+import {
+  AccessReviewLine,
+  AccessReviewNotice,
+  OverrideReasonField,
+  useApprovalGuard,
+} from "@/components/admin/requests/AccessReview";
 import { unsnoozeAccessAction } from "@/server/actions/access";
 import { EmptyState, StatusChip, Pager } from "@/components/common";
 import {
@@ -72,6 +79,8 @@ export interface RenewalItem {
   /** ISO effective/last expiry (null for a legacy grant with no date). */
   expiresAt: string | null;
   state: "expiring" | "expired";
+  /** Order + approval history and its verdict (see lib/access-review). */
+  review?: AccessReview | null;
 }
 
 export interface RequestsTabsProps {
@@ -563,6 +572,9 @@ function SnoozedList({
               <p className="mt-0.5 text-[0.7rem] text-muted-foreground">
                 Requested {dateFormatter.format(new Date(request.createdAt))}
               </p>
+              {request.review ? (
+                <AccessReviewLine review={request.review} className="mt-2" />
+              ) : null}
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-2">
               <ViewCustomerButton
@@ -645,6 +657,7 @@ function RenewalsList({
     days: DEFAULT_ACCESS_EXPIRY_DAYS,
   });
   const [busy, startTransition] = React.useTransition();
+  const guard = useApprovalGuard(renewing?.review, renewing?.customerId ?? null);
   // One profile modal for the whole list, driven by the selected seed.
   const [detailFor, setDetailFor] = React.useState<CustomerDetailSeed | null>(
     null,
@@ -659,11 +672,13 @@ function RenewalsList({
 
   function confirmRenew() {
     const item = renewing;
-    if (!item) return;
+    if (!item || !guard.canConfirm) return;
+    const override = guard.override;
     startTransition(async () => {
       const res = await extendAccessAction({
         customerId: item.customerId,
         expiry: expiryValueToInput(expiry),
+        override,
       });
       if (!res.ok) {
         toast.error(`Couldn't renew ${item.businessName}`, { description: res.error });
@@ -731,8 +746,11 @@ function RenewalsList({
                     <span>Expired {rel.label}</span>
                   ) : null}
                 </div>
+                {item.review ? (
+                  <AccessReviewLine review={item.review} className="mt-2" maxFacts={6} />
+                ) : null}
               </div>
-              <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <div className="flex max-w-full flex-wrap items-center gap-2">
                 <ViewCustomerButton
                   businessName={item.businessName}
                   onClick={() => setDetailFor(renewalSeed(item))}
@@ -761,6 +779,15 @@ function RenewalsList({
                 : null}
             </DialogDescription>
           </DialogHeader>
+          {renewing?.review ? <AccessReviewNotice review={renewing.review} /> : null}
+          {guard.held ? (
+            <OverrideReasonField
+              id="renew-override-reason"
+              value={guard.reason}
+              onChange={guard.setReason}
+              disabled={busy}
+            />
+          ) : null}
           <div className="py-2">
             <ExpiryDial value={expiry} onChange={setExpiry} />
           </div>
@@ -768,9 +795,19 @@ function RenewalsList({
             <Button variant="outline" onClick={() => setRenewing(null)} disabled={busy}>
               Cancel
             </Button>
-            <Button onClick={confirmRenew} disabled={busy}>
+            <Button
+              onClick={confirmRenew}
+              disabled={busy || !guard.canConfirm}
+              variant={guard.held ? "outline" : "default"}
+            >
               <RefreshCcw aria-hidden className="size-3.5" />
-              {busy ? "Renewing…" : "Renew access"}
+              {busy
+                ? "Renewing…"
+                : guard.held
+                  ? "Renew anyway"
+                  : renewing?.review?.level === "watch"
+                    ? "Renew again"
+                    : "Renew access"}
             </Button>
           </DialogFooter>
         </DialogContent>

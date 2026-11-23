@@ -12,6 +12,8 @@ import {
 } from "@/server/security/ratelimit";
 import { verifyTurnstile } from "@/server/security/turnstile";
 import { AUTO_RENEW_ON_ORDER } from "@/lib/constants";
+import { reviewPushLine } from "@/lib/access-review";
+import { getAccessReview } from "./access-review";
 
 /**
  * Access-lifecycle service — the customer price-access state machine.
@@ -836,10 +838,18 @@ async function notifyAdminsOfRenewal(
   } catch (error) {
     console.error("[access] failed to persist renewal notification:", error);
   }
+  // The admin decides from the lock screen as often as from the panel — say
+  // up front whether this shop actually orders (owner request).
+  let historyLine: string | null = null;
+  try {
+    historyLine = reviewPushLine(await getAccessReview(customerId));
+  } catch (error) {
+    console.error("[access] renewal review failed:", error);
+  }
   try {
     await notifyAdmins("admin.access.renewal", {
       title: "Access renewal request",
-      body: `${businessName} is asking to renew their price access.`,
+      body: `${businessName} is asking to renew their price access.${historyLine ? ` ${historyLine}` : ""}`,
       url: "/admin/requests",
     });
   } catch (error) {

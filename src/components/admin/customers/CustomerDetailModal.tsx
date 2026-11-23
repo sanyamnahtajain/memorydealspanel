@@ -51,6 +51,8 @@ import {
   previewExpiryDate,
   type ExpiryValue,
 } from "@/components/admin/ExpiryDial";
+import { AccessReviewNotice } from "@/components/admin/requests/AccessReview";
+import { OVERRIDE_REASON_MIN } from "@/lib/access-review";
 import { EntityAuditList } from "@/components/admin/audit/EntityAuditList";
 import {
   getCustomerProfileAction,
@@ -438,20 +440,53 @@ export function CustomerDetailModal({
     [loadProfile, router],
   );
 
-  const approve = React.useCallback(
-    () =>
-      run("Access approved", () =>
-        approveAccessAction({ customerId, expiry: expiryValueToInput(expiry) }),
-      ),
-    [customerId, expiry, run],
-  );
-  const updateExpiry = React.useCallback(
-    () =>
-      run("Expiry updated", () =>
-        extendAccessAction({ customerId, expiry: expiryValueToInput(expiry) }),
-      ),
-    [customerId, expiry, run],
-  );
+  /**
+   * A "hold" shop (approved again and again, never ordered — see
+   * lib/access-review) is only given access with a typed reason. Returns the
+   * override to send, `undefined` when none is needed, or null if cancelled.
+   */
+  const review = profile?.review ?? null;
+  const askOverride = React.useCallback(async (): Promise<
+    { reason: string } | undefined | null
+  > => {
+    if (review?.level !== "hold") return undefined;
+    const reason = await prompt({
+      title: "Approve anyway?",
+      description: `${review.headline} Write why you are approving — it is saved in the activity log.`,
+      kind: "text",
+      placeholder: "e.g. Called them — order coming this week",
+      confirmLabel: "Approve anyway",
+      validate: (value) =>
+        value.trim().length < OVERRIDE_REASON_MIN
+          ? `Write at least ${OVERRIDE_REASON_MIN} letters.`
+          : null,
+    });
+    return reason === null ? null : { reason: reason.trim() };
+  }, [prompt, review]);
+
+  const approve = React.useCallback(async () => {
+    const override = await askOverride();
+    if (override === null) return;
+    await run("Access approved", () =>
+      approveAccessAction({ customerId, expiry: expiryValueToInput(expiry), override }),
+    );
+  }, [askOverride, customerId, expiry, run]);
+  const updateExpiry = React.useCallback(async () => {
+    // Only giving MORE time is an approval; shortening never asks.
+    const current = profile?.expiresAt ?? null;
+    const target = previewExpiryDate(expiry);
+    const widening =
+      profile?.hasActiveGrant !== true
+        ? true
+        : current === null
+          ? false
+          : target === null || target.getTime() > new Date(current).getTime();
+    const override = widening ? await askOverride() : undefined;
+    if (override === null) return;
+    await run("Expiry updated", () =>
+      extendAccessAction({ customerId, expiry: expiryValueToInput(expiry), override }),
+    );
+  }, [askOverride, customerId, expiry, profile, run]);
   const revoke = React.useCallback(
     () => run("Access revoked", () => revokeAccessAction({ customerId })),
     [customerId, run],
@@ -672,6 +707,8 @@ export function CustomerDetailModal({
             : "This customer cannot see prices right now."}
         </p>
 
+        {review ? <AccessReviewNotice review={review} className="mt-3" /> : null}
+
         {(canApprove || priceAccess) && (
           <div className="mt-3 rounded-lg border border-border bg-background p-3">
             <ExpiryDial
@@ -688,7 +725,11 @@ export function CustomerDetailModal({
                   ) : (
                     <ShieldCheck className="size-4" aria-hidden />
                   )}
-                  Approve access
+                  {review?.level === "hold"
+                    ? "Approve anyway…"
+                    : review?.level === "watch"
+                      ? "Approve again"
+                      : "Approve access"}
                 </Button>
               )}
               {priceAccess && (
